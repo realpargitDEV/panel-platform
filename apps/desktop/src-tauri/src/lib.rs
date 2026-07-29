@@ -567,16 +567,17 @@ async fn list_project_files(
 ) -> CommandResult<ListingDto> {
     let app: &AppState = &state;
     let (root, _) = project_root(app, &project_id).await?;
-    let listing = project_host_file_manager::operations::list_directory(
-        &root,
-        &path,
-        &file_limits(app),
-    )
-    .map_err(CommandError::from)?;
+    let listing =
+        project_host_file_manager::operations::list_directory(&root, &path, &file_limits(app))
+            .map_err(CommandError::from)?;
 
     Ok(ListingDto {
         path: listing.path,
-        entries: listing.entries.into_iter().map(FileEntryDto::from).collect(),
+        entries: listing
+            .entries
+            .into_iter()
+            .map(FileEntryDto::from)
+            .collect(),
         truncated: listing.truncated,
     })
 }
@@ -634,8 +635,9 @@ async fn create_project_file(
     let (root, read_only) = project_root(app, &project_id).await?;
     if read_only {
         return Err(CommandError {
-            message: "This project is being built or removed; its files cannot be changed right now."
-                .to_string(),
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
         });
     }
 
@@ -658,8 +660,9 @@ async fn rename_project_file(
     let (root, read_only) = project_root(app, &project_id).await?;
     if read_only {
         return Err(CommandError {
-            message: "This project is being built or removed; its files cannot be changed right now."
-                .to_string(),
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
         });
     }
 
@@ -679,8 +682,9 @@ async fn delete_project_file(
     let (root, read_only) = project_root(app, &project_id).await?;
     if read_only {
         return Err(CommandError {
-            message: "This project is being built or removed; its files cannot be changed right now."
-                .to_string(),
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
         });
     }
 
