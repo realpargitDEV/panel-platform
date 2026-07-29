@@ -43,7 +43,7 @@ export default function Sidebar({
             P
           </span>
           <span>
-            <span className="block font-semibold leading-tight tracking-tight">Project Host</span>
+            <span className="block font-semibold leading-tight tracking-tight">Panel Platform</span>
             <span className="block text-xs text-neutral-500">Hosting on your own machine</span>
           </span>
         </div>

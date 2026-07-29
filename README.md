@@ -1,4 +1,4 @@
-# Project Host
+# Panel Platform
 
 A cross-platform **desktop application** for running and managing projects on a
 machine you own — Discord bots, Node.js and Python applications, websites,
@@ -20,17 +20,19 @@ project gets a log channel and a control panel, with role-based permissions.
 
 ## Status: it launches
 
-`cargo build -p project-host-desktop` produces `project-host-desktop.exe`, and
-running it opens a window. On first launch it created
+`pnpm --filter project-host-desktop exec tauri build` produces a signed-in-name
+`Panel Platform` bundle plus an MSI and an NSIS installer, and running it opens
+a window. On first launch it created
 `C:\ProgramData\ProjectHost\` with its `data`, `config`, `logs`, `projects`,
 `backups` and `tmp` directories, migrated the database to schema version 2 (28
 tables) and recorded its instance in `agent_state`. That is observed, not
 inferred.
 
-The window shows the Docker status, the project list, and the update banner.
-It is a first screen, not the thirty-item interface in the specification.
+The window has a dashboard, a project list with a working creation dialog, a
+per-project console screen, and a settings screen showing the configuration in
+force. It is not yet the thirty-item interface in the specification.
 
-Verified on the development machine: **533 Rust tests, 31 TypeScript tests**,
+Verified on the development machine: **548 Rust tests, 31 TypeScript tests**,
 clippy clean under `-D warnings`, `cargo fmt`, ESLint, Prettier, `tsc`, and the
 generated TypeScript matching its Rust source.
 
@@ -39,8 +41,10 @@ so `last_clean_shutdown` stayed `0` and the window's own exit handler has never
 run. Also unverified: anything needing a Docker daemon, a Linux host, or a
 Discord bot token. See [Verification status](#verification-status).
 
-**Cannot create a project yet.** There is no creation wizard and no command
-behind one, so the project list is correct and empty.
+**Projects can be created.** The dialog generates the id, derives the slug from
+it, allocates a host port by testing real availability, and writes the project
+across three tables in one transaction. **No container has ever been started**,
+because the machine this was built on has no Docker daemon.
 
 ### A note on the architecture
 

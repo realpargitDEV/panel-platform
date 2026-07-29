@@ -107,7 +107,7 @@ impl DockerProvider for SystemDockerProvider {
         if cfg!(windows) {
             DockerInstallHint {
                 summary: "Docker Desktop was not found.".to_string(),
-                detail: "Project Host needs Docker to run projects. Install Docker Desktop, \
+                detail: "Panel Platform needs Docker to run projects. Install Docker Desktop, \
                          start it, and wait for the whale icon to stop animating. \
                          Everything else in the app works without it."
                     .to_string(),

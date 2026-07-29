@@ -6,7 +6,7 @@ fn main() {
     if let Err(error) = project_host_desktop_lib::run() {
         // Nothing has a window yet at this point, so the console and the exit
         // code are the only ways to report a failure to start.
-        eprintln!("Project Host could not start: {error}");
+        eprintln!("Panel Platform could not start: {error}");
         std::process::exit(1);
     }
 }

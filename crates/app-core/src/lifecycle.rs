@@ -64,13 +64,13 @@ pub fn scaffold(directory: &Path, runtime: &str) -> Result<(), LifecycleError> {
         "PYTHON" => (
             PYTHON_DOCKERFILE,
             "main.py",
-            "print('Hello from Project Host', flush=True)\n",
+            "print('Hello from Panel Platform', flush=True)\n",
         ),
         "STATIC" => (STATIC_DOCKERFILE, "public/index.html", STATIC_INDEX),
         _ => (
             NODE_DOCKERFILE,
             "index.js",
-            "console.log('Hello from Project Host');\n",
+            "console.log('Hello from Panel Platform');\n",
         ),
     };
 
@@ -103,7 +103,7 @@ fn write_if_absent(path: &Path, contents: &str) -> Result<(), LifecycleError> {
 /// Every image runs as an unprivileged user, and the container is started with
 /// a read-only root filesystem, so nothing here may expect to write outside
 /// `/app` or `/tmp`.
-const NODE_DOCKERFILE: &str = r#"# Managed by Project Host. Safe to edit.
+const NODE_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
 FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
@@ -114,7 +114,7 @@ USER 10001:10001
 CMD ["node", "index.js"]
 "#;
 
-const PYTHON_DOCKERFILE: &str = r#"# Managed by Project Host. Safe to edit.
+const PYTHON_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
 FROM python:3.12-alpine
 WORKDIR /app
 COPY requirements.txt ./
@@ -124,7 +124,7 @@ USER 10001:10001
 CMD ["python", "main.py"]
 "#;
 
-const STATIC_DOCKERFILE: &str = r#"# Managed by Project Host. Safe to edit.
+const STATIC_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
 FROM nginx:alpine
 COPY public/ /usr/share/nginx/html/
 EXPOSE 80
@@ -139,7 +139,7 @@ const NODE_PACKAGE_JSON: &str = r#"{
 "#;
 
 const STATIC_INDEX: &str =
-    "<!doctype html>\n<html>\n  <body>\n    <h1>Hello from Project Host</h1>\n  </body>\n</html>\n";
+    "<!doctype html>\n<html>\n  <body>\n    <h1>Hello from Panel Platform</h1>\n  </body>\n</html>\n";
 
 /// Build the container specification for a stored project.
 async fn spec_for(

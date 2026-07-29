@@ -57,7 +57,7 @@ pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// A constant rather than a setting: a configurable update feed is a
 /// configurable way to install someone else's software.
 pub const RELEASE_FEED_URL: &str =
-    "https://github.com/realpargitDEV/project-host/releases/latest/download/latest.json";
+    "https://github.com/realpargitDEV/panel-platform/releases/latest/download/latest.json";
 
 /// Check a fetched manifest against the running version.
 ///

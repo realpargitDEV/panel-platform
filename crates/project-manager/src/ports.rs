@@ -5,7 +5,7 @@
 //! * The database's `UNIQUE (host_port, protocol, bind_address)` constraint
 //!   makes double allocation impossible even under concurrent creation.
 //! * A real bind test before use catches ports held by something outside
-//!   Project Host, which the database cannot know about.
+//!   Panel Platform, which the database cannot know about.
 //!
 //! Both are needed. The constraint alone would happily hand out a port that
 //! another program on the host already owns; the bind test alone would race.

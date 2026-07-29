@@ -116,7 +116,7 @@ impl UpdateCheck {
                 )
             }
             UpdateCheck::UpToDate { current_version } => {
-                format!("Project Host {current_version} is up to date")
+                format!("Panel Platform {current_version} is up to date")
             }
             UpdateCheck::Skipped { skipped_version } => {
                 format!("Version {skipped_version} was skipped")

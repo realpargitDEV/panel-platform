@@ -39,7 +39,7 @@ pub const MAX_FEATURE_KEY_LENGTH: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CustomIdError {
-    #[error("not a Project Host control (missing the `{PREFIX}` prefix)")]
+    #[error("not a Panel Platform control (missing the `{PREFIX}` prefix)")]
     NotOurs,
     #[error("this control was made by a different version of the application")]
     WrongVersion,
