@@ -22,6 +22,9 @@ project-host-api-types = { version = "0.1.0", path = "../../../crates/api-types"
 project-host-docker-manager = { version = "0.1.0", path = "../../../crates/docker-manager" }
 project-host-platform = { version = "0.1.0", path = "../../../crates/platform" }
 project-host-project-manager = { version = "0.1.0", path = "../../../crates/project-manager" }
+# Only for `Secret`: a token from the creation form is wrapped the moment it is
+# read, so nothing downstream can print it by accident.
+project-host-security = { version = "0.1.0", path = "../../../crates/security" }
 project-host-updater = { version = "0.1.0", path = "../../../crates/updater" }
 # Only used to fetch the release manifest. rustls rather than the platform TLS
 # stack so the same code path runs on Windows and Linux.

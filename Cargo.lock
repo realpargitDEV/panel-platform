@@ -3897,6 +3897,7 @@ dependencies = [
  "project-host-database",
  "project-host-discord",
  "project-host-docker-manager",
+ "project-host-file-manager",
  "project-host-platform",
  "project-host-security",
  "serde",
@@ -3918,6 +3919,7 @@ version = "0.1.0"
 dependencies = [
  "project-host-api-types",
  "project-host-discord",
+ "project-host-security",
  "sqlx",
  "tempfile",
  "thiserror 2.0.19",
@@ -3935,6 +3937,7 @@ dependencies = [
  "project-host-docker-manager",
  "project-host-platform",
  "project-host-project-manager",
+ "project-host-security",
  "project-host-updater",
  "reqwest 0.12.28",
  "serde",

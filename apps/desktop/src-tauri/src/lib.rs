@@ -23,10 +23,12 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::Manager;
 
+use project_host_core::provisioning::SourceSpec;
 use project_host_core::{resolve_paths, AppConfig, AppState, Runtime};
 use project_host_database::projects;
 use project_host_project_manager::names::{sanitise_display_name, Slug};
 use project_host_project_manager::ports::PortPool;
+use project_host_security::Secret;
 use project_host_updater::{evaluate, ReleaseManifest, UpdateCheck, UpdatePreferences};
 
 /// How long the release check may take before giving up.
@@ -134,6 +136,87 @@ pub struct NewProjectRequest {
     pub description: String,
     /// One of `NODEJS`, `PYTHON`, `STATIC`.
     pub runtime: String,
+    /// Where the files come from. Absent means an empty project, which keeps
+    /// older callers working.
+    #[serde(default)]
+    pub source: Option<SourceRequest>,
+}
+
+/// The source half of the creation form.
+///
+/// `Deserialize` only — this type is never sent back, which is what keeps the
+/// token out of every response. `Debug` is hand-written for the same reason it is
+/// on `SourceCredential`: the realistic leak is a handler logging the request it
+/// failed to process.
+#[derive(serde::Deserialize)]
+pub struct SourceRequest {
+    /// `EMPTY`, `GIT_CLONE` or `REMOTE_ARCHIVE`.
+    pub kind: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Branch or tag for `GIT_CLONE`. A commit id is refused with an explanation:
+    /// fetching an arbitrary object by id needs the server's permission, and most
+    /// servers do not give it.
+    #[serde(default)]
+    pub git_ref: Option<String>,
+    #[serde(default)]
+    pub subdirectory: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+impl std::fmt::Debug for SourceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceRequest")
+            .field("kind", &self.kind)
+            .field("url", &self.url)
+            .field("git_ref", &self.git_ref)
+            .field("subdirectory", &self.subdirectory)
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// Turn the form's strings into a source specification.
+///
+/// The only validation here is "did the form fill in the fields this kind
+/// needs". Whether the URL is one the application may fetch is
+/// `file-manager`'s answer, not this function's — it is asked later, in the one
+/// place that opens connections.
+fn source_spec_from(request: Option<SourceRequest>) -> CommandResult<SourceSpec> {
+    let Some(request) = request else {
+        return Ok(SourceSpec::Empty);
+    };
+
+    let trimmed = |value: Option<String>| -> Option<String> {
+        value
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+    };
+
+    let url = trimmed(request.url);
+    let token = trimmed(request.token).map(Secret::new);
+
+    match request.kind.as_str() {
+        "EMPTY" => Ok(SourceSpec::Empty),
+        "GIT_CLONE" => Ok(SourceSpec::Git {
+            url: url.ok_or_else(|| CommandError {
+                message: "A repository address is needed to clone from.".to_string(),
+            })?,
+            git_ref: trimmed(request.git_ref),
+            subdirectory: trimmed(request.subdirectory),
+            token,
+        }),
+        "REMOTE_ARCHIVE" => Ok(SourceSpec::Archive {
+            url: url.ok_or_else(|| CommandError {
+                message: "An archive address is needed to download from.".to_string(),
+            })?,
+            token,
+        }),
+        other => Err(CommandError {
+            message: format!("`{other}` is not a source this build offers."),
+        }),
+    }
 }
 
 /// The runtime defaults for a template.
@@ -252,14 +335,36 @@ async fn create_project(
     let pool = PortPool::new(app.config().port_pool_start, app.config().port_pool_end);
     let host_port = pool.allocate(&taken).map_err(CommandError::from)?;
 
-    let directory = app
+    let projects_root = app
         .config()
         .projects_dir
         .clone()
-        .unwrap_or_else(|| std::path::PathBuf::from("projects"))
-        .join(slug.as_str());
+        .unwrap_or_else(|| std::path::PathBuf::from("projects"));
+    let directory = projects_root.join(slug.as_str());
 
-    let record = projects::create_project(
+    // Staging lives *inside* the projects directory rather than in the
+    // application's temp directory. Promotion is a rename, a rename is atomic
+    // only within one filesystem, and a user who pointed `projects_dir` at
+    // another volume would otherwise get a cross-device failure at the last step
+    // of every fetch.
+    let staging_root = projects_root.join(".staging");
+    std::fs::create_dir_all(&staging_root).map_err(CommandError::from)?;
+
+    let spec = source_spec_from(request.source)?;
+
+    // The files come first. A fetch that fails leaves nothing on disk and
+    // nothing in the database, because the row below has not been written yet;
+    // the other order would leave a project the user can see and cannot use
+    // every time a remote is unreachable.
+    let outcome = project_host_core::provisioning::materialise_source(
+        &spec,
+        &directory,
+        &staging_root,
+        id.as_str(),
+    )
+    .await?;
+
+    let record = match projects::create_project(
         app.database(),
         &projects::NewProject {
             slug: slug.to_string(),
@@ -268,8 +373,11 @@ async fn create_project(
             project_type: "GENERIC".to_string(),
             icon: None,
             color: None,
-            source_type: "EMPTY".to_string(),
+            source_type: spec.source_type().to_string(),
             directory: directory.display().to_string(),
+            source_url: outcome.source_url.clone(),
+            source_ref: outcome.source_ref.clone(),
+            source_commit: outcome.source_commit.clone(),
             container_name: format!("projecthost-{slug}"),
             network_name: format!("projecthost-net-{slug}"),
             volume_name: format!("projecthost-data-{slug}"),
@@ -290,7 +398,34 @@ async fn create_project(
             }],
         },
     )
+    .await
+    {
+        Ok(record) => record,
+        Err(error) => {
+            // The files are already there. Leaving them would make the slug's
+            // directory occupied for a project that does not exist, and the next
+            // attempt with the same id would refuse to write into it.
+            project_host_core::provisioning::discard_directory(&directory);
+            return Err(CommandError::from(error));
+        }
+    };
+
+    // No key is held at runtime yet, so this stores nothing and says so. See
+    // `provisioning`'s module documentation.
+    let stored = project_host_core::provisioning::store_source_token(
+        app.database(),
+        None,
+        &record.id,
+        &spec,
+    )
     .await?;
+
+    if stored.token_used_but_not_stored {
+        tracing::info!(
+            project = %record.id,
+            "the access token was used for the fetch and not stored: no key store exists yet"
+        );
+    }
 
     Ok(ProjectSummary {
         id: record.id,

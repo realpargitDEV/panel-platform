@@ -25,6 +25,7 @@ pub mod projects;
 pub mod queries;
 pub mod recovery;
 pub mod schema_parity;
+pub mod source_credentials;
 pub mod time;
 
 pub use audit::{AuditEvent, AuditResult};
@@ -35,6 +36,7 @@ pub use locks::{LockHeld, Operation};
 pub use pool::{Database, SUPPORTED_SCHEMA_VERSION};
 pub use projects::{NewProject, ProjectRecord, ProjectUpdate};
 pub use recovery::{recover, RecoveryReport};
+pub use source_credentials::SourceCredentialRecord;
 
 /// The migration text, for the parity test and for diagnostics.
 pub const INITIAL_MIGRATION: &str = include_str!("../migrations/0001_initial.sql");
