@@ -23,6 +23,7 @@
 
 use std::path::Path;
 
+use crate::images::{dockerfile_for, starter_files, ImageSpec};
 use project_host_database::{projects, Database};
 use project_host_docker_manager::container_spec::{
     ContainerSpec, NetworkMode, PortBinding, ResourceLimits, RestartPolicy, SpecInputs,
@@ -55,39 +56,26 @@ async fn runner() -> Result<ContainerRunner, LifecycleError> {
 ///
 /// Never overwrites: once a project exists, its files belong to the user. A
 /// scaffold that clobbered an edited `Dockerfile` on every start would be a
-/// data-loss bug wearing a convenience hat.
-pub fn scaffold(directory: &Path, runtime: &str) -> Result<(), LifecycleError> {
+/// data-loss bug wearing a convenience hat. That is also what makes this safe to
+/// call for a fetched repository — its own files are already there, so only a
+/// missing `Dockerfile` gets written.
+///
+/// The image is generated from the project's *planned* commands rather than from
+/// a fixed template, so a repository whose start command is `npm run serve` gets
+/// an image that runs `npm run serve`.
+pub fn scaffold(directory: &Path, spec: &ImageSpec<'_>) -> Result<(), LifecycleError> {
     std::fs::create_dir_all(directory)
         .map_err(|error| LifecycleError::Scaffold(error.to_string()))?;
 
-    let (dockerfile, entry_name, entry_body) = match runtime {
-        "PYTHON" => (
-            PYTHON_DOCKERFILE,
-            "main.py",
-            "print('Hello from Panel Platform', flush=True)\n",
-        ),
-        "STATIC" => (STATIC_DOCKERFILE, "public/index.html", STATIC_INDEX),
-        _ => (
-            NODE_DOCKERFILE,
-            "index.js",
-            "console.log('Hello from Panel Platform');\n",
-        ),
-    };
+    write_if_absent(&directory.join("Dockerfile"), &dockerfile_for(spec))?;
 
-    write_if_absent(&directory.join("Dockerfile"), dockerfile)?;
-
-    let entry = directory.join(entry_name);
-    if let Some(parent) = entry.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| LifecycleError::Scaffold(error.to_string()))?;
-    }
-    write_if_absent(&entry, entry_body)?;
-
-    if runtime == "NODEJS" {
-        write_if_absent(&directory.join("package.json"), NODE_PACKAGE_JSON)?;
-    }
-    if runtime == "PYTHON" {
-        write_if_absent(&directory.join("requirements.txt"), "")?;
+    for (relative, contents) in starter_files(spec.runtime) {
+        let path = directory.join(relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| LifecycleError::Scaffold(error.to_string()))?;
+        }
+        write_if_absent(&path, contents)?;
     }
 
     Ok(())
@@ -99,47 +87,6 @@ fn write_if_absent(path: &Path, contents: &str) -> Result<(), LifecycleError> {
     }
     std::fs::write(path, contents).map_err(|error| LifecycleError::Scaffold(error.to_string()))
 }
-
-/// Every image runs as an unprivileged user, and the container is started with
-/// a read-only root filesystem, so nothing here may expect to write outside
-/// `/app` or `/tmp`.
-const NODE_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
-FROM node:22-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev || true
-COPY . .
-# Matches the uid the container is started with.
-USER 10001:10001
-CMD ["node", "index.js"]
-"#;
-
-const PYTHON_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
-FROM python:3.12-alpine
-WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt || true
-COPY . .
-USER 10001:10001
-CMD ["python", "main.py"]
-"#;
-
-const STATIC_DOCKERFILE: &str = r#"# Managed by Panel Platform. Safe to edit.
-FROM nginx:alpine
-COPY public/ /usr/share/nginx/html/
-EXPOSE 80
-"#;
-
-const NODE_PACKAGE_JSON: &str = r#"{
-  "name": "project",
-  "private": true,
-  "version": "1.0.0",
-  "main": "index.js"
-}
-"#;
-
-const STATIC_INDEX: &str =
-    "<!doctype html>\n<html>\n  <body>\n    <h1>Hello from Panel Platform</h1>\n  </body>\n</html>\n";
 
 /// Build the container specification for a stored project.
 async fn spec_for(
@@ -220,14 +167,12 @@ pub async fn start(
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
 
-    let runtime = projects::find_runtime(db, project_id)
-        .await?
-        .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
-
     projects::set_desired_state(db, project_id, "RUNNING").await?;
     projects::set_status(db, project_id, "STARTING", None).await?;
 
-    let outcome = start_inner(db, &project, &runtime.runtime, app_version).await;
+    // The runtime row is read inside, where the scaffold needs all of it rather
+    // than just its name.
+    let outcome = start_inner(db, &project, app_version).await;
 
     match outcome {
         Ok(state) => {
@@ -253,13 +198,24 @@ pub async fn start(
 async fn start_inner(
     db: &Database,
     project: &projects::ProjectRecord,
-    runtime: &str,
     app_version: &str,
 ) -> Result<project_host_docker_manager::lifecycle::ContainerState, LifecycleError> {
     let runner = runner().await?;
     let directory = std::path::PathBuf::from(&project.directory);
 
-    scaffold(&directory, runtime)?;
+    let runtime_record = projects::find_runtime(db, &project.id)
+        .await?
+        .ok_or_else(|| LifecycleError::Scaffold("the project has no runtime row".to_string()))?;
+    scaffold(
+        &directory,
+        &ImageSpec {
+            runtime: &runtime_record.runtime,
+            install_command: runtime_record.install_command.as_deref(),
+            build_command: runtime_record.build_command.as_deref(),
+            start_command: &runtime_record.start_command,
+            publish_dir: runtime_record.publish_dir.as_deref(),
+        },
+    )?;
 
     let spec = spec_for(db, project, app_version).await?;
 
@@ -373,17 +329,36 @@ pub async fn restart(
 mod tests {
     use super::*;
 
+    /// A spec for a runtime, with the commands a plan would have supplied.
+    fn spec(runtime: &str) -> ImageSpec<'_> {
+        ImageSpec {
+            runtime,
+            install_command: None,
+            build_command: None,
+            start_command: "run-the-thing",
+            publish_dir: None,
+        }
+    }
+
     #[test]
     fn the_scaffold_writes_something_buildable_for_every_runtime() {
-        for runtime in ["NODEJS", "PYTHON", "STATIC"] {
+        for runtime in project_host_project_manager::detection::Runtime::ALL {
             let directory = tempfile::tempdir().expect("temp dir");
-            scaffold(directory.path(), runtime).expect("scaffold");
+            scaffold(directory.path(), &spec(runtime.as_str())).expect("scaffold");
 
             let dockerfile = directory.path().join("Dockerfile");
-            assert!(dockerfile.exists(), "{runtime} produced no Dockerfile");
+            assert!(
+                dockerfile.exists(),
+                "{} produced no Dockerfile",
+                runtime.as_str()
+            );
 
             let contents = std::fs::read_to_string(&dockerfile).expect("read");
-            assert!(contents.contains("FROM "), "{runtime}: no base image");
+            assert!(
+                contents.contains("FROM "),
+                "{}: no base image",
+                runtime.as_str()
+            );
         }
     }
 
@@ -391,13 +366,13 @@ mod tests {
     fn the_scaffold_never_overwrites_what_the_user_edited() {
         // The failure this prevents is silent data loss on every start.
         let directory = tempfile::tempdir().expect("temp dir");
-        scaffold(directory.path(), "NODEJS").expect("first");
+        scaffold(directory.path(), &spec("NODEJS")).expect("first");
 
         let entry = directory.path().join("index.js");
         std::fs::write(&entry, "// my actual bot\n").expect("edit");
         std::fs::write(directory.path().join("Dockerfile"), "FROM scratch\n").expect("edit");
 
-        scaffold(directory.path(), "NODEJS").expect("second");
+        scaffold(directory.path(), &spec("NODEJS")).expect("second");
 
         assert_eq!(
             std::fs::read_to_string(&entry).expect("read"),
@@ -413,10 +388,11 @@ mod tests {
     fn no_scaffolded_image_runs_as_root() {
         // The container is also started with an explicit non-root user, but an
         // image whose own USER is root would still be wrong.
-        for dockerfile in [NODE_DOCKERFILE, PYTHON_DOCKERFILE] {
+        for runtime in ["NODEJS", "PYTHON", "GO", "RUST", "JAVA", "PHP", "RUBY"] {
+            let dockerfile = dockerfile_for(&spec(runtime));
             assert!(
-                dockerfile.contains("USER 10001:10001"),
-                "an image is missing its unprivileged user"
+                dockerfile.contains("USER 10001:10001") || dockerfile.contains("USER nonroot"),
+                "{runtime} is missing its unprivileged user"
             );
         }
     }
@@ -433,7 +409,7 @@ mod tests {
     #[test]
     fn a_static_site_scaffold_puts_its_page_where_the_image_expects_it() {
         let directory = tempfile::tempdir().expect("temp dir");
-        scaffold(directory.path(), "STATIC").expect("scaffold");
+        scaffold(directory.path(), &spec("STATIC")).expect("scaffold");
         assert!(directory.path().join("public/index.html").exists());
     }
 }

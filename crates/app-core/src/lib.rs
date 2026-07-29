@@ -22,6 +22,7 @@
 
 pub mod config;
 pub mod health;
+pub mod images;
 pub mod integration;
 pub mod lifecycle;
 pub mod logging;
@@ -33,6 +34,7 @@ pub mod state;
 
 pub use config::{AppConfig, ConfigError, LogLevel, Mode};
 pub use health::{Health, HealthReport};
+pub use images::{dockerfile_for, starter_files, ImageSpec};
 pub use integration::IntegrationError;
 pub use logging::{LoggingGuard, RequestContext};
 pub use provisioning::{materialise_source, ProvisionError, SourceOutcome, SourceSpec};

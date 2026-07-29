@@ -268,7 +268,15 @@ pub fn signals(root: &Path) -> Vec<Runtime> {
     // A static site last, and only on its own: `index.html` beside a real
     // application is that application's template or its built output, not a
     // second project.
-    if found.is_empty() && exists("index.html") {
+    //
+    // The conventional publish directories count too. A site whose pages live in
+    // `public/` is the common shape — and it is what this application's own
+    // scaffold writes, so failing to recognise it would mean an empty static
+    // project could not be identified afterwards.
+    if found.is_empty()
+        && (exists("index.html")
+            || any(&["public/index.html", "web/index.html", "html/index.html"]))
+    {
         found.push(Runtime::Static);
     }
 
@@ -1014,10 +1022,27 @@ fn detect_static(root: &Path) -> Detection {
         }
     }
 
-    if !root.join("index.html").is_file() && detection.suggested_build_command.is_none() {
+    // The publish directory follows the page: a site in `public/` is served from
+    // `public/`, and reporting `.` would publish the whole project including
+    // anything beside the pages.
+    for candidate in ["public", "web", "html"] {
+        if root.join(candidate).join("index.html").is_file()
+            && detection.suggested_build_command.is_none()
+        {
+            detection.suggested_publish_dir = Some(candidate.to_string());
+            break;
+        }
+    }
+
+    let has_page = root.join("index.html").is_file()
+        || ["public", "web", "html"]
+            .iter()
+            .any(|candidate| root.join(candidate).join("index.html").is_file());
+
+    if !has_page && detection.suggested_build_command.is_none() {
         detection.fail(
             "NO_INDEX_HTML",
-            "No index.html was found and no build tool was detected.",
+            "No index.html was found — at the top level or in public/, web/ or              html/ — and no build tool was detected.",
         );
     }
 
