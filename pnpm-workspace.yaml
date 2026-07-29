@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# esbuild is a Vitest dependency whose postinstall places its native binary.
+# Vitest cannot run without it. No other package is permitted to run scripts.
+allowBuilds:
+  esbuild: true

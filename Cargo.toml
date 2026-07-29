@@ -1,0 +1,44 @@
+﻿[workspace]
+resolver = "2"
+members = [
+    "crates/api-types",
+    "crates/platform",
+    "crates/security",
+    "crates/database",
+    "crates/docker-manager",
+    "crates/file-manager",
+    "crates/project-manager",
+    "crates/discord",
+    "crates/updater",
+    "crates/app-core",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/realpargitDEV/project-host"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# The agent runs as a privileged service. A panic in a request handler takes
+# down projects, so the paths that can panic are denied rather than discouraged.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "warn"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+

@@ -1,0 +1,2034 @@
+{
+  "$defs": {
+    "ApiError": {
+      "description": "The error half of the response envelope.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "details": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Structured, non-sensitive context, e.g. `{\"held_by\":\"RESTORE\"}`.",
+          "type": "object"
+        },
+        "fields": {
+          "description": "Present only for `VALIDATION_FAILED`.",
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "Written for a person. Never a stack trace, never a raw driver message.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Correlates this failure with the agent log.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "AuditEntry": {
+      "description": "An audit entry. `target_label` is a copy rather than a join, so the record\nstill reads sensibly after the thing it describes has been deleted.",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "client_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/AuditId"
+        },
+        "occurred_at": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/AuditResult"
+        },
+        "source_addr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UserId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "occurred_at",
+        "action",
+        "result"
+      ],
+      "type": "object"
+    },
+    "AuditId": {
+      "description": "Identifier prefixed with `aud_`.",
+      "type": "string"
+    },
+    "AuditResult": {
+      "enum": [
+        "SUCCESS",
+        "FAILURE",
+        "DENIED"
+      ],
+      "type": "string"
+    },
+    "Availability": {
+      "description": "The five connectivity states from `docs/architecture.md` §8, as one\nreusable tri-state. `Unknown` is a real answer — probing may be disabled.",
+      "enum": [
+        "UNKNOWN",
+        "AVAILABLE",
+        "UNAVAILABLE"
+      ],
+      "type": "string"
+    },
+    "BackupId": {
+      "description": "Identifier prefixed with `bkp_`.",
+      "type": "string"
+    },
+    "BackupStatus": {
+      "enum": [
+        "PENDING",
+        "CREATING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
+        "CORRUPT"
+      ],
+      "type": "string"
+    },
+    "BackupSummary": {
+      "properties": {
+        "checksum_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/BackupId"
+        },
+        "includes_config": {
+          "type": "boolean"
+        },
+        "includes_files": {
+          "type": "boolean"
+        },
+        "includes_volumes": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "size_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/BackupStatus"
+        },
+        "verified_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "status",
+        "includes_files",
+        "includes_volumes",
+        "includes_config",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "Connectivity": {
+      "description": "The five independent connectivity states from `docs/architecture.md` §8.\nDeliberately not collapsed into one flag: an unplugged cable and a stopped\nDocker daemon need different remedies.",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/Availability"
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "docker": {
+          "$ref": "#/$defs/Availability"
+        },
+        "internet": {
+          "$ref": "#/$defs/Availability"
+        },
+        "lan": {
+          "$ref": "#/$defs/Availability"
+        }
+      },
+      "required": [
+        "agent",
+        "docker",
+        "lan",
+        "internet",
+        "checked_at"
+      ],
+      "type": "object"
+    },
+    "ContainerEventSummary": {
+      "properties": {
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event_type": {
+          "$ref": "#/$defs/ContainerEventType"
+        },
+        "exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "occurred_at": {
+          "type": "string"
+        },
+        "project_id": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "project_id",
+        "event_type",
+        "occurred_at"
+      ],
+      "type": "object"
+    },
+    "ContainerEventType": {
+      "enum": [
+        "CREATED",
+        "STARTED",
+        "STOPPED",
+        "RESTARTED",
+        "DIED",
+        "OOM_KILLED",
+        "HEALTH_PASS",
+        "HEALTH_FAIL",
+        "DESTROYED"
+      ],
+      "type": "string"
+    },
+    "CreateProjectRequest": {
+      "description": "What the creation wizard submits. The server generates the identifier, slug,\ndirectory and container name; none of them derive from `display_name`.",
+      "properties": {
+        "autostart": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "environment": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnvVarInput"
+          },
+          "type": "array"
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkConfigRequest"
+        },
+        "project_type": {
+          "$ref": "#/$defs/ProjectType"
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceLimits",
+          "default": {
+            "cpu_limit_cores": 1.0,
+            "memory_limit_mb": 512,
+            "process_limit": 128,
+            "storage_limit_mb": 2048
+          }
+        },
+        "restart_policy": {
+          "$ref": "#/$defs/RestartPolicy"
+        },
+        "runtime_config": {
+          "$ref": "#/$defs/RuntimeConfig"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectSource"
+        }
+      },
+      "required": [
+        "display_name",
+        "project_type",
+        "source",
+        "runtime_config",
+        "network",
+        "autostart",
+        "restart_policy"
+      ],
+      "type": "object"
+    },
+    "DeleteProjectRequest": {
+      "description": "Deleting requires echoing the display name. The confirmation is part of the\ncontract, not a dialog the API would happily let a caller skip.",
+      "properties": {
+        "confirm_name": {
+          "type": "string"
+        },
+        "remove_volumes": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "confirm_name"
+      ],
+      "type": "object"
+    },
+    "DeploymentId": {
+      "description": "Identifier prefixed with `dep_`.",
+      "type": "string"
+    },
+    "DeploymentStatus": {
+      "enum": [
+        "PENDING",
+        "BUILDING",
+        "STARTING",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED",
+        "INTERRUPTED"
+      ],
+      "type": "string"
+    },
+    "DeploymentSummary": {
+      "properties": {
+        "deployment_type": {
+          "$ref": "#/$defs/DeploymentType"
+        },
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/DeploymentId"
+        },
+        "image_tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project_id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DeploymentStatus"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "deployment_type",
+        "status",
+        "started_at"
+      ],
+      "type": "object"
+    },
+    "DeploymentType": {
+      "enum": [
+        "INITIAL",
+        "REBUILD",
+        "RESTORE",
+        "CONFIG_CHANGE",
+        "IMPORT"
+      ],
+      "type": "string"
+    },
+    "DesiredState": {
+      "description": "What the user asked for. Survives restarts; the reconciler converges\nobserved state towards it.",
+      "enum": [
+        "RUNNING",
+        "STOPPED",
+        "ARCHIVED"
+      ],
+      "type": "string"
+    },
+    "DockerStatus": {
+      "properties": {
+        "api_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "containers_running": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "endpoint_kind": {
+          "description": "How the agent reached the daemon, e.g. `npipe`, `unix-socket`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "install_hint": {
+          "description": "Present only when unavailable: what the user should do about it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available"
+      ],
+      "type": "object"
+    },
+    "EnvVarId": {
+      "description": "Identifier prefixed with `env_`.",
+      "type": "string"
+    },
+    "EnvVarInput": {
+      "properties": {
+        "is_secret": {
+          "default": false,
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "EnvVarSummary": {
+      "description": "A variable as the API returns it.\n\nFor a secret, `value` is always `None` and `is_set` reports whether one has\nbeen stored. There is no representation in which a secret's value travels to\na client.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EnvVarId"
+        },
+        "is_secret": {
+          "type": "boolean"
+        },
+        "is_set": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "restart_required": {
+          "type": "boolean"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "is_secret",
+        "is_set",
+        "restart_required",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "description": "Machine-readable outcome. Stable across releases.",
+      "oneOf": [
+        {
+          "const": "VALIDATION_FAILED",
+          "description": "Request body failed schema validation.",
+          "type": "string"
+        },
+        {
+          "const": "UNAUTHENTICATED",
+          "description": "Missing or invalid credentials.",
+          "type": "string"
+        },
+        {
+          "const": "SESSION_EXPIRED",
+          "description": "Valid token, past its expiry.",
+          "type": "string"
+        },
+        {
+          "const": "FORBIDDEN",
+          "description": "Authenticated but not permitted.",
+          "type": "string"
+        },
+        {
+          "const": "NOT_FOUND",
+          "description": "No such resource.",
+          "type": "string"
+        },
+        {
+          "const": "CONFLICT",
+          "description": "Violates a uniqueness or state constraint.",
+          "type": "string"
+        },
+        {
+          "const": "PROJECT_LOCKED",
+          "description": "Another operation holds this project's lock.",
+          "type": "string"
+        },
+        {
+          "const": "OPERATION_IN_PROGRESS",
+          "description": "An identical idempotent request is still running.",
+          "type": "string"
+        },
+        {
+          "const": "PRECONDITION_FAILED",
+          "description": "State precondition not met, e.g. restore on a running project.",
+          "type": "string"
+        },
+        {
+          "const": "PAYLOAD_TOO_LARGE",
+          "description": "Upload exceeds the configured limit.",
+          "type": "string"
+        },
+        {
+          "const": "RATE_LIMITED",
+          "description": "Too many requests.",
+          "type": "string"
+        },
+        {
+          "const": "DOCKER_UNAVAILABLE",
+          "description": "The Docker daemon is unreachable.",
+          "type": "string"
+        },
+        {
+          "const": "DOCKER_OPERATION_FAILED",
+          "description": "Docker is reachable but the operation failed.",
+          "type": "string"
+        },
+        {
+          "const": "PORT_UNAVAILABLE",
+          "description": "Requested host port is taken or out of range.",
+          "type": "string"
+        },
+        {
+          "const": "RESOURCE_LIMIT_EXCEEDED",
+          "description": "A configured ceiling would be exceeded.",
+          "type": "string"
+        },
+        {
+          "const": "ARCHIVE_REJECTED",
+          "description": "The archive failed a security check.",
+          "type": "string"
+        },
+        {
+          "const": "PATH_REJECTED",
+          "description": "The path escaped the project root.",
+          "type": "string"
+        },
+        {
+          "const": "INTEGRITY_CHECK_FAILED",
+          "description": "Checksum or archive integrity mismatch.",
+          "type": "string"
+        },
+        {
+          "const": "SETUP_REQUIRED",
+          "description": "No administrator exists yet.",
+          "type": "string"
+        },
+        {
+          "const": "AGENT_STARTING",
+          "description": "Migrations or reconciliation still running.",
+          "type": "string"
+        },
+        {
+          "const": "INTERNAL",
+          "description": "Unexpected failure. Details are in the agent log only.",
+          "type": "string"
+        }
+      ]
+    },
+    "FieldError": {
+      "description": "One field that failed validation.",
+      "properties": {
+        "field": {
+          "description": "Dotted path to the offending field, e.g. `resources.memory_limit_mb`.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Why it was rejected, phrased for a person.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "message"
+      ],
+      "type": "object"
+    },
+    "HealthCheckConfig": {
+      "properties": {
+        "interval_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/HealthCheckType"
+        },
+        "retries": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start_period_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "interval_seconds",
+        "timeout_seconds",
+        "retries",
+        "start_period_seconds"
+      ],
+      "type": "object"
+    },
+    "HealthCheckType": {
+      "enum": [
+        "NONE",
+        "HTTP",
+        "TCP",
+        "COMMAND"
+      ],
+      "type": "string"
+    },
+    "HealthState": {
+      "description": "`None` means the workload has no meaningful check — a Discord bot serves\nnothing. Inventing a check that always passes would be worse than saying so.",
+      "enum": [
+        "UNKNOWN",
+        "STARTING",
+        "HEALTHY",
+        "UNHEALTHY",
+        "NONE"
+      ],
+      "type": "string"
+    },
+    "HostMetrics": {
+      "properties": {
+        "cpu_percent": {
+          "format": "float",
+          "type": "number"
+        },
+        "cpu_temperature_c": {
+          "description": "`None` where the platform does not expose it, which is common on Windows.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "disk_read_bytes_per_sec": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "disk_total_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "disk_used_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "disk_write_bytes_per_sec": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_total_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_used_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "net_rx_bytes_per_sec": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "net_tx_bytes_per_sec": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "process_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sampled_at": {
+          "type": "string"
+        },
+        "swap_total_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "swap_used_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "uptime_seconds": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sampled_at",
+        "cpu_percent",
+        "memory_used_bytes",
+        "memory_total_bytes",
+        "swap_used_bytes",
+        "swap_total_bytes",
+        "disk_used_bytes",
+        "disk_total_bytes",
+        "disk_read_bytes_per_sec",
+        "disk_write_bytes_per_sec",
+        "net_rx_bytes_per_sec",
+        "net_tx_bytes_per_sec",
+        "process_count",
+        "uptime_seconds"
+      ],
+      "type": "object"
+    },
+    "LogLine": {
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "stream": {
+          "description": "`stdout` or `stderr`. Kept distinct so the UI can colour and filter them.",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "timestamp",
+        "stream",
+        "message"
+      ],
+      "type": "object"
+    },
+    "LoginRequest": {
+      "properties": {
+        "client_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "password"
+      ],
+      "type": "object"
+    },
+    "LoginResponse": {
+      "description": "The token is returned exactly once, to the desktop client's Rust core, which\nputs it in the OS keychain. It never reaches the webview.",
+      "properties": {
+        "expires_at": {
+          "type": "string"
+        },
+        "session_id": {
+          "$ref": "#/$defs/SessionId"
+        },
+        "token": {
+          "type": "string"
+        },
+        "user": {
+          "$ref": "#/$defs/UserSummary"
+        }
+      },
+      "required": [
+        "token",
+        "session_id",
+        "user",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "NetworkConfig": {
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/NetworkMode"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/PortMapping"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "ports"
+      ],
+      "type": "object"
+    },
+    "NetworkConfigRequest": {
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/NetworkMode"
+        },
+        "ports": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PortRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "NetworkMode": {
+      "description": "Per-project network reach. `Internal` is the default: a project gets a\ndedicated network with no outbound route until someone asks for more.",
+      "enum": [
+        "NONE",
+        "INTERNAL",
+        "LAN",
+        "INTERNET"
+      ],
+      "type": "string"
+    },
+    "NotificationId": {
+      "description": "Identifier prefixed with `ntf_`.",
+      "type": "string"
+    },
+    "NotificationLevel": {
+      "enum": [
+        "INFO",
+        "SUCCESS",
+        "WARNING",
+        "ERROR"
+      ],
+      "type": "string"
+    },
+    "NotificationSummary": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/NotificationId"
+        },
+        "level": {
+          "$ref": "#/$defs/NotificationLevel"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "read_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "level",
+        "title",
+        "body",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "OperationHandle": {
+      "description": "Returned by any endpoint that starts background work.",
+      "properties": {
+        "accepted_at": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "project_id": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "operation_id",
+        "project_id",
+        "kind",
+        "accepted_at"
+      ],
+      "type": "object"
+    },
+    "OperationId": {
+      "description": "Identifier prefixed with `op_`.",
+      "type": "string"
+    },
+    "PackageManager": {
+      "enum": [
+        "PNPM",
+        "NPM",
+        "YARN",
+        "PIP",
+        "POETRY",
+        "UV",
+        "PIPENV",
+        "NONE"
+      ],
+      "type": "string"
+    },
+    "PageRequest": {
+      "description": "Query parameters for a paginated endpoint.",
+      "properties": {
+        "cursor": {
+          "description": "The `next_cursor` from the previous page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Defaults to 50, clamped to `MAX_LIMIT`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PlatformCapabilities": {
+      "description": "What this platform can actually do. The UI hides what is unavailable rather\nthan showing a control that silently does nothing — see\n`docs/platform-support.md` §5.",
+      "properties": {
+        "cpu_temperature": {
+          "type": "boolean"
+        },
+        "firewall_management": {
+          "type": "boolean"
+        },
+        "linux_capability_dropping": {
+          "type": "boolean"
+        },
+        "per_container_disk_io": {
+          "type": "boolean"
+        },
+        "read_only_root_filesystem": {
+          "type": "boolean"
+        },
+        "secure_storage_backend": {
+          "description": "Which secure-storage backend is really in use. Reported so the UI can\ntell the truth when it has fallen back to an encrypted key file.",
+          "type": "string"
+        },
+        "storage_quota_enforcement": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cpu_temperature",
+        "per_container_disk_io",
+        "storage_quota_enforcement",
+        "linux_capability_dropping",
+        "read_only_root_filesystem",
+        "secure_storage_backend",
+        "firewall_management"
+      ],
+      "type": "object"
+    },
+    "PortId": {
+      "description": "Identifier prefixed with `prt_`.",
+      "type": "string"
+    },
+    "PortMapping": {
+      "properties": {
+        "bind_address": {
+          "description": "`127.0.0.1` unless the user explicitly asked for LAN exposure.",
+          "type": "string"
+        },
+        "container_port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "host_port": {
+          "description": "`None` until the agent allocates one.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/PortId"
+        },
+        "is_primary": {
+          "type": "boolean"
+        },
+        "protocol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "container_port",
+        "protocol",
+        "bind_address",
+        "is_primary"
+      ],
+      "type": "object"
+    },
+    "PortRequest": {
+      "properties": {
+        "container_port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expose_to_lan": {
+          "default": false,
+          "type": "boolean"
+        },
+        "host_port": {
+          "description": "Omit to let the agent allocate from its pool. Values below 1024 are\nrejected, so privileged-port abuse is not expressible.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "is_primary": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "container_port"
+      ],
+      "type": "object"
+    },
+    "ProjectDetail": {
+      "description": "Row shape for the project list. Deliberately smaller than [`ProjectDetail`]\nso listing many projects stays cheap.",
+      "properties": {
+        "archived_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "autostart": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "container_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "container_name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "desired_state": {
+          "$ref": "#/$defs/DesiredState"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/$defs/HealthState"
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "image_tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_failure_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_failure_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkConfig"
+        },
+        "project_type": {
+          "$ref": "#/$defs/ProjectType"
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceLimits"
+        },
+        "restart_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "restart_policy": {
+          "$ref": "#/$defs/RestartPolicy"
+        },
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "runtime_config": {
+          "$ref": "#/$defs/RuntimeConfig"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "source_type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ProjectStatus"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "display_name",
+        "project_type",
+        "runtime",
+        "status",
+        "desired_state",
+        "health",
+        "restart_count",
+        "created_at",
+        "description",
+        "source_type",
+        "runtime_config",
+        "resources",
+        "network",
+        "autostart",
+        "restart_policy",
+        "container_name",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "description": "Identifier prefixed with `prj_`.",
+      "type": "string"
+    },
+    "ProjectMetrics": {
+      "properties": {
+        "cpu_percent": {
+          "format": "float",
+          "type": "number"
+        },
+        "disk_read_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "disk_write_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "memory_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_limit_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "net_rx_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "net_tx_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project_id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "sampled_at",
+        "cpu_percent",
+        "memory_bytes",
+        "memory_limit_bytes",
+        "net_rx_bytes",
+        "net_tx_bytes"
+      ],
+      "type": "object"
+    },
+    "ProjectSource": {
+      "description": "Where the project's files come from. Git is deliberately absent in version\none; `docs/api-design.md` records it as a future source.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "local_path": {
+          "description": "Absolute host path for `LOCAL_FOLDER`. Validated server-side before use.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_project_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Source project for `DUPLICATE`."
+        },
+        "upload_id": {
+          "description": "Upload session id for `ZIP_UPLOAD`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ProjectStatus": {
+      "description": "Observed state. Distinct from [`DesiredState`]: the reconciler exists\nprecisely because these two disagree after a crash or a reboot.",
+      "enum": [
+        "CREATING",
+        "STOPPED",
+        "STARTING",
+        "RUNNING",
+        "STOPPING",
+        "RESTARTING",
+        "BUILDING",
+        "FAILED",
+        "UNHEALTHY",
+        "ARCHIVED",
+        "DELETING"
+      ],
+      "type": "string"
+    },
+    "ProjectSummary": {
+      "description": "Row shape for the project list. Deliberately smaller than [`ProjectDetail`]\nso listing many projects stays cheap.",
+      "properties": {
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "desired_state": {
+          "$ref": "#/$defs/DesiredState"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/$defs/HealthState"
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "project_type": {
+          "$ref": "#/$defs/ProjectType"
+        },
+        "restart_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ProjectStatus"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "display_name",
+        "project_type",
+        "runtime",
+        "status",
+        "desired_state",
+        "health",
+        "restart_count",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "ProjectType": {
+      "description": "What the user says the project is. Affects presentation and defaults,\nnever isolation — every type gets identical container hardening.",
+      "enum": [
+        "DISCORD_BOT",
+        "NODE_APP",
+        "PYTHON_APP",
+        "WEBSITE",
+        "STATIC_SITE",
+        "REST_API",
+        "WORKER",
+        "SERVICE"
+      ],
+      "type": "string"
+    },
+    "ResourceLimits": {
+      "properties": {
+        "cpu_limit_cores": {
+          "format": "float",
+          "type": "number"
+        },
+        "memory_limit_mb": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "process_limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "storage_limit_mb": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory_limit_mb",
+        "cpu_limit_cores",
+        "storage_limit_mb",
+        "process_limit"
+      ],
+      "type": "object"
+    },
+    "ResponseMeta": {
+      "description": "Metadata attached to every successful response.",
+      "properties": {
+        "request_id": {
+          "description": "Echoed from the request, or generated when the client omitted it.",
+          "type": "string"
+        },
+        "server_time": {
+          "description": "Agent's clock, RFC 3339 UTC. Lets the client detect a skewed local clock\nrather than silently rendering nonsense timestamps.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "server_time"
+      ],
+      "type": "object"
+    },
+    "RestartPolicy": {
+      "enum": [
+        "NO",
+        "ON_FAILURE",
+        "UNLESS_STOPPED",
+        "ALWAYS"
+      ],
+      "type": "string"
+    },
+    "Runtime": {
+      "description": "Which approved template family builds the image.",
+      "enum": [
+        "NODEJS",
+        "PYTHON",
+        "STATIC"
+      ],
+      "type": "string"
+    },
+    "RuntimeConfig": {
+      "properties": {
+        "build_command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entry_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "health_check": {
+          "$ref": "#/$defs/HealthCheckConfig"
+        },
+        "install_command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package_manager": {
+          "$ref": "#/$defs/PackageManager"
+        },
+        "publish_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "runtime_version": {
+          "type": "string"
+        },
+        "start_command": {
+          "type": "string"
+        },
+        "template_id": {
+          "type": "string"
+        },
+        "working_dir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime",
+        "runtime_version",
+        "package_manager",
+        "start_command",
+        "working_dir",
+        "template_id",
+        "health_check"
+      ],
+      "type": "object"
+    },
+    "ServerInfo": {
+      "description": "Answer to \"what am I connected to\". Fetched immediately after authenticating.",
+      "properties": {
+        "agent_uptime_seconds": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "agent_version": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "bind_address": {
+          "type": "string"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/PlatformCapabilities"
+        },
+        "host_uptime_seconds": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "instance_id": {
+          "description": "Changes on every agent restart. A client seeing a new value knows its\ncached stream state is stale.",
+          "type": "string"
+        },
+        "lan_enabled": {
+          "type": "boolean"
+        },
+        "os": {
+          "type": "string"
+        },
+        "os_version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_version",
+        "schema_version",
+        "instance_id",
+        "os",
+        "os_version",
+        "arch",
+        "hostname",
+        "agent_uptime_seconds",
+        "host_uptime_seconds",
+        "bind_address",
+        "lan_enabled",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "SessionId": {
+      "description": "Identifier prefixed with `ses_`.",
+      "type": "string"
+    },
+    "SetupAdministratorResponse": {
+      "description": "Recovery codes are in the response because this is the only moment they\nexist in plaintext. No route returns them again.",
+      "properties": {
+        "recovery_codes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "user": {
+          "$ref": "#/$defs/UserSummary"
+        }
+      },
+      "required": [
+        "user",
+        "recovery_codes"
+      ],
+      "type": "object"
+    },
+    "SetupStatus": {
+      "properties": {
+        "administrator_exists": {
+          "type": "boolean"
+        },
+        "agent_version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "administrator_exists",
+        "agent_version",
+        "schema_version"
+      ],
+      "type": "object"
+    },
+    "SourceType": {
+      "enum": [
+        "EMPTY",
+        "ZIP_UPLOAD",
+        "LOCAL_FOLDER",
+        "DUPLICATE",
+        "IMPORT_ARCHIVE"
+      ],
+      "type": "string"
+    },
+    "UpdateProjectRequest": {
+      "properties": {
+        "autostart": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resources": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restart_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RestartPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "UserId": {
+      "description": "Identifier prefixed with `usr_`.",
+      "type": "string"
+    },
+    "UserRole": {
+      "description": "Version one has a single role. The type exists so that adding roles later\nis a migration of one column rather than a redesign of every check.",
+      "enum": [
+        "ADMIN"
+      ],
+      "type": "string"
+    },
+    "UserSummary": {
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/UserId"
+        },
+        "last_login_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/UserRole"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "display_name",
+        "role"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Not a request or a response — an index of every type crossing the wire.",
+  "properties": {
+    "api_error": {
+      "$ref": "#/$defs/ApiError"
+    },
+    "audit_entry": {
+      "$ref": "#/$defs/AuditEntry"
+    },
+    "backup_summary": {
+      "$ref": "#/$defs/BackupSummary"
+    },
+    "connectivity": {
+      "$ref": "#/$defs/Connectivity"
+    },
+    "container_event_summary": {
+      "$ref": "#/$defs/ContainerEventSummary"
+    },
+    "create_project_request": {
+      "$ref": "#/$defs/CreateProjectRequest"
+    },
+    "delete_project_request": {
+      "$ref": "#/$defs/DeleteProjectRequest"
+    },
+    "deployment_summary": {
+      "$ref": "#/$defs/DeploymentSummary"
+    },
+    "docker_status": {
+      "$ref": "#/$defs/DockerStatus"
+    },
+    "env_var_input": {
+      "$ref": "#/$defs/EnvVarInput"
+    },
+    "env_var_summary": {
+      "$ref": "#/$defs/EnvVarSummary"
+    },
+    "field_error": {
+      "$ref": "#/$defs/FieldError"
+    },
+    "health_check_config": {
+      "$ref": "#/$defs/HealthCheckConfig"
+    },
+    "host_metrics": {
+      "$ref": "#/$defs/HostMetrics"
+    },
+    "log_line": {
+      "$ref": "#/$defs/LogLine"
+    },
+    "login_request": {
+      "$ref": "#/$defs/LoginRequest"
+    },
+    "login_response": {
+      "$ref": "#/$defs/LoginResponse"
+    },
+    "network_config": {
+      "$ref": "#/$defs/NetworkConfig"
+    },
+    "network_config_request": {
+      "$ref": "#/$defs/NetworkConfigRequest"
+    },
+    "notification_summary": {
+      "$ref": "#/$defs/NotificationSummary"
+    },
+    "operation_handle": {
+      "$ref": "#/$defs/OperationHandle"
+    },
+    "page_request": {
+      "$ref": "#/$defs/PageRequest"
+    },
+    "platform_capabilities": {
+      "$ref": "#/$defs/PlatformCapabilities"
+    },
+    "port_mapping": {
+      "$ref": "#/$defs/PortMapping"
+    },
+    "port_request": {
+      "$ref": "#/$defs/PortRequest"
+    },
+    "project_detail": {
+      "$ref": "#/$defs/ProjectDetail"
+    },
+    "project_metrics": {
+      "$ref": "#/$defs/ProjectMetrics"
+    },
+    "project_source": {
+      "$ref": "#/$defs/ProjectSource"
+    },
+    "project_summary": {
+      "$ref": "#/$defs/ProjectSummary"
+    },
+    "resource_limits": {
+      "$ref": "#/$defs/ResourceLimits"
+    },
+    "response_meta": {
+      "$ref": "#/$defs/ResponseMeta"
+    },
+    "runtime_config": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "server_info": {
+      "$ref": "#/$defs/ServerInfo"
+    },
+    "setup_administrator_response": {
+      "$ref": "#/$defs/SetupAdministratorResponse"
+    },
+    "setup_status": {
+      "$ref": "#/$defs/SetupStatus"
+    },
+    "update_project_request": {
+      "$ref": "#/$defs/UpdateProjectRequest"
+    },
+    "user_summary": {
+      "$ref": "#/$defs/UserSummary"
+    }
+  },
+  "required": [
+    "response_meta",
+    "page_request",
+    "api_error",
+    "field_error",
+    "server_info",
+    "platform_capabilities",
+    "connectivity",
+    "docker_status",
+    "host_metrics",
+    "project_metrics",
+    "project_summary",
+    "project_detail",
+    "runtime_config",
+    "health_check_config",
+    "resource_limits",
+    "network_config",
+    "port_mapping",
+    "create_project_request",
+    "update_project_request",
+    "delete_project_request",
+    "project_source",
+    "network_config_request",
+    "port_request",
+    "operation_handle",
+    "env_var_summary",
+    "env_var_input",
+    "deployment_summary",
+    "container_event_summary",
+    "audit_entry",
+    "backup_summary",
+    "log_line",
+    "login_request",
+    "login_response",
+    "user_summary",
+    "setup_status",
+    "setup_administrator_response",
+    "notification_summary"
+  ],
+  "title": "ApiContract",
+  "type": "object"
+}

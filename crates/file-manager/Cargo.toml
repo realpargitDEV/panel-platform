@@ -1,0 +1,22 @@
+﻿[package]
+name = "project-host-file-manager"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+dunce = "1.0.5"
+thiserror = "2.0.19"
+tracing = "0.1.44"
+# Only the deflate codec is enabled. The exotic codecs are where archive
+# readers grow their memory-safety bugs, and nothing the product accepts
+# needs them.
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

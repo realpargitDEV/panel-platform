@@ -1,0 +1,42 @@
+[package]
+name = "project-host-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# Tauri builds the application as a library so the same code can be driven by
+# the desktop binary and, later, by tests.
+name = "project_host_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+project-host-core = { version = "0.1.0", path = "../../../crates/app-core" }
+project-host-database = { version = "0.1.0", path = "../../../crates/database" }
+project-host-api-types = { version = "0.1.0", path = "../../../crates/api-types" }
+project-host-docker-manager = { version = "0.1.0", path = "../../../crates/docker-manager" }
+project-host-platform = { version = "0.1.0", path = "../../../crates/platform" }
+project-host-project-manager = { version = "0.1.0", path = "../../../crates/project-manager" }
+project-host-updater = { version = "0.1.0", path = "../../../crates/updater" }
+# Only used to fetch the release manifest. rustls rather than the platform TLS
+# stack so the same code path runs on Windows and Linux.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "charset",
+    "http2",
+] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tauri = { version = "2", features = [] }
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync"] }
+tracing = "0.1.44"
+
+[lints]
+workspace = true

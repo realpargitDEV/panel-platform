@@ -1,0 +1,105 @@
+@import 'tailwindcss';
+
+/* The palette is blue-tinted, not neutral: the canvas is a very dark navy and
+   the cards sit only a shade above it, with borders low enough in contrast to
+   read as edges rather than lines. */
+@theme {
+  --color-accent: #2f6bff;
+  --color-accent-soft: #1d3a8a;
+  --color-canvas: #080b12;
+  --color-surface: #0f1420;
+  --color-raised: #141b2b;
+  --color-edge: #1c2438;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  /* Selecting interface text is rarely wanted and makes drags feel broken.
+     Anything genuinely readable — paths, ids, log output — opts back in with
+     `select-text`. */
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  /* A single very wide, very dim radial behind everything. It stops the large
+     dark areas reading as flat black without being visible as a gradient. */
+  background:
+    radial-gradient(120rem 60rem at 50% -20%, #101a33 0%, transparent 60%), var(--color-canvas);
+}
+
+/* Surfaces get a barely-there vertical gradient rather than a flat fill, which
+   is what keeps a dark interface from looking like construction paper. */
+.bg-surface {
+  background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.02), transparent 40%);
+}
+
+/* Chrome's default scrollbar is a bright slab against a dark interface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #253048 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #253048;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #33415f;
+  background-clip: content-box;
+}
+
+/* Every interactive element eases rather than snapping. 120ms is short enough
+   to feel immediate and long enough to read as deliberate. */
+button,
+a,
+input,
+[role='button'] {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+/* Keyboard focus must stay obvious even though the default outline is removed
+   for the mouse — dropping it entirely would make the app unusable without a
+   pointer. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Primary actions carry a soft accent glow so they read as raised. */
+.bg-accent:not(:disabled) {
+  box-shadow:
+    0 1px 0 0 rgb(255 255 255 / 0.12) inset,
+    0 6px 20px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+button.bg-accent:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+button.bg-accent:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* Cards brighten their edge on hover where they are clickable. */
+.card-hover:hover {
+  border-color: #2b3a5c;
+}

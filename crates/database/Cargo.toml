@@ -1,0 +1,24 @@
+[package]
+name = "project-host-database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+project-host-api-types = { version = "0.1.0", path = "../api-types" }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+thiserror = "2.0.19"
+tracing = "0.1.44"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Only for the schema-parity test: the CHECK lists in the Discord migration are
+# compared against the Rust enums they mirror. The dependency is one-way — the
+# `discord` crate knows nothing about storage.
+project-host-discord = { version = "0.1.0", path = "../discord" }
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
