@@ -546,10 +546,18 @@ async fn project_root(
         .ok_or_else(|| CommandError {
             message: "That project no longer exists.".to_string(),
         })?;
-    Ok((
-        std::path::PathBuf::from(record.directory),
-        is_read_only_status(&record.status),
-    ))
+    let root = std::path::PathBuf::from(record.directory);
+
+    // A project row written before creation materialised any files has a
+    // directory that does not exist yet. The row owns that path — it is `UNIQUE`
+    // in the schema and derived from the project's own id — so creating it is
+    // what an empty project should have looked like all along, and is better
+    // than greeting the user with a path error they can do nothing about.
+    if !root.exists() {
+        std::fs::create_dir_all(&root).map_err(CommandError::from)?;
+    }
+
+    Ok((root, is_read_only_status(&record.status)))
 }
 
 fn file_limits(app: &AppState) -> project_host_file_manager::FileLimits {
