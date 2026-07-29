@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   errorMessage,
+  githubCliStatus,
   restartProject,
   startProject,
   stopProject,
   supportedRuntimes,
   type CreatedProject,
+  type GitHubCliStatus,
   type NewProjectRequest,
   type ProjectSummary,
   type RuntimeOption,
@@ -23,6 +25,7 @@ import PageHeader from '../components/PageHeader';
 const SOURCES: { id: SourceKind; label: string; hint: string }[] = [
   { id: 'EMPTY', label: 'Empty project', hint: 'Start with nothing and add files yourself' },
   { id: 'GIT_CLONE', label: 'Git repository', hint: 'Clone from GitHub or any https remote' },
+  { id: 'GITHUB_CLI', label: 'GitHub CLI', hint: 'owner/repo, using your gh login' },
   { id: 'REMOTE_ARCHIVE', label: 'Archive URL', hint: 'Download a .zip or .tar.gz' },
 ];
 
@@ -231,6 +234,7 @@ function CreateDialog({
   // override the user asked for.
   const [runtime, setRuntime] = useState<string | null>(null);
   const [runtimes, setRuntimes] = useState<RuntimeOption[]>([]);
+  const [gh, setGh] = useState<GitHubCliStatus | null>(null);
   const [sourceKind, setSourceKind] = useState<SourceKind>('EMPTY');
   const [url, setUrl] = useState('');
   const [gitRef, setGitRef] = useState('');
@@ -249,6 +253,14 @@ function CreateDialog({
       .catch(() => setRuntimes([]));
   }, []);
 
+  // Asked once, when the dialog opens: spawning `gh` is not free, and the answer
+  // does not change while the dialog is up.
+  useEffect(() => {
+    void githubCliStatus()
+      .then(setGh)
+      .catch(() => setGh({ installed: false, account: null, hint: null }));
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -265,9 +277,12 @@ function CreateDialog({
           // Sent only for the kind that uses them, so the core is never asked to
           // reconcile a ref with an archive.
           url: remote ? url : undefined,
-          gitRef: sourceKind === 'GIT_CLONE' ? gitRef : undefined,
-          subdirectory: sourceKind === 'GIT_CLONE' ? subdirectory : undefined,
-          token: remote ? token : undefined,
+          gitRef: sourceKind === 'GIT_CLONE' || sourceKind === 'GITHUB_CLI' ? gitRef : undefined,
+          subdirectory:
+            sourceKind === 'GIT_CLONE' || sourceKind === 'GITHUB_CLI' ? subdirectory : undefined,
+          // The GitHub CLI path takes its credential from `gh`; there is no field
+          // to fill in, and sending an empty one would be noise.
+          token: sourceKind === 'GIT_CLONE' || sourceKind === 'REMOTE_ARCHIVE' ? token : undefined,
         },
       });
       onClose();
@@ -341,9 +356,28 @@ function CreateDialog({
 
         {remote && (
           <div className="mt-4 space-y-4 rounded-md border border-edge bg-black/20 p-4">
+            {sourceKind === 'GITHUB_CLI' && gh && (
+              <p
+                className={`rounded-md px-3 py-2 text-xs leading-relaxed ${
+                  gh.installed && gh.account
+                    ? 'bg-emerald-950/50 text-emerald-200'
+                    : 'bg-amber-950/40 text-amber-200'
+                }`}
+              >
+                {gh.installed && gh.account
+                  ? `Using your gh login as ${gh.account}. Private repositories you can see will clone without a token.`
+                  : (gh.hint ??
+                    'The GitHub CLI could not be used. Use `Git repository` with a token instead.')}
+              </p>
+            )}
+
             <label className="block text-sm">
               <span className="text-neutral-300">
-                {sourceKind === 'GIT_CLONE' ? 'Repository address' : 'Archive address'}
+                {sourceKind === 'GIT_CLONE'
+                  ? 'Repository address'
+                  : sourceKind === 'GITHUB_CLI'
+                    ? 'Repository'
+                    : 'Archive address'}
               </span>
               <input
                 value={url}
@@ -352,16 +386,20 @@ function CreateDialog({
                 placeholder={
                   sourceKind === 'GIT_CLONE'
                     ? 'https://github.com/owner/repo.git'
-                    : 'https://example.com/release.zip'
+                    : sourceKind === 'GITHUB_CLI'
+                      ? 'owner/repo'
+                      : 'https://example.com/release.zip'
                 }
                 className="mt-1.5 w-full rounded-md border border-edge bg-black/30 px-3 py-2 font-mono text-xs outline-none select-text focus:border-accent"
               />
               <span className="mt-1.5 block text-xs text-neutral-500">
-                Must be https. Addresses inside this machine or your own network are refused.
+                {sourceKind === 'GITHUB_CLI'
+                  ? 'An owner/repo name, or a github.com URL. A link to a file or a pull request is refused — name the repository itself.'
+                  : 'Must be https. Addresses inside this machine or your own network are refused.'}
               </span>
             </label>
 
-            {sourceKind === 'GIT_CLONE' && (
+            {(sourceKind === 'GIT_CLONE' || sourceKind === 'GITHUB_CLI') && (
               <>
                 <label className="block text-sm">
                   <span className="text-neutral-300">Branch or tag</span>
@@ -387,23 +425,25 @@ function CreateDialog({
               </>
             )}
 
-            <label className="block text-sm">
-              <span className="text-neutral-300">Access token</span>
-              <input
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                type="password"
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="Only for a private remote"
-                className="mt-1.5 w-full rounded-md border border-edge bg-black/30 px-3 py-2 font-mono text-xs outline-none select-text focus:border-accent"
-              />
-              <span className="mt-1.5 block text-xs text-neutral-500">
-                Used for this download only. It is not saved yet — there is nowhere to keep it
-                encrypted until the key store is built, so nothing is written rather than a token
-                being stored in the clear. Put it here, not in the address.
-              </span>
-            </label>
+            {sourceKind !== 'GITHUB_CLI' && (
+              <label className="block text-sm">
+                <span className="text-neutral-300">Access token</span>
+                <input
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  type="password"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="Only for a private remote"
+                  className="mt-1.5 w-full rounded-md border border-edge bg-black/30 px-3 py-2 font-mono text-xs outline-none select-text focus:border-accent"
+                />
+                <span className="mt-1.5 block text-xs text-neutral-500">
+                  Used for this download only. It is not saved yet — there is nowhere to keep it
+                  encrypted until the key store is built, so nothing is written rather than a token
+                  being stored in the clear. Put it here, not in the address.
+                </span>
+              </label>
+            )}
           </div>
         )}
 

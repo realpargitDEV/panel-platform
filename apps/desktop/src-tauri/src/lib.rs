@@ -155,7 +155,7 @@ pub struct NewProjectRequest {
 /// failed to process.
 #[derive(serde::Deserialize)]
 pub struct SourceRequest {
-    /// `EMPTY`, `GIT_CLONE` or `REMOTE_ARCHIVE`.
+    /// `EMPTY`, `GIT_CLONE`, `REMOTE_ARCHIVE` or `GITHUB_CLI`.
     pub kind: String,
     #[serde(default)]
     pub url: Option<String>,
@@ -218,10 +218,72 @@ fn source_spec_from(request: Option<SourceRequest>) -> CommandResult<SourceSpec>
             })?,
             token,
         }),
+        "GITHUB_CLI" => Ok(SourceSpec::GitHubCli {
+            // The same field the other kinds use for a URL; here it holds
+            // `owner/repo`, which `github_cli` parses and validates.
+            repo: url.ok_or_else(|| CommandError {
+                message: "A repository name like `owner/repo` is needed.".to_string(),
+            })?,
+            git_ref: trimmed(request.git_ref),
+            subdirectory: trimmed(request.subdirectory),
+        }),
         other => Err(CommandError {
             message: format!("`{other}` is not a source this build offers."),
         }),
     }
+}
+
+/// Whether the GitHub CLI can be used, and as whom.
+///
+/// Asked before the option is offered, so a user without `gh` is told to install
+/// it or paste a token rather than meeting a failure at Create.
+#[derive(Debug, Serialize)]
+pub struct GitHubCliStatus {
+    pub installed: bool,
+    /// The logged-in account, when there is one. `None` with `installed: true`
+    /// means `gh` is there but nobody is logged in.
+    pub account: Option<String>,
+    /// What to tell the user, when something needs doing.
+    pub hint: Option<String>,
+}
+
+#[tauri::command]
+async fn github_cli_status() -> CommandResult<GitHubCliStatus> {
+    use project_host_file_manager::github_cli::{self, GhCommand};
+
+    // Spawning a process is blocking work, and this is called while the dialog is
+    // being drawn.
+    let status = tokio::task::spawn_blocking(|| {
+        if !github_cli::is_available(&GhCommand) {
+            return GitHubCliStatus {
+                installed: false,
+                account: None,
+                hint: Some(
+                    "The GitHub CLI (`gh`) is not installed, or not on the PATH. Install it,                      or use `Git repository` with a token instead."
+                        .to_string(),
+                ),
+            };
+        }
+
+        match github_cli::logged_in_user(&GhCommand) {
+            Ok(account) => GitHubCliStatus {
+                installed: true,
+                account,
+                hint: None,
+            },
+            Err(_) => GitHubCliStatus {
+                installed: true,
+                account: None,
+                hint: Some("`gh` is installed but nobody is logged in. Run `gh auth login`.".to_string()),
+            },
+        }
+    })
+    .await
+    .map_err(|_| CommandError {
+        message: "Checking the GitHub CLI did not finish.".to_string(),
+    })?;
+
+    Ok(status)
 }
 
 /// The runtimes this build can plan for, for the override list.
@@ -859,6 +921,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             app_settings,
             check_for_update,
             supported_runtimes,
+            github_cli_status,
             list_project_files,
             read_project_file,
             write_project_file,

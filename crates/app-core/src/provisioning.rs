@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use project_host_database::source_credentials::{self, SourceCredentialRecord};
 use project_host_database::{Database, DatabaseError};
 use project_host_file_manager::git_clone::{clone_project, CloneError, CloneLimits, CloneRequest};
+use project_host_file_manager::github_cli::{GhCommand, GitHubCliError};
 use project_host_file_manager::http_archive::{
     import_remote_archive, FetchError, FetchLimits, RemoteArchiveRequest, ReqwestTransport,
 };
@@ -53,6 +54,10 @@ pub enum ProvisionError {
     Clone(#[from] CloneError),
     #[error("{0}")]
     Fetch(#[from] FetchError),
+    /// The GitHub CLI could not be used. Its variants distinguish "not
+    /// installed" from "not logged in", because the advice differs.
+    #[error("{0}")]
+    GitHubCli(GitHubCliError),
     #[error("could not create the project directory: {0}")]
     Io(String),
     #[error("could not encrypt the access token")]
@@ -85,6 +90,16 @@ pub enum SourceSpec {
         url: String,
         token: Option<Secret<String>>,
     },
+    /// `owner/repo`, cloned with the token the user's own `gh` login already
+    /// holds. Stored as `GIT_CLONE`: it is a git clone, and the only difference
+    /// is where the credential came from.
+    GitHubCli {
+        /// `owner/repo` or a github.com URL. Parsed and validated by
+        /// `file-manager`'s `github_cli`, never used as typed.
+        repo: String,
+        git_ref: Option<String>,
+        subdirectory: Option<String>,
+    },
 }
 
 impl SourceSpec {
@@ -92,7 +107,7 @@ impl SourceSpec {
     pub fn source_type(&self) -> &'static str {
         match self {
             SourceSpec::Empty => "EMPTY",
-            SourceSpec::Git { .. } => "GIT_CLONE",
+            SourceSpec::Git { .. } | SourceSpec::GitHubCli { .. } => "GIT_CLONE",
             SourceSpec::Archive { .. } => "REMOTE_ARCHIVE",
         }
     }
@@ -103,12 +118,15 @@ impl SourceSpec {
         match self {
             SourceSpec::Empty => None,
             SourceSpec::Git { url, .. } | SourceSpec::Archive { url, .. } => Some(url),
+            // Resolved during the fetch, since only `gh` knows the canonical
+            // form. The provenance column is filled in from the outcome.
+            SourceSpec::GitHubCli { .. } => None,
         }
     }
 
     fn token(&self) -> Option<&Secret<String>> {
         match self {
-            SourceSpec::Empty => None,
+            SourceSpec::Empty | SourceSpec::GitHubCli { .. } => None,
             SourceSpec::Git { token, .. } | SourceSpec::Archive { token, .. } => token.as_ref(),
         }
     }
@@ -169,6 +187,37 @@ pub async fn materialise_source(
 
             Ok(SourceOutcome {
                 source_url: Some(url.clone()),
+                source_ref: git_ref.clone(),
+                source_commit: Some(report.commit),
+                ..SourceOutcome::default()
+            })
+        }
+        SourceSpec::GitHubCli {
+            repo,
+            git_ref,
+            subdirectory,
+        } => {
+            // The user's `gh` login supplies the credential; the fetch itself is
+            // still this application's own in-process clone, so a repository's
+            // hooks never run. See `file-manager`'s `github_cli` for why
+            // `gh repo clone` is not used.
+            let prepared = project_host_file_manager::github_cli::prepare_clone(repo, &GhCommand)
+                .map_err(ProvisionError::GitHubCli)?;
+
+            let url = prepared.url.as_str().to_string();
+            let report = run_clone(
+                url.clone(),
+                git_ref.clone(),
+                subdirectory.clone(),
+                Some(prepared.token.clone()),
+                directory.to_path_buf(),
+                staging_root.to_path_buf(),
+                fetch_id.to_string(),
+            )
+            .await?;
+
+            Ok(SourceOutcome {
+                source_url: Some(url),
                 source_ref: git_ref.clone(),
                 source_commit: Some(report.commit),
                 ..SourceOutcome::default()

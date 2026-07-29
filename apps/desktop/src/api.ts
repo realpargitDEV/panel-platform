@@ -89,11 +89,14 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 }
 
 /** Where a new project's files come from. */
-export type SourceKind = 'EMPTY' | 'GIT_CLONE' | 'REMOTE_ARCHIVE';
+export type SourceKind = 'EMPTY' | 'GIT_CLONE' | 'REMOTE_ARCHIVE' | 'GITHUB_CLI';
 
 export interface ProjectSource {
   kind: SourceKind;
-  /** An `https://` address. Anything else is refused by the core, not here. */
+  /**
+   * An `https://` address — or, for `GITHUB_CLI`, an `owner/repo` name. Both are
+   * validated by the core, not here.
+   */
   url?: string;
   /** Branch or tag. A commit id is refused with an explanation. */
   gitRef?: string;
@@ -127,6 +130,19 @@ export interface CreatedProject extends ProjectSummary {
   languages: string[];
   /** Detection warnings, already phrased for a person. */
   notes: string[];
+}
+
+export interface GitHubCliStatus {
+  installed: boolean;
+  /** The logged-in account. Null with `installed: true` means nobody is. */
+  account: string | null;
+  /** What the user needs to do, when something needs doing. */
+  hint: string | null;
+}
+
+/** Asked before the GitHub CLI option is offered. */
+export async function githubCliStatus(): Promise<GitHubCliStatus> {
+  return toCamel<GitHubCliStatus>(await invoke('github_cli_status'));
 }
 
 export interface RuntimeOption {
