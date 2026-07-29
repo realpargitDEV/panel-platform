@@ -105,6 +105,120 @@ pub fn extract_into<R: Read + Seek>(
     Ok(report)
 }
 
+/// Extract a gzipped tar archive into an empty directory.
+///
+/// A release tarball is the usual shape of "install this from a URL", and it gets
+/// the same treatment as a ZIP: [`validate_entry`] decides every name, the
+/// running total is the ceiling on every read, and nothing is trusted because it
+/// was declared.
+///
+/// Two differences from the ZIP path, both forced by the format:
+///
+/// - A tar stream cannot be counted before it is walked, so the entry limit is
+///   enforced as entries arrive rather than up front.
+/// - Per-entry compressed sizes do not exist in a tar stream. `downloaded_bytes`
+///   — the size of the archive as received — stands in as the compressed total,
+///   which is a truer basis for the ratio check than a sum of per-entry claims
+///   would be.
+pub fn extract_tar_gzip_into<R: Read>(
+    reader: R,
+    destination_root: &Path,
+    limits: &ArchiveLimits,
+    downloaded_bytes: u64,
+) -> Result<ImportReport, ArchiveError> {
+    let decoder = flate2::read::GzDecoder::new(reader);
+    let mut archive = tar::Archive::new(decoder);
+
+    let mut report = ImportReport {
+        files: 0,
+        directories: 0,
+        total_bytes: 0,
+        skipped: Vec::new(),
+    };
+    let mut seen = 0u32;
+
+    let entries = archive
+        .entries()
+        .map_err(|error| ArchiveError::Io(error.to_string()))?;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|error| ArchiveError::Io(error.to_string()))?;
+
+        seen = seen.saturating_add(1);
+        if seen > limits.max_entries {
+            return Err(ArchiveError::TooManyEntries {
+                limit: limits.max_entries,
+            });
+        }
+
+        let header = entry.header();
+        let kind = header.entry_type();
+        let name = entry
+            .path()
+            .map(|path| path.to_string_lossy().to_string())
+            .map_err(|error| ArchiveError::Io(error.to_string()))?;
+
+        let described = ArchiveEntry {
+            name: name.clone(),
+            is_directory: kind.is_dir(),
+            // A hard link is as good as a symlink for reaching outside the tree,
+            // so both count. `entry_type` is the only reliable signal here: a
+            // tar header's mode carries permission bits without file-type bits,
+            // so the mode-based check in `forbidden_kind` cannot see these.
+            is_symlink: kind.is_symlink() || kind.is_hard_link(),
+            unix_mode: header.mode().ok(),
+            compressed_size: 0,
+            uncompressed_size: entry.size(),
+        };
+
+        // Anything that is not a file or a directory — device nodes, FIFOs,
+        // sockets — is refused rather than skipped, for the same reason as in a
+        // ZIP: its presence is evidence of intent.
+        if !kind.is_dir() && !kind.is_file() && !described.is_symlink {
+            return Err(ArchiveError::ForbiddenEntryKind {
+                name,
+                kind: "special",
+            });
+        }
+
+        let Some(safe) = validate_entry(destination_root, &described, limits, report.total_bytes)?
+        else {
+            report.skipped.push(name);
+            continue;
+        };
+
+        if described.is_directory {
+            std::fs::create_dir_all(safe.absolute())
+                .map_err(|error| ArchiveError::Io(error.to_string()))?;
+            report.directories = report.directories.saturating_add(1);
+            continue;
+        }
+
+        if let Some(parent) = safe.absolute().parent() {
+            std::fs::create_dir_all(parent).map_err(|error| ArchiveError::Io(error.to_string()))?;
+        }
+
+        let remaining = limits
+            .max_total_bytes
+            .saturating_sub(report.total_bytes)
+            .min(limits.max_file_bytes);
+
+        let bytes = read_entry(&mut entry, remaining, &described.name)?;
+
+        std::fs::write(safe.absolute(), &bytes)
+            .map_err(|error| ArchiveError::Io(error.to_string()))?;
+
+        report.files = report.files.saturating_add(1);
+        report.total_bytes = report.total_bytes.saturating_add(bytes.len() as u64);
+
+        // Checked as it inflates: a tarball of zeroes is caught while it is
+        // still small on disk.
+        check_ratio(downloaded_bytes, report.total_bytes, limits)?;
+    }
+
+    Ok(report)
+}
+
 /// Read one entry with a hard ceiling, naming the entry in the error.
 fn read_entry<R: Read>(reader: &mut R, limit: u64, name: &str) -> Result<Vec<u8>, ArchiveError> {
     let mut buffer = Vec::new();
@@ -392,6 +506,165 @@ mod tests {
             },
         );
         assert!(matches!(result, Err(ArchiveError::ArchiveTooLarge { .. })));
+    }
+
+    // ------------------------------------------------------------ tarballs
+
+    /// Build a gzipped tar in memory.
+    fn tarball_with(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        ));
+        for (name, contents) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, name, &mut Cursor::new(*contents))
+                .expect("append");
+        }
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip")
+    }
+
+    fn extract_tarball(
+        bytes: Vec<u8>,
+        limits: &ArchiveLimits,
+    ) -> (tempfile::TempDir, Result<ImportReport, ArchiveError>) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).expect("create");
+        let downloaded = bytes.len() as u64;
+        let result = extract_tar_gzip_into(Cursor::new(bytes), &out, limits, downloaded);
+        (dir, result)
+    }
+
+    #[test]
+    fn an_ordinary_tarball_extracts() {
+        let bytes = tarball_with(&[
+            ("cli-1.2.3/README.md", b"# tool"),
+            ("cli-1.2.3/src/main.py", b"print(1)"),
+        ]);
+        let (dir, result) = extract_tarball(bytes, &ArchiveLimits::default());
+        let report = result.expect("extract");
+
+        assert_eq!(report.files, 2);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("out/cli-1.2.3/src/main.py")).expect("read"),
+            "print(1)"
+        );
+    }
+
+    /// A tarball with a hostile name, built by writing the header's name field
+    /// directly.
+    ///
+    /// `tar::Builder` refuses to *create* an entry containing `..`, which is
+    /// helpful of it and useless here: the archives worth testing against are the
+    /// ones an attacker built with a tool that has no such scruples.
+    fn tarball_with_raw_name(name: &[u8], contents: &[u8]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        ));
+
+        let mut header = tar::Header::new_gnu();
+        if let Some(gnu) = header.as_gnu_mut() {
+            let limit = name.len().min(gnu.name.len());
+            gnu.name[..limit].copy_from_slice(&name[..limit]);
+        }
+        header.set_mode(0o644);
+        header.set_size(contents.len() as u64);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+
+        builder
+            .append(&header, Cursor::new(contents))
+            .expect("append raw");
+        builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip")
+    }
+
+    #[test]
+    fn a_tarball_escaping_its_directory_is_refused() {
+        // Zip Slip by another name, refused by the same rule.
+        let bytes = tarball_with_raw_name(b"../escaped.txt", b"pwned");
+        let dir = tempfile::tempdir().expect("temp dir");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).expect("create");
+
+        let result =
+            extract_tar_gzip_into(Cursor::new(bytes), &out, &ArchiveLimits::default(), 100);
+        assert!(matches!(result, Err(ArchiveError::UnsafeEntry { .. })));
+        assert!(!dir.path().join("escaped.txt").exists());
+    }
+
+    #[test]
+    fn a_symlink_in_a_tarball_is_refused() {
+        // The classic tarball escape: a link to `/` followed by a write through
+        // it. Refused as an entry kind, before any of that can matter.
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        ));
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        header.set_mode(0o777);
+        builder
+            .append_link(&mut header, "link", "/etc")
+            .expect("append link");
+        let bytes = builder
+            .into_inner()
+            .expect("finish tar")
+            .finish()
+            .expect("finish gzip");
+
+        let (_dir, result) = extract_tarball(bytes, &ArchiveLimits::default());
+        assert!(
+            matches!(result, Err(ArchiveError::ForbiddenEntryKind { .. })),
+            "got {result:?}"
+        );
+    }
+
+    #[test]
+    fn a_tarball_bomb_is_stopped_while_it_inflates() {
+        let bomb = vec![0u8; 8 * 1024 * 1024];
+        let bytes = tarball_with(&[("bomb.bin", &bomb)]);
+        let (_dir, result) = extract_tarball(bytes, &ArchiveLimits::default());
+        assert!(
+            matches!(result, Err(ArchiveError::CompressionRatio { .. })),
+            "got {result:?}"
+        );
+    }
+
+    #[test]
+    fn too_many_tar_entries_is_refused() {
+        let payload = b"x";
+        let entries: Vec<(String, &[u8])> = (0..5)
+            .map(|index| (format!("file{index}.txt"), payload.as_slice()))
+            .collect();
+        let borrowed: Vec<(&str, &[u8])> = entries
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), *bytes))
+            .collect();
+        let bytes = tarball_with(&borrowed);
+
+        let (_dir, result) = extract_tarball(
+            bytes,
+            &ArchiveLimits {
+                max_entries: 2,
+                ..ArchiveLimits::default()
+            },
+        );
+        assert!(matches!(result, Err(ArchiveError::TooManyEntries { .. })));
     }
 
     #[test]

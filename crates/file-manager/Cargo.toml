@@ -9,6 +9,27 @@ repository.workspace = true
 [dependencies]
 dunce = "1.0.5"
 thiserror = "2.0.19"
+# Parsing a URL by hand is how host-confusion bugs get written.
+url = "2.5"
+# Cloning in-process. The alternative — shelling out to `git` — would add a host
+# prerequisite the product does not otherwise have, and would run a hostile
+# repository's hooks as the user. gix runs no hooks at all.
+gix = { version = "0.73", default-features = false, features = [
+    "blocking-http-transport-reqwest-rust-tls",
+    "worktree-mutation",
+    "max-performance-safe",
+] }
+# Blocking client: this crate is synchronous and its callers wrap it in
+# spawn_blocking. rustls rather than the platform TLS stack, so the same code
+# path is exercised on Windows and Linux.
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+] }
+# Release tarballs. Only gzip: the exotic compressors are where archive readers
+# grow their memory-safety bugs.
+flate2 = "1.0"
+tar = "0.4"
 tracing = "0.1.44"
 # Only the deflate codec is enabled. The exotic codecs are where archive
 # readers grow their memory-safety bugs, and nothing the product accepts
