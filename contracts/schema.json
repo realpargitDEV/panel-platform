@@ -1052,10 +1052,19 @@
         "PNPM",
         "NPM",
         "YARN",
+        "BUN",
+        "DENO",
         "PIP",
         "POETRY",
         "UV",
         "PIPENV",
+        "GO_MODULES",
+        "CARGO",
+        "MAVEN",
+        "GRADLE",
+        "COMPOSER",
+        "BUNDLER",
+        "NUGET",
         "NONE"
       ],
       "type": "string"
@@ -1652,11 +1661,21 @@
       "type": "string"
     },
     "Runtime": {
-      "description": "Which approved template family builds the image.",
+      "description": "Which approved template family builds the image.\n\n`TYPESCRIPT` is its own runtime rather than a flavour of `NODEJS`\nbecause it is the presence of a compile step, not a different\ninterpreter, that changes how the image is built.\n\n`POLYGLOT` is for a project that genuinely needs more than one\ntoolchain — a Python service with a Node build, say. Its image carries\nseveral toolchains and is correspondingly large, which is why it is a\ndeliberate choice and never a detection default.",
       "enum": [
         "NODEJS",
+        "TYPESCRIPT",
+        "BUN",
+        "DENO",
         "PYTHON",
-        "STATIC"
+        "GO",
+        "RUST",
+        "JAVA",
+        "PHP",
+        "RUBY",
+        "DOTNET",
+        "STATIC",
+        "POLYGLOT"
       ],
       "type": "string"
     },

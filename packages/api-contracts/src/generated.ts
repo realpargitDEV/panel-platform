@@ -141,9 +141,9 @@ export const healthCheckConfigSchema = z.object({
   timeout_seconds: z.number().int(),
 });
 
-export const packageManagerSchema = z.enum(['PNPM', 'NPM', 'YARN', 'PIP', 'POETRY', 'UV', 'PIPENV', 'NONE']);
+export const packageManagerSchema = z.enum(['PNPM', 'NPM', 'YARN', 'BUN', 'DENO', 'PIP', 'POETRY', 'UV', 'PIPENV', 'GO_MODULES', 'CARGO', 'MAVEN', 'GRADLE', 'COMPOSER', 'BUNDLER', 'NUGET', 'NONE']);
 
-export const runtimeSchema = z.enum(['NODEJS', 'PYTHON', 'STATIC']);
+export const runtimeSchema = z.enum(['NODEJS', 'TYPESCRIPT', 'BUN', 'DENO', 'PYTHON', 'GO', 'RUST', 'JAVA', 'PHP', 'RUBY', 'DOTNET', 'STATIC', 'POLYGLOT']);
 
 export const runtimeConfigSchema = z.object({
   build_command: z.string().nullable().optional(),

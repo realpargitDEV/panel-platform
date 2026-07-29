@@ -49,3 +49,6 @@ pub const DISCORD_MIGRATION: &str = include_str!("../migrations/0002_discord.sql
 /// [`INITIAL_MIGRATION`] — which is why the enum-parity test reads the live
 /// schema out of `sqlite_master` rather than trusting either file.
 pub const REMOTE_SOURCES_MIGRATION: &str = include_str!("../migrations/0003_remote_sources.sql");
+
+/// The runtimes migration, which rebuilds `project_runtimes`.
+pub const RUNTIMES_MIGRATION: &str = include_str!("../migrations/0004_runtimes.sql");

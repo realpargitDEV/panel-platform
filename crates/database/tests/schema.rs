@@ -15,6 +15,7 @@ use project_host_api_types::*;
 use project_host_database::schema_parity::{check_values, table_body};
 use project_host_database::{
     time, Database, DatabaseError, DISCORD_MIGRATION, INITIAL_MIGRATION, REMOTE_SOURCES_MIGRATION,
+    RUNTIMES_MIGRATION,
 };
 use sqlx::Row;
 
@@ -1030,4 +1031,191 @@ async fn deleting_a_project_takes_its_source_token_with_it() {
             .await
             .unwrap();
     assert_eq!(left, 0, "a deleted project left its token in the database");
+}
+
+// ------------------------------------------------------------ runtimes (v4)
+
+/// Apply one migration the way `Database::migrate` does.
+async fn apply_with_foreign_keys_off(pool: &sqlx::SqlitePool, sql: &str) {
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(sql)
+        .execute(pool)
+        .await
+        .expect("the migration should apply");
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let orphans = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(
+        orphans.is_empty(),
+        "the rebuild orphaned {} row(s)",
+        orphans.len()
+    );
+}
+
+#[tokio::test]
+async fn rebuilding_project_runtimes_keeps_its_rows() {
+    let (pool, project) = v2_database_with_data().await;
+
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, 'NODEJS', '22', 'NPM', 'node index.js', 'nodejs')",
+    )
+    .bind(&project)
+    .execute(&pool)
+    .await
+    .expect("runtime insert");
+
+    apply_with_foreign_keys_off(&pool, REMOTE_SOURCES_MIGRATION).await;
+    apply_with_foreign_keys_off(&pool, RUNTIMES_MIGRATION).await;
+
+    let start: String =
+        sqlx::query_scalar("SELECT start_command FROM project_runtimes WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(&pool)
+            .await
+            .expect("the runtime row should have survived the rebuild");
+    assert_eq!(start, "node index.js");
+}
+
+#[tokio::test]
+async fn the_rebuilt_runtimes_table_still_cascades() {
+    let (pool, project) = v2_database_with_data().await;
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, 'PYTHON', '3.12', 'PIP', 'python main.py', 'python')",
+    )
+    .bind(&project)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_with_foreign_keys_off(&pool, REMOTE_SOURCES_MIGRATION).await;
+    apply_with_foreign_keys_off(&pool, RUNTIMES_MIGRATION).await;
+
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(&project)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let left: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM project_runtimes WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0, "deleting a project left its runtime row behind");
+}
+
+/// Try to store a runtime, returning what the database said.
+async fn try_runtime(
+    database: &Database,
+    project: &str,
+    runtime: &str,
+    manager: &str,
+) -> std::result::Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, ?, '1', ?, 'run', 'tpl')
+         ON CONFLICT(project_id) DO UPDATE SET
+             runtime = excluded.runtime,
+             package_manager = excluded.package_manager",
+    )
+    .bind(project)
+    .bind(runtime)
+    .bind(manager)
+    .execute(database.pool())
+    .await
+    .map(|_| ())
+}
+
+#[tokio::test]
+async fn every_runtime_this_build_offers_can_be_stored() {
+    // The parity test proves the CHECK list matches the Rust enum. This proves
+    // the values in that list are actually insertable, which is the thing a user
+    // hits.
+    let database = db().await;
+    let project = insert_project(&database).await;
+
+    for runtime in SourceRuntimes::ALL {
+        try_runtime(&database, &project, runtime, "NONE")
+            .await
+            .unwrap_or_else(|error| panic!("{runtime} was refused: {error}"));
+    }
+}
+
+/// The runtimes this build offers, spelled out rather than imported, so that
+/// adding one to the enum without adding it to the migration fails here.
+struct SourceRuntimes;
+
+impl SourceRuntimes {
+    const ALL: [&'static str; 13] = [
+        "NODEJS",
+        "TYPESCRIPT",
+        "BUN",
+        "DENO",
+        "PYTHON",
+        "GO",
+        "RUST",
+        "JAVA",
+        "PHP",
+        "RUBY",
+        "DOTNET",
+        "STATIC",
+        "POLYGLOT",
+    ];
+}
+
+#[tokio::test]
+async fn every_package_manager_this_build_offers_can_be_stored() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+
+    for manager in [
+        "PNPM",
+        "NPM",
+        "YARN",
+        "BUN",
+        "DENO",
+        "PIP",
+        "POETRY",
+        "UV",
+        "PIPENV",
+        "GO_MODULES",
+        "CARGO",
+        "MAVEN",
+        "GRADLE",
+        "COMPOSER",
+        "BUNDLER",
+        "NUGET",
+        "NONE",
+    ] {
+        try_runtime(&database, &project, "POLYGLOT", manager)
+            .await
+            .unwrap_or_else(|error| panic!("{manager} was refused: {error}"));
+    }
+}
+
+#[tokio::test]
+async fn a_runtime_this_build_does_not_offer_is_refused() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+    assert!(
+        try_runtime(&database, &project, "COBOL", "NONE")
+            .await
+            .is_err(),
+        "an unknown runtime reached the database"
+    );
 }

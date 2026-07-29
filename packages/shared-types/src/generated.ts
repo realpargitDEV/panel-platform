@@ -185,10 +185,10 @@ export interface HealthCheckConfig {
   timeout_seconds: number;
 }
 
-export type PackageManager = 'PNPM' | 'NPM' | 'YARN' | 'PIP' | 'POETRY' | 'UV' | 'PIPENV' | 'NONE';
+export type PackageManager = 'PNPM' | 'NPM' | 'YARN' | 'BUN' | 'DENO' | 'PIP' | 'POETRY' | 'UV' | 'PIPENV' | 'GO_MODULES' | 'CARGO' | 'MAVEN' | 'GRADLE' | 'COMPOSER' | 'BUNDLER' | 'NUGET' | 'NONE';
 
-/** Which approved template family builds the image. */
-export type Runtime = 'NODEJS' | 'PYTHON' | 'STATIC';
+/** Which approved template family builds the image.  `TYPESCRIPT` is its own runtime rather than a flavour of `NODEJS` because it is the presence of a compile step, not a different interpreter, that changes how the image is built.  `POLYGLOT` is for a project that genuinely needs more than one toolchain — a Python service with a Node build, say. Its image carries several toolchains and is correspondingly large, which is why it is a deliberate choice and never a detection default. */
+export type Runtime = 'NODEJS' | 'TYPESCRIPT' | 'BUN' | 'DENO' | 'PYTHON' | 'GO' | 'RUST' | 'JAVA' | 'PHP' | 'RUBY' | 'DOTNET' | 'STATIC' | 'POLYGLOT';
 
 export interface RuntimeConfig {
   build_command?: string | null;
