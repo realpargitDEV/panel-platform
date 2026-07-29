@@ -5,6 +5,12 @@ machine you own — Discord bots, Node.js and Python applications, websites,
 static sites, REST APIs and background workers, each in its own Docker
 container.
 
+A project can start empty, or be installed from a **GitHub repository or any
+HTTPS git remote**, or downloaded from an **archive URL** — paste
+`https://github.com/owner/some-cli.git` and it becomes a project. Its files can
+then be **edited in the application**, in a Monaco editor with a file tree and
+tabs.
+
 It is a desktop program, not a web panel. Everything runs in one process on your
 own machine: a Tauri 2 window on top of a Rust core that owns the database,
 the project files and the Docker connection.
@@ -29,10 +35,11 @@ tables) and recorded its instance in `agent_state`. That is observed, not
 inferred.
 
 The window has a dashboard, a project list with a working creation dialog, a
-per-project console screen, and a settings screen showing the configuration in
-force. It is not yet the thirty-item interface in the specification.
+per-project console screen, a file editor, and a settings screen showing the
+configuration in force. It is not yet the thirty-item interface in the
+specification.
 
-Verified on the development machine: **548 Rust tests, 31 TypeScript tests**,
+Verified on the development machine: **635 Rust tests, 52 TypeScript tests**,
 clippy clean under `-D warnings`, `cargo fmt`, ESLint, Prettier, `tsc`, and the
 generated TypeScript matching its Rust source.
 
@@ -45,6 +52,18 @@ Discord bot token. See [Verification status](#verification-status).
 it, allocates a host port by testing real availability, and writes the project
 across three tables in one transaction. **No container has ever been started**,
 because the machine this was built on has no Docker daemon.
+
+**Projects can be fetched from a remote.** A real shallow clone of
+`github.com/octocat/Hello-World` over HTTPS, and a real archive download through
+GitHub's redirect to codeload, both run and both promoted into a project
+directory — verified by hand through network-gated tests, not inferred. The
+files can then be listed, opened, edited and saved through the window's own
+commands.
+
+**Project files can be edited.** The tree, tabs, dirty state and save path are
+built on the file operations Phase 5 tested, and Monaco is bundled rather than
+fetched from a CDN. The interface itself has not been looked at on screen — the
+bundle builds and the logic is tested, and no claim is made beyond that.
 
 ### A note on the architecture
 
@@ -67,6 +86,7 @@ having had no idea how they were being called.
 | 3 — Application core: lifecycle, Docker, platform        | ✅ Complete           |
 | 4 — Project management: templates, lifecycle, limits     | ◑ Partial (see below) |
 | 5 — Files and environment variables                      | ◑ Partial (see below) |
+| 5b — Remote sources and in-app editing                   | ◑ Partial (see below) |
 | 6 — Logs and metrics                                     | Not started           |
 | 7 — Backups                                              | Not started           |
 | 8 — Desktop UI                                           | ◑ Partial (see below) |
@@ -99,6 +119,7 @@ Read in this order:
 | [remote-management.md](docs/remote-management.md)                     | Pairing, device keys, certificate pinning, addressing               |
 | [installers.md](docs/installers.md)                                   | MSI, `.deb`, AppImage, upgrade and uninstall behaviour              |
 | [testing-strategy.md](docs/testing-strategy.md)                       | Layers, host gating, what is skipped and why                        |
+| [remote-sources-and-editing.md](docs/remote-sources-and-editing.md)   | Git and archive sources, URL rules, the editor, what has been run   |
 | [file-tree.md](docs/file-tree.md)                                     | Complete target layout                                              |
 
 ---
@@ -109,6 +130,8 @@ Read in this order:
 | --------- | ----------------------------------------------------------------- |
 | Desktop   | Tauri 2, Rust, React 19, TypeScript, Vite, Tailwind               |
 | Core      | Rust — tokio, bollard, sqlx                                       |
+| Fetching  | gix (in-process git, no host binary), reqwest + rustls, zip, tar  |
+| Editing   | Monaco, bundled with its workers — nothing is fetched from a CDN  |
 | Database  | SQLite (WAL) via SQLx; PostgreSQL is not required and not used    |
 | Transport | Tauri IPC, in-process. No sockets, no ports, no certificates      |
 | Secrets   | XChaCha20-Poly1305 at rest, for environment variables and the bot |
@@ -120,9 +143,12 @@ Node.js is a build-time dependency of the frontend only. **The application does
 not require Node.js on the host**, and nothing the product installs runs on the
 host outside a container.
 
-> The documents listed above still describe the client/server split and its
-> HTTPS API. They are **out of date** as of the single-process change and have
-> not yet been rewritten.
+> With one exception, the documents listed above still describe the client/server
+> split and its HTTPS API. They are **out of date** as of the single-process
+> change and have not yet been rewritten. The exception is
+> [remote-sources-and-editing.md](docs/remote-sources-and-editing.md), which was
+> written against the code as it is; `database-schema.md` has also been brought up
+> to schema version 3.
 
 ---
 
@@ -181,6 +207,31 @@ the rest is not started, and is not pretended to be.
 | Environment variable manager: validation, `.env` import/export   | ✅ 28 tests    |
 | Project, environment and audit storage in SQLite                 | ✅ 33 tests    |
 | Exposing all of the above through the desktop app                | ❌ not started |
+
+| Phase 5b — Remote sources and editing                           | State                    |
+| --------------------------------------------------------------- | ------------------------ |
+| URL and address rules: schemes, userinfo, SSRF, redirect chains | ✅ 20 tests              |
+| Git clone: isolated config, no submodules, no hooks, budgets    | ✅ tested                |
+| Archive download: caps, magic-number sniffing, token scope      | ✅ tested                |
+| tar.gz through the existing ZIP entry rules                     | ✅ tested                |
+| Migration to schema version 3, with the rebuild of `projects`   | ✅ tested against SQLite |
+| Credential encryption, binding and the schema's refusals        | ✅ 8 tests               |
+| A real clone and a real archive download from github.com        | ✅ run by hand           |
+| Seven file commands, and the editor's tab and dirty-state rules | ✅ 21 Vitest tests       |
+| Monaco bundled with no CDN reference in the built bundle        | ✅ checked               |
+| Storing an access token                                         | ❌ needs a key store     |
+| A symbolic link escaping a cloned tree                          | ❌ needs the privilege   |
+| The editor seen on screen                                       | ❌ not looked at         |
+
+The two features are usable and the gaps are specific. `docs/remote-sources-and-editing.md`
+§8 has the full table, including how to run the network-gated tests.
+
+**The key store is the one real hole.** A token entered for a private remote
+authenticates the fetch and is then dropped, because nothing in this application
+holds an encryption key at runtime — the same missing join layer Phase 5 records
+below. The interface says so where the token is typed. The encrypt-and-store path
+is written and tested against real encryption; wiring it up is one argument at one
+call site once a key store exists.
 
 | Phase 9 — Discord                                             | State          |
 | ------------------------------------------------------------- | -------------- |
@@ -264,6 +315,8 @@ What Phase 3 shipped, split by whether it has actually been run:
 | Login rate limiting with exponential lockout                      | ✅ verified over HTTPS               |
 | Docker detection reporting a real absence with a hint             | ✅ verified (no daemon on this host) |
 | Operation locking, expiry, per-project isolation                  | ✅ verified in integration tests     |
+| A shallow git clone over HTTPS, and an archive URL download       | ✅ run by hand against github.com    |
+| A byte budget interrupting a clone that was already running       | ✅ verified                          |
 | Docker **connected** behaviour — version, containers, events      | ❌ needs a daemon                    |
 | Windows Service registration and SCM lifecycle                    | ❌ needs an elevated Windows session |
 | systemd unit installation, `Type=notify` readiness                | ❌ needs an Ubuntu/Debian host       |
