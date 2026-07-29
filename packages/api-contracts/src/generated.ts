@@ -104,12 +104,18 @@ export const networkConfigRequestSchema = z.object({
   ports: z.array(portRequestSchema).optional(),
 });
 
-export const sourceTypeSchema = z.enum(['EMPTY', 'ZIP_UPLOAD', 'LOCAL_FOLDER', 'DUPLICATE', 'IMPORT_ARCHIVE']);
+export const sourceCredentialSchema = z.string();
+
+export const sourceTypeSchema = z.enum(['EMPTY', 'ZIP_UPLOAD', 'LOCAL_FOLDER', 'DUPLICATE', 'IMPORT_ARCHIVE', 'GIT_CLONE', 'REMOTE_ARCHIVE']);
 
 export const projectSourceSchema = z.object({
+  credential: sourceCredentialSchema.nullable().optional(),
+  git_ref: z.string().nullable().optional(),
   kind: sourceTypeSchema,
   local_path: z.string().nullable().optional(),
+  repo_url: z.string().nullable().optional(),
   source_project_id: projectIdSchema.nullable().optional(),
+  subdirectory: z.string().nullable().optional(),
   upload_id: z.string().nullable().optional(),
 });
 
@@ -332,6 +338,7 @@ export const projectDetailSchema = z.object({
   description: z.string(),
   desired_state: desiredStateSchema,
   display_name: z.string(),
+  has_credential: z.boolean().optional(),
   health: healthStateSchema,
   icon: z.string().nullable().optional(),
   id: projectIdSchema,
@@ -347,7 +354,10 @@ export const projectDetailSchema = z.object({
   runtime: runtimeSchema,
   runtime_config: runtimeConfigSchema,
   slug: z.string(),
+  source_commit: z.string().nullable().optional(),
+  source_ref: z.string().nullable().optional(),
   source_type: sourceTypeSchema,
+  source_url: z.string().nullable().optional(),
   started_at: z.string().nullable().optional(),
   status: projectStatusSchema,
   updated_at: z.string(),

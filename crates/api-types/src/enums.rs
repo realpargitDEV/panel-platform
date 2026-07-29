@@ -233,6 +233,8 @@ string_enum! {
         LocalFolder => "LOCAL_FOLDER",
         Duplicate => "DUPLICATE",
         ImportArchive => "IMPORT_ARCHIVE",
+        GitClone => "GIT_CLONE",
+        RemoteArchive => "REMOTE_ARCHIVE",
     }
 }
 

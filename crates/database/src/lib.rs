@@ -41,3 +41,9 @@ pub const INITIAL_MIGRATION: &str = include_str!("../migrations/0001_initial.sql
 
 /// The Discord integration migration, for the same reasons.
 pub const DISCORD_MIGRATION: &str = include_str!("../migrations/0002_discord.sql");
+
+/// The remote-sources migration, which rebuilds `projects`. Note that after
+/// this migration the authoritative definition of that table is here and not in
+/// [`INITIAL_MIGRATION`] — which is why the enum-parity test reads the live
+/// schema out of `sqlite_master` rather than trusting either file.
+pub const REMOTE_SOURCES_MIGRATION: &str = include_str!("../migrations/0003_remote_sources.sql");

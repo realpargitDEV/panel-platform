@@ -4,9 +4,16 @@
 //! `packages/api-contracts` are generated from them, so a change here that is
 //! not regenerated fails CI rather than drifting silently.
 //!
-//! Note what is absent: no type in this module can carry a decrypted secret.
-//! [`EnvVarSummary`] models a secret as `value: None` plus `is_set: true`,
-//! which is the only shape the API ever produces for one.
+//! Note what is absent: no *response* in this module can carry a decrypted
+//! secret. [`EnvVarSummary`] models a secret as `value: None` plus
+//! `is_set: true`, which is the only shape the API ever produces for one.
+//!
+//! Two request types necessarily carry a secret inbound — [`EnvVarInput`] and
+//! [`SourceCredential`] — because a value has to arrive somehow. Both are
+//! write-only: nothing that is serialised back to a caller contains them, and
+//! [`SourceCredential`] redacts itself in `Debug`.
+
+use core::fmt;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -148,6 +155,21 @@ pub struct ProjectDetail {
     pub summary: ProjectSummary,
     pub description: String,
     pub source_type: SourceType,
+    /// Where a `GIT_CLONE` or `REMOTE_ARCHIVE` project came from. The URL is
+    /// safe to return because a token never travels inside it — see
+    /// [`ProjectSource::credential`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<String>,
+    /// The commit that was actually checked out, which is the only honest
+    /// answer to "what is running" when the ref was a moving branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_commit: Option<String>,
+    /// Whether a token is stored for this project's remote. Deliberately a
+    /// boolean: there is no route that returns the token itself.
+    #[serde(default)]
+    pub has_credential: bool,
     pub runtime_config: RuntimeConfig,
     pub resources: ResourceLimits,
     pub network: NetworkConfig,
@@ -273,8 +295,7 @@ pub struct CreateProjectRequest {
     pub environment: Vec<EnvVarInput>,
 }
 
-/// Where the project's files come from. Git is deliberately absent in version
-/// one; `docs/api-design.md` records it as a future source.
+/// Where the project's files come from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectSource {
     pub kind: SourceType,
@@ -287,6 +308,54 @@ pub struct ProjectSource {
     /// Source project for `DUPLICATE`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_project_id: Option<ProjectId>,
+    /// `https://` remote for `GIT_CLONE` and `REMOTE_ARCHIVE`. Validated
+    /// against `file-manager`'s `remote_url` rules before any connection is
+    /// opened, and again for every redirect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_url: Option<String>,
+    /// Branch, tag or full commit id for `GIT_CLONE`. Omitted means the
+    /// remote's default branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    /// Path within the fetched tree to promote, for repositories that hold more
+    /// than one project. Relative; traversal is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdirectory: Option<String>,
+    /// Access token for a private remote. Write-only: this field is populated
+    /// on the way in and is never returned, which is why responses carry
+    /// `has_credential` instead. `Debug` is hand-written so a token cannot
+    /// reach a log line through a derived formatter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<SourceCredential>,
+}
+
+/// A token for a private remote, kept in its own type so that the only way to
+/// read it is to ask for it by name.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceCredential(String);
+
+impl SourceCredential {
+    pub fn new(token: String) -> Self {
+        Self(token)
+    }
+
+    /// The plaintext. Every caller of this is a place a token could leak, so
+    /// there is exactly one: the encryption step on the way to storage.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// Redacted. A derived `Debug` here would put tokens in every error log that
+/// formats a `CreateProjectRequest`.
+impl fmt::Debug for SourceCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SourceCredential(<redacted>)")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -594,6 +663,10 @@ mod tests {
             },
             description: String::new(),
             source_type: SourceType::ZipUpload,
+            source_url: None,
+            source_ref: None,
+            source_commit: None,
+            has_credential: false,
             runtime_config: RuntimeConfig {
                 runtime: Runtime::NodeJs,
                 runtime_version: "22".to_string(),
@@ -623,5 +696,74 @@ mod tests {
             archived_at: None,
             updated_at: "2026-07-29T00:00:00Z".to_string(),
         }
+    }
+
+    #[test]
+    fn a_source_credential_redacts_itself_in_debug() {
+        let credential = SourceCredential::new("ghp_realtokenvalue".to_string());
+        let rendered = format!("{credential:?}");
+        assert!(
+            !rendered.contains("ghp_realtokenvalue"),
+            "token reached a Debug rendering: {rendered}"
+        );
+        assert_eq!(rendered, "SourceCredential(<redacted>)");
+    }
+
+    #[test]
+    fn a_credential_inside_a_request_does_not_leak_through_the_requests_debug() {
+        // The realistic leak is not `{credential:?}` but a handler logging the
+        // whole request it failed to process.
+        let source = ProjectSource {
+            kind: SourceType::GitClone,
+            upload_id: None,
+            local_path: None,
+            source_project_id: None,
+            repo_url: Some("https://github.com/owner/repo.git".to_string()),
+            git_ref: Some("main".to_string()),
+            subdirectory: None,
+            credential: Some(SourceCredential::new("ghp_realtokenvalue".to_string())),
+        };
+        let rendered = format!("{source:?}");
+        assert!(
+            !rendered.contains("ghp_realtokenvalue"),
+            "token reached a Debug rendering: {rendered}"
+        );
+        // The URL is not a secret and stays visible, which is what makes the
+        // rendering worth logging at all.
+        assert!(rendered.contains("github.com/owner/repo.git"));
+    }
+
+    #[test]
+    fn project_detail_reports_a_credential_as_a_boolean_and_never_a_value() {
+        let mut detail = sample_detail();
+        detail.source_type = SourceType::GitClone;
+        detail.source_url = Some("https://github.com/owner/repo.git".to_string());
+        detail.source_ref = Some("main".to_string());
+        detail.source_commit = Some("0f5c1d0a".to_string());
+        detail.has_credential = true;
+
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(json.contains("\"has_credential\":true"));
+        assert!(
+            !json.contains("credential\":\"") && !json.contains("token"),
+            "a detail response grew a credential-shaped field: {json}"
+        );
+    }
+
+    #[test]
+    fn the_new_sources_survive_the_wire() {
+        for kind in [SourceType::GitClone, SourceType::RemoteArchive] {
+            let json = serde_json::to_string(&kind).unwrap();
+            let back: SourceType = serde_json::from_str(&json).unwrap();
+            assert_eq!(kind, back, "{json} did not round trip");
+        }
+        assert_eq!(
+            serde_json::to_string(&SourceType::GitClone).unwrap(),
+            "\"GIT_CLONE\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SourceType::RemoteArchive).unwrap(),
+            "\"REMOTE_ARCHIVE\""
+        );
     }
 }

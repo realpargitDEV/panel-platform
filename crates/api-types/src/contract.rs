@@ -154,6 +154,11 @@ mod tests {
             "\"password_hash\"",
             "\"value_cipher\"",
             "\"encryption_key\"",
+            // Storage columns for a source token. A project's remote credential
+            // is write-only, so neither the ciphertext nor its nonce has any
+            // business in a generated client.
+            "\"ciphertext\"",
+            "\"nonce\"",
         ] {
             assert!(
                 !schema.contains(forbidden),

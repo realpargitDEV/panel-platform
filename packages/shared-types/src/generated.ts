@@ -138,15 +138,26 @@ export interface NetworkConfigRequest {
   ports?: PortRequest[];
 }
 
-export type SourceType = 'EMPTY' | 'ZIP_UPLOAD' | 'LOCAL_FOLDER' | 'DUPLICATE' | 'IMPORT_ARCHIVE';
+/** A token for a private remote, kept in its own type so that the only way to read it is to ask for it by name. */
+export type SourceCredential = string;
 
-/** Where the project's files come from. Git is deliberately absent in version one; `docs/api-design.md` records it as a future source. */
+export type SourceType = 'EMPTY' | 'ZIP_UPLOAD' | 'LOCAL_FOLDER' | 'DUPLICATE' | 'IMPORT_ARCHIVE' | 'GIT_CLONE' | 'REMOTE_ARCHIVE';
+
+/** Where the project's files come from. */
 export interface ProjectSource {
+  /** Access token for a private remote. Write-only: this field is populated on the way in and is never returned, which is why responses carry `has_credential` instead. `Debug` is hand-written so a token cannot reach a log line through a derived formatter. */
+  credential?: SourceCredential | null;
+  /** Branch, tag or full commit id for `GIT_CLONE`. Omitted means the remote's default branch. */
+  git_ref?: string | null;
   kind: SourceType;
   /** Absolute host path for `LOCAL_FOLDER`. Validated server-side before use. */
   local_path?: string | null;
+  /** `https://` remote for `GIT_CLONE` and `REMOTE_ARCHIVE`. Validated against `file-manager`'s `remote_url` rules before any connection is opened, and again for every redirect. */
+  repo_url?: string | null;
   /** Source project for `DUPLICATE`. */
   source_project_id?: ProjectId | null;
+  /** Path within the fetched tree to promote, for repositories that hold more than one project. Relative; traversal is refused. */
+  subdirectory?: string | null;
   /** Upload session id for `ZIP_UPLOAD`. */
   upload_id?: string | null;
 }
@@ -399,6 +410,8 @@ export interface ProjectDetail {
   description: string;
   desired_state: DesiredState;
   display_name: string;
+  /** Whether a token is stored for this project's remote. Deliberately a boolean: there is no route that returns the token itself. */
+  has_credential?: boolean;
   health: HealthState;
   icon?: string | null;
   id: ProjectId;
@@ -414,7 +427,12 @@ export interface ProjectDetail {
   runtime: Runtime;
   runtime_config: RuntimeConfig;
   slug: string;
+  /** The commit that was actually checked out, which is the only honest answer to "what is running" when the ref was a moving branch. */
+  source_commit?: string | null;
+  source_ref?: string | null;
   source_type: SourceType;
+  /** Where a `GIT_CLONE` or `REMOTE_ARCHIVE` project came from. The URL is safe to return because a token never travels inside it — see [`ProjectSource::credential`]. */
+  source_url?: string | null;
   started_at?: string | null;
   status: ProjectStatus;
   updated_at: string;
