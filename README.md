@@ -6,10 +6,14 @@ static sites, REST APIs and background workers, each in its own Docker
 container.
 
 A project can start empty, or be installed from a **GitHub repository or any
-HTTPS git remote**, or downloaded from an **archive URL** — paste
-`https://github.com/owner/some-cli.git` and it becomes a project. Its files can
-then be **edited in the application**, in a Monaco editor with a file tree and
-tabs.
+HTTPS git remote**, downloaded from an **archive URL**, or named as `owner/repo`
+and cloned with **your own `gh` login**. Paste
+`https://github.com/owner/some-cli.git` and it becomes a project.
+
+**The language is detected, not asked for.** Thirteen runtimes — Node,
+TypeScript, Bun, Deno, Python, Go, Rust, Java, PHP, Ruby, .NET, static sites, and
+a polyglot image for a project that needs several at once. Files can then be
+**edited in the application**, in a Monaco editor with a file tree and tabs.
 
 It is a desktop program, not a web panel. Everything runs in one process on your
 own machine: a Tauri 2 window on top of a Rust core that owns the database,
@@ -86,7 +90,7 @@ having had no idea how they were being called.
 | 3 — Application core: lifecycle, Docker, platform        | ✅ Complete           |
 | 4 — Project management: templates, lifecycle, limits     | ◑ Partial (see below) |
 | 5 — Files and environment variables                      | ◑ Partial (see below) |
-| 5b — Remote sources and in-app editing                   | ◑ Partial (see below) |
+| 5b — Remote sources, editing, languages                  | ◑ Partial (see below) |
 | 6 — Logs and metrics                                     | Not started           |
 | 7 — Backups                                              | Not started           |
 | 8 — Desktop UI                                           | ◑ Partial (see below) |

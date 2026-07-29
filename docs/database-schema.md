@@ -50,6 +50,7 @@ crates/database/migrations/
   0001_initial.sql
   0002_discord.sql
   0003_remote_sources.sql
+  0004_runtimes.sql
 ```
 
 The application applies pending migrations at startup before serving, and refuses
@@ -82,27 +83,27 @@ Stored as `TEXT` with `CHECK` constraints. Readable in the file, validated by th
 database, and mirrored by Rust enums with a parity test that fails when the two
 drift.
 
-| Enum                   | Values                                                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `UserRole`             | `ADMIN`                                                                                                                           |
-| `ProjectType`          | `DISCORD_BOT`, `NODE_APP`, `PYTHON_APP`, `WEBSITE`, `STATIC_SITE`, `REST_API`, `WORKER`, `SERVICE`                                |
-| `Runtime`              | `NODEJS`, `PYTHON`, `STATIC`                                                                                                      |
-| `PackageManager`       | `PNPM`, `NPM`, `YARN`, `PIP`, `POETRY`, `UV`, `PIPENV`, `NONE`                                                                    |
-| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING` |
-| `DesiredState`         | `RUNNING`, `STOPPED`, `ARCHIVED`                                                                                                  |
-| `RestartPolicy`        | `NO`, `ON_FAILURE`, `UNLESS_STOPPED`, `ALWAYS`                                                                                    |
-| `NetworkMode`          | `NONE`, `INTERNAL`, `LAN`, `INTERNET`                                                                                             |
-| `DeploymentType`       | `INITIAL`, `REBUILD`, `RESTORE`, `CONFIG_CHANGE`, `IMPORT`                                                                        |
-| `DeploymentStatus`     | `PENDING`, `BUILDING`, `STARTING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                              |
-| `ContainerEventType`   | `CREATED`, `STARTED`, `STOPPED`, `RESTARTED`, `DIED`, `OOM_KILLED`, `HEALTH_PASS`, `HEALTH_FAIL`, `DESTROYED`                     |
-| `BackupStatus`         | `PENDING`, `CREATING`, `COMPLETED`, `FAILED`, `CANCELLED`, `CORRUPT`                                                              |
-| `BackupOperationKind`  | `CREATE`, `RESTORE`, `VERIFY`, `EXPORT`, `IMPORT`, `DELETE`                                                                       |
-| `BackupOperationState` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                           |
-| `SourceType`           | `EMPTY`, `ZIP_UPLOAD`, `LOCAL_FOLDER`, `DUPLICATE`, `IMPORT_ARCHIVE`, `GIT_CLONE`, `REMOTE_ARCHIVE`                               |
-| `AuditResult`          | `SUCCESS`, `FAILURE`, `DENIED`                                                                                                    |
-| `HealthState`          | `UNKNOWN`, `STARTING`, `HEALTHY`, `UNHEALTHY`, `NONE`                                                                             |
-| `ConnectionKind`       | `LOCAL`, `LAN`, `TAILSCALE`, `MANUAL`                                                                                             |
-| `NotificationLevel`    | `INFO`, `SUCCESS`, `WARNING`, `ERROR`                                                                                             |
+| Enum                   | Values                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UserRole`             | `ADMIN`                                                                                                                                                 |
+| `ProjectType`          | `DISCORD_BOT`, `NODE_APP`, `PYTHON_APP`, `WEBSITE`, `STATIC_SITE`, `REST_API`, `WORKER`, `SERVICE`                                                      |
+| `Runtime`              | `NODEJS`, `TYPESCRIPT`, `BUN`, `DENO`, `PYTHON`, `GO`, `RUST`, `JAVA`, `PHP`, `RUBY`, `DOTNET`, `STATIC`, `POLYGLOT`                                    |
+| `PackageManager`       | `PNPM`, `NPM`, `YARN`, `BUN`, `DENO`, `PIP`, `POETRY`, `UV`, `PIPENV`, `GO_MODULES`, `CARGO`, `MAVEN`, `GRADLE`, `COMPOSER`, `BUNDLER`, `NUGET`, `NONE` |
+| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING`                       |
+| `DesiredState`         | `RUNNING`, `STOPPED`, `ARCHIVED`                                                                                                                        |
+| `RestartPolicy`        | `NO`, `ON_FAILURE`, `UNLESS_STOPPED`, `ALWAYS`                                                                                                          |
+| `NetworkMode`          | `NONE`, `INTERNAL`, `LAN`, `INTERNET`                                                                                                                   |
+| `DeploymentType`       | `INITIAL`, `REBUILD`, `RESTORE`, `CONFIG_CHANGE`, `IMPORT`                                                                                              |
+| `DeploymentStatus`     | `PENDING`, `BUILDING`, `STARTING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                                    |
+| `ContainerEventType`   | `CREATED`, `STARTED`, `STOPPED`, `RESTARTED`, `DIED`, `OOM_KILLED`, `HEALTH_PASS`, `HEALTH_FAIL`, `DESTROYED`                                           |
+| `BackupStatus`         | `PENDING`, `CREATING`, `COMPLETED`, `FAILED`, `CANCELLED`, `CORRUPT`                                                                                    |
+| `BackupOperationKind`  | `CREATE`, `RESTORE`, `VERIFY`, `EXPORT`, `IMPORT`, `DELETE`                                                                                             |
+| `BackupOperationState` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                                                 |
+| `SourceType`           | `EMPTY`, `ZIP_UPLOAD`, `LOCAL_FOLDER`, `DUPLICATE`, `IMPORT_ARCHIVE`, `GIT_CLONE`, `REMOTE_ARCHIVE`                                                     |
+| `AuditResult`          | `SUCCESS`, `FAILURE`, `DENIED`                                                                                                                          |
+| `HealthState`          | `UNKNOWN`, `STARTING`, `HEALTHY`, `UNHEALTHY`, `NONE`                                                                                                   |
+| `ConnectionKind`       | `LOCAL`, `LAN`, `TAILSCALE`, `MANUAL`                                                                                                                   |
+| `NotificationLevel`    | `INFO`, `SUCCESS`, `WARNING`, `ERROR`                                                                                                                   |
 
 `UserRole` has one value today. The column exists so that adding roles later is
 a migration of one table rather than a redesign.
