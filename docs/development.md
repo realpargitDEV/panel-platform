@@ -91,6 +91,30 @@ cargo fmt --all
 pnpm verify             # the same gate, without the skip report
 ```
 
+## Running the window
+
+```bash
+pnpm --filter project-host-desktop exec tauri dev   # dev server + window, hot reload
+```
+
+To run a built binary on its own, the frontend has to be **inside** it:
+
+```bash
+pnpm --filter project-host-desktop build            # produces apps/desktop/dist
+cargo run -p project-host-desktop --features custom-protocol
+```
+
+Without `--features custom-protocol` the window loads `devUrl` —
+`http://localhost:5173` — because that feature is what switches Tauri to serving
+the embedded assets, and only `tauri build` sets it automatically. A plain
+`cargo run -p project-host-desktop` with no dev server running therefore shows
+the WebView's own "can't reach this page" rather than the application. The
+executable is fine; it is pointed at a server that is not there.
+
+Note also that a running instance holds `target/debug/project-host-desktop.exe`
+open on Windows, so a rebuild while the window is up fails with "Access is
+denied". Close the window first.
+
 ## What clippy enforces
 
 The workspace denies `unwrap`, `expect`, `panic!`, `todo!` and `unimplemented!`

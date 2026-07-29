@@ -42,5 +42,19 @@ thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync"] }
 tracing = "0.1.44"
 
+[features]
+# Serve the frontend from inside the binary rather than from `devUrl`.
+#
+# `tauri build` sets this; a plain `cargo build` does not, and the resulting
+# executable points its window at the Vite dev server — which, with no dev server
+# running, shows the WebView's own "can't reach this page" instead of the
+# application. Anyone running the debug binary directly wants:
+#
+#     cargo run -p project-host-desktop --features custom-protocol
+#
+# It requires `pnpm --filter project-host-desktop build` to have produced
+# `apps/desktop/dist` first, because that is what gets embedded.
+custom-protocol = ["tauri/custom-protocol"]
+
 [lints]
 workspace = true
