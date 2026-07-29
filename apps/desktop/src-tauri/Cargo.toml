@@ -20,6 +20,7 @@ project-host-core = { version = "0.1.0", path = "../../../crates/app-core" }
 project-host-database = { version = "0.1.0", path = "../../../crates/database" }
 project-host-api-types = { version = "0.1.0", path = "../../../crates/api-types" }
 project-host-docker-manager = { version = "0.1.0", path = "../../../crates/docker-manager" }
+project-host-file-manager = { version = "0.1.0", path = "../../../crates/file-manager" }
 project-host-platform = { version = "0.1.0", path = "../../../crates/platform" }
 project-host-project-manager = { version = "0.1.0", path = "../../../crates/project-manager" }
 # Only for `Secret`: a token from the creation form is wrapped the moment it is

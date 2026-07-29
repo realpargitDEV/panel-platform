@@ -30,12 +30,12 @@ EMPTY | ZIP_UPLOAD | LOCAL_FOLDER | DUPLICATE | IMPORT_ARCHIVE | GIT_CLONE | REM
 
 `ProjectSource` gains four fields:
 
-| Field           | Applies to                      | Meaning                                             |
-| --------------- | ------------------------------- | --------------------------------------------------- |
-| `repo_url`      | `GIT_CLONE`, `REMOTE_ARCHIVE`   | Absolute `https://` URL. Validated before any I/O.  |
-| `git_ref`       | `GIT_CLONE`                     | Branch, tag or full commit id. Omitted = remote HEAD |
-| `subdirectory`  | `GIT_CLONE`, `REMOTE_ARCHIVE`   | Relative path within the fetched tree to promote     |
-| `credential`    | `GIT_CLONE`, `REMOTE_ARCHIVE`   | Write-only access token. Never returned by any call. |
+| Field          | Applies to                    | Meaning                                              |
+| -------------- | ----------------------------- | ---------------------------------------------------- |
+| `repo_url`     | `GIT_CLONE`, `REMOTE_ARCHIVE` | Absolute `https://` URL. Validated before any I/O.   |
+| `git_ref`      | `GIT_CLONE`                   | Branch, tag or full commit id. Omitted = remote HEAD |
+| `subdirectory` | `GIT_CLONE`, `REMOTE_ARCHIVE` | Relative path within the fetched tree to promote     |
+| `credential`   | `GIT_CLONE`, `REMOTE_ARCHIVE` | Write-only access token. Never returned by any call. |
 
 The comment at `crates/api-types/src/dto.rs:276` recording git as deliberately
 absent is removed, not left contradicting the code.

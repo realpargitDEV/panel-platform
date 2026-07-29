@@ -475,6 +475,232 @@ async fn restart_project(
         .map_err(CommandError::from)
 }
 
+// -------------------------------------------------------------- project files
+
+/// One row in a directory listing, as the window reads it.
+#[derive(Debug, Serialize)]
+pub struct FileEntryDto {
+    pub name: String,
+    pub path: String,
+    /// `file`, `directory` or `other`.
+    pub kind: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<i64>,
+    pub is_symlink: bool,
+}
+
+impl From<project_host_file_manager::FileEntry> for FileEntryDto {
+    fn from(entry: project_host_file_manager::FileEntry) -> Self {
+        Self {
+            name: entry.name,
+            path: entry.path,
+            kind: entry.kind.as_str().to_string(),
+            size_bytes: entry.size_bytes,
+            modified_unix_ms: entry.modified_unix_ms,
+            is_symlink: entry.is_symlink,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListingDto {
+    pub path: String,
+    pub entries: Vec<FileEntryDto>,
+    /// True when there were more entries than the limit. The window says so
+    /// rather than showing a partial listing as if it were complete.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TextFileDto {
+    pub path: String,
+    pub text: String,
+    pub size_bytes: u64,
+    pub language: String,
+    /// True when the project is mid-build or mid-deletion. The editor opens the
+    /// file read-only rather than letting a save race the operation.
+    pub read_only: bool,
+}
+
+/// Statuses during which a project's files must not be written.
+///
+/// `BUILDING` copies the tree into an image; `DELETING` is removing it. A save
+/// landing in either window either vanishes or corrupts what is being read.
+fn is_read_only_status(status: &str) -> bool {
+    matches!(status, "BUILDING" | "DELETING")
+}
+
+/// A project's root directory, from its stored record.
+///
+/// Every file command starts here, and every one of them passes a *relative*
+/// request string alongside it. The window cannot express an absolute path,
+/// which is the invariant `file-manager` was built around: `SafePath` is
+/// constructed on this side of the bridge, from a root the database supplied and
+/// a string that is only ever a suffix.
+async fn project_root(
+    app: &AppState,
+    project_id: &str,
+) -> CommandResult<(std::path::PathBuf, bool)> {
+    let record = projects::find_project(app.database(), project_id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "That project no longer exists.".to_string(),
+        })?;
+    Ok((
+        std::path::PathBuf::from(record.directory),
+        is_read_only_status(&record.status),
+    ))
+}
+
+fn file_limits(app: &AppState) -> project_host_file_manager::FileLimits {
+    project_host_file_manager::FileLimits {
+        max_upload_bytes: app.config().max_upload_bytes,
+        ..project_host_file_manager::FileLimits::default()
+    }
+}
+
+#[tauri::command]
+async fn list_project_files(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+) -> CommandResult<ListingDto> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    let listing = project_host_file_manager::operations::list_directory(
+        &root,
+        &path,
+        &file_limits(app),
+    )
+    .map_err(CommandError::from)?;
+
+    Ok(ListingDto {
+        path: listing.path,
+        entries: listing.entries.into_iter().map(FileEntryDto::from).collect(),
+        truncated: listing.truncated,
+    })
+}
+
+#[tauri::command]
+async fn read_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+) -> CommandResult<TextFileDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    let file =
+        project_host_file_manager::operations::read_text_file(&root, &path, &file_limits(app))
+            .map_err(CommandError::from)?;
+
+    Ok(TextFileDto {
+        path: file.path,
+        text: file.text,
+        size_bytes: file.size_bytes,
+        language: file.language.to_string(),
+        read_only,
+    })
+}
+
+#[tauri::command]
+async fn write_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    text: String,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message: "This project is being built or removed; its files cannot be saved right now."
+                .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::write_text_file(&root, &path, &text, &file_limits(app))
+        .map(FileEntryDto::from)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn create_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    directory: bool,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message: "This project is being built or removed; its files cannot be changed right now."
+                .to_string(),
+        });
+    }
+
+    let result = if directory {
+        project_host_file_manager::operations::create_directory(&root, &path)
+    } else {
+        project_host_file_manager::operations::create_file(&root, &path)
+    };
+    result.map(FileEntryDto::from).map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn rename_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    new_name: String,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message: "This project is being built or removed; its files cannot be changed right now."
+                .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::rename(&root, &path, &new_name)
+        .map(FileEntryDto::from)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn delete_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    recursive: bool,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message: "This project is being built or removed; its files cannot be changed right now."
+                .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::delete(&root, &path, recursive)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn search_project_files(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    query: String,
+) -> CommandResult<Vec<FileEntryDto>> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    project_host_file_manager::operations::search(&root, "", &query, &file_limits(app))
+        .map(|entries| entries.into_iter().map(FileEntryDto::from).collect())
+        .map_err(CommandError::from)
+}
+
 /// The configuration the window shows on the settings screen.
 ///
 /// Read-only for now. Every value here is loaded at startup from `config.toml`
@@ -592,7 +818,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             stop_project,
             restart_project,
             app_settings,
-            check_for_update
+            check_for_update,
+            list_project_files,
+            read_project_file,
+            write_project_file,
+            create_project_file,
+            rename_project_file,
+            delete_project_file,
+            search_project_files
         ])
         .build(tauri::generate_context!())?
         .run(move |app, event| {

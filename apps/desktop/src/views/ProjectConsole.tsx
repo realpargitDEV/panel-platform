@@ -15,9 +15,11 @@ import type { ProjectSummary } from '../api';
 export default function ProjectConsole({
   project,
   onBack,
+  onOpenFiles,
 }: {
   project: ProjectSummary;
   onBack: () => void;
+  onOpenFiles: () => void;
 }) {
   return (
     <div className="px-8 py-7">
@@ -29,8 +31,19 @@ export default function ProjectConsole({
         ← Projects
       </button>
 
-      <p className="mt-4 text-xs font-semibold tracking-wider text-accent uppercase">Console</p>
-      <h1 className="mt-1 text-3xl font-bold tracking-tight">{project.displayName}</h1>
+      <div className="mt-4 flex items-end justify-between">
+        <div>
+          <p className="text-xs font-semibold tracking-wider text-accent uppercase">Console</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">{project.displayName}</h1>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenFiles}
+          className="rounded-lg border border-edge bg-raised px-3.5 py-2 text-sm hover:border-white/25"
+        >
+          Edit files
+        </button>
+      </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
         <section className="overflow-hidden rounded-xl border border-edge bg-surface">

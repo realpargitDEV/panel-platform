@@ -3935,6 +3935,7 @@ dependencies = [
  "project-host-core",
  "project-host-database",
  "project-host-docker-manager",
+ "project-host-file-manager",
  "project-host-platform",
  "project-host-project-manager",
  "project-host-security",
