@@ -27,6 +27,7 @@ pub mod lifecycle;
 pub mod logging;
 pub mod provisioning;
 pub mod runtime;
+pub mod runtime_plan;
 pub mod shutdown;
 pub mod state;
 
@@ -36,5 +37,6 @@ pub use integration::IntegrationError;
 pub use logging::{LoggingGuard, RequestContext};
 pub use provisioning::{materialise_source, ProvisionError, SourceOutcome, SourceSpec};
 pub use runtime::{resolve_paths, Runtime, RuntimeError, APP_VERSION};
+pub use runtime_plan::{plan_detected, plan_named, PlanError, RuntimePlan};
 pub use shutdown::{wait_for_signal, Shutdown};
 pub use state::{AppState, Identity};

@@ -52,8 +52,10 @@ export default function App() {
 
   const onCreate = useCallback(
     async (request: NewProjectRequest) => {
-      await createProject(request);
+      const created = await createProject(request);
       await refresh();
+      // Handed back so the list can report what the files turned out to be.
+      return created;
     },
     [refresh],
   );

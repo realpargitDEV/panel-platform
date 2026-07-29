@@ -134,8 +134,13 @@ async fn list_projects(state: tauri::State<'_, AppState>) -> CommandResult<Vec<P
 pub struct NewProjectRequest {
     pub display_name: String,
     pub description: String,
-    /// One of `NODEJS`, `PYTHON`, `STATIC`.
-    pub runtime: String,
+    /// A runtime to use regardless of what the files say. Absent means "look at
+    /// the files and decide", which is the normal case for anything fetched.
+    ///
+    /// An empty project has no files, so one is required there — nothing can be
+    /// detected from nothing.
+    #[serde(default)]
+    pub runtime: Option<String>,
     /// Where the files come from. Absent means an empty project, which keeps
     /// older callers working.
     #[serde(default)]
@@ -219,69 +224,75 @@ fn source_spec_from(request: Option<SourceRequest>) -> CommandResult<SourceSpec>
     }
 }
 
-/// The runtime defaults for a template.
+/// The runtimes this build can plan for, for the override list.
 ///
-/// Inline for now. The `project-manager` template registry reads these from
-/// `manifest.toml` files, but those are not deployed alongside the binary yet —
-/// that is an installer question, and shipping a wrong path here would fail at
-/// the moment a user pressed Create rather than at build time.
-fn runtime_spec_for(runtime: &str) -> Option<projects::RuntimeSpec> {
-    let (image_runtime, version, manager, install, start, entry, port) = match runtime {
-        "NODEJS" => (
-            "NODEJS",
-            "22",
-            "NPM",
-            Some("npm ci --omit=dev"),
-            "node index.js",
-            Some("index.js"),
-            3000,
-        ),
-        "PYTHON" => (
-            "PYTHON",
-            "3.12",
-            "PIP",
-            Some("pip install --no-cache-dir -r requirements.txt"),
-            "python main.py",
-            Some("main.py"),
-            8000,
-        ),
-        "STATIC" => ("STATIC", "1", "NONE", None, "caddy", None, 80),
-        _ => return None,
-    };
-
-    Some((
-        projects::RuntimeSpec {
-            runtime: image_runtime.to_string(),
-            runtime_version: version.to_string(),
-            package_manager: manager.to_string(),
-            install_command: install.map(str::to_string),
-            build_command: None,
-            start_command: start.to_string(),
-            working_dir: "/app".to_string(),
-            entry_file: entry.map(str::to_string),
-            publish_dir: if runtime == "STATIC" {
-                Some("public".to_string())
-            } else {
-                None
-            },
-            template_id: runtime.to_ascii_lowercase(),
-            health_check_type: "NONE".to_string(),
-            health_check_target: None,
-            health_interval_s: 30,
-            health_timeout_s: 5,
-            health_retries: 3,
-            health_start_period_s: 20,
-        },
-        port,
-    ))
-    .map(|(spec, _)| spec)
+/// Served from the same table the planner uses, so the interface cannot offer a
+/// choice that fails on Create.
+#[derive(Debug, Serialize)]
+pub struct RuntimeOption {
+    pub id: String,
+    pub label: String,
 }
 
-fn container_port_for(runtime: &str) -> i64 {
-    match runtime {
-        "PYTHON" => 8000,
-        "STATIC" => 80,
-        _ => 3000,
+#[tauri::command]
+fn supported_runtimes() -> Vec<RuntimeOption> {
+    project_host_core::runtime_plan::supported_runtimes()
+        .into_iter()
+        .map(|(id, label)| RuntimeOption {
+            id: id.to_string(),
+            label: label.to_string(),
+        })
+        .collect()
+}
+
+/// What a created project's runtime turned out to be.
+///
+/// Returned alongside the project because the interesting half of "create" is now
+/// an answer rather than an echo: the user did not say `GO`, the files did.
+#[derive(Debug, Serialize)]
+pub struct CreatedProject {
+    #[serde(flatten)]
+    pub project: ProjectSummary,
+    /// The runtime wire value that was stored.
+    pub runtime: String,
+    /// True when it came from the files rather than from the user.
+    pub detected: bool,
+    /// Every language found in the tree, for display.
+    pub languages: Vec<String>,
+    /// Detection warnings, in the words the user should read.
+    pub notes: Vec<String>,
+}
+
+/// Choose the runtime for a project whose files are already in place.
+///
+/// An empty project cannot be detected — there is nothing to look at — so it
+/// needs an explicit choice, and saying so beats reporting "no language found"
+/// for a directory that was deliberately created empty.
+fn plan_runtime(
+    directory: &std::path::Path,
+    source: &SourceSpec,
+    named: Option<&str>,
+) -> CommandResult<project_host_core::RuntimePlan> {
+    let empty_source = matches!(source, SourceSpec::Empty);
+
+    match (named, empty_source) {
+        (Some(runtime), _) if empty_source => {
+            project_host_core::plan_named(runtime).map_err(CommandError::from)
+        }
+        (None, true) => Err(CommandError {
+            message: "An empty project has no files to inspect, so it needs a \
+                      runtime. Choose one, or start from a repository instead."
+                .to_string(),
+        }),
+        (named, false) => project_host_core::plan_detected(directory, named).map_err(|error| {
+            // Detection's message names every marker file it looked for, which is
+            // the most useful thing a user can be told here.
+            CommandError {
+                message: error.to_string(),
+            }
+        }),
+        // Unreachable: covered by the first arm.
+        (Some(runtime), _) => project_host_core::plan_named(runtime).map_err(CommandError::from),
     }
 }
 
@@ -295,7 +306,7 @@ fn container_port_for(runtime: &str) -> i64 {
 async fn create_project(
     state: tauri::State<'_, AppState>,
     request: NewProjectRequest,
-) -> CommandResult<ProjectSummary> {
+) -> CommandResult<CreatedProject> {
     let app: &AppState = &state;
 
     let display_name = sanitise_display_name(request.display_name.trim());
@@ -309,10 +320,6 @@ async fn create_project(
             message: "That name is too long — 60 characters at most.".to_string(),
         });
     }
-
-    let runtime = runtime_spec_for(&request.runtime).ok_or_else(|| CommandError {
-        message: format!("`{}` is not a runtime this build offers.", request.runtime),
-    })?;
 
     let count = projects::list_projects(app.database(), true, None, 1000)
         .await?
@@ -364,6 +371,20 @@ async fn create_project(
     )
     .await?;
 
+    // The runtime is decided *after* the files are there, because deciding it
+    // before means asking the user a question the files can answer. An empty
+    // project has no files, so there a choice is required and detection would
+    // only report that it found nothing.
+    let plan = match plan_runtime(&directory, &spec, request.runtime.as_deref()) {
+        Ok(plan) => plan,
+        Err(error) => {
+            // Nothing is in the database yet, but the files are on disk. They go,
+            // so a retry with a corrected runtime starts from a clean directory.
+            project_host_core::provisioning::discard_directory(&directory);
+            return Err(error);
+        }
+    };
+
     let record = match projects::create_project(
         app.database(),
         &projects::NewProject {
@@ -388,9 +409,9 @@ async fn create_project(
             cpu_limit_cores: 1.0,
             storage_limit_mb: 2048,
             process_limit: 128,
-            runtime,
+            runtime: plan.spec.clone(),
             ports: vec![projects::NewPort {
-                container_port: container_port_for(&request.runtime),
+                container_port: plan.container_port,
                 host_port: Some(i64::from(host_port)),
                 protocol: "tcp".to_string(),
                 bind_address: "127.0.0.1".to_string(),
@@ -427,15 +448,21 @@ async fn create_project(
         );
     }
 
-    Ok(ProjectSummary {
-        id: record.id,
-        slug: record.slug,
-        display_name: record.display_name,
-        description: record.description,
-        project_type: record.project_type,
-        status: record.status,
-        desired_state: record.desired_state,
-        color: record.color,
+    Ok(CreatedProject {
+        project: ProjectSummary {
+            id: record.id,
+            slug: record.slug,
+            display_name: record.display_name,
+            description: record.description,
+            project_type: record.project_type,
+            status: record.status,
+            desired_state: record.desired_state,
+            color: record.color,
+        },
+        runtime: plan.spec.runtime,
+        detected: plan.detected,
+        languages: plan.languages,
+        notes: plan.notes,
     })
 }
 
@@ -831,6 +858,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             restart_project,
             app_settings,
             check_for_update,
+            supported_runtimes,
             list_project_files,
             read_project_file,
             write_project_file,

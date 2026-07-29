@@ -4,17 +4,14 @@ import {
   restartProject,
   startProject,
   stopProject,
+  supportedRuntimes,
+  type CreatedProject,
   type NewProjectRequest,
   type ProjectSummary,
+  type RuntimeOption,
   type SourceKind,
 } from '../api';
 import PageHeader from '../components/PageHeader';
-
-const RUNTIMES = [
-  { id: 'NODEJS', label: 'Node.js', hint: 'Discord bots, APIs, workers' },
-  { id: 'PYTHON', label: 'Python', hint: 'Bots, scripts, APIs' },
-  { id: 'STATIC', label: 'Static site', hint: 'HTML, CSS and JavaScript' },
-];
 
 /**
  * Where the files come from.
@@ -39,12 +36,16 @@ export default function Projects({
 }: {
   projects: ProjectSummary[] | null;
   dockerAvailable: boolean;
-  onCreate: (request: NewProjectRequest) => Promise<void>;
+  onCreate: (request: NewProjectRequest) => Promise<CreatedProject>;
   onRefresh: () => Promise<void>;
   createRequested: number;
   onOpen: (id: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
+  // What the last creation turned out to be. Shown after the dialog closes,
+  // because "we looked at your files and this is what they are" is the answer to
+  // a question the user no longer has open in front of them.
+  const [created, setCreated] = useState<CreatedProject | null>(null);
 
   // The sidebar can ask for the dialog; a counter rather than a boolean so a
   // second press reopens it after a cancel.
@@ -167,7 +168,52 @@ export default function Projects({
         </p>
       )}
 
-      {creating && <CreateDialog onClose={() => setCreating(false)} onCreate={onCreate} />}
+      {created && (
+        <section className="mt-4 rounded-lg border border-edge bg-surface px-4 py-3 text-sm">
+          <div className="flex items-start gap-3">
+            <p className="flex-1 text-neutral-200">
+              <span className="font-medium">{created.displayName}</span> created
+              {created.detected ? (
+                <>
+                  {' — detected '}
+                  <span className="font-mono text-accent">{created.languages.join(' + ')}</span>
+                  {', built as '}
+                  <span className="font-mono">{created.runtime.toLowerCase()}</span>.
+                </>
+              ) : (
+                <>
+                  {' as '}
+                  <span className="font-mono">{created.runtime.toLowerCase()}</span>.
+                </>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCreated(null)}
+              className="text-neutral-500 hover:text-neutral-200"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+          {created.notes.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs leading-relaxed text-neutral-400">
+              {created.notes.map((note) => (
+                <li key={note}>· {note}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {creating && (
+        <CreateDialog
+          onClose={() => setCreating(false)}
+          onCreate={async (request) => {
+            setCreated(await onCreate(request));
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -181,7 +227,10 @@ function CreateDialog({
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [runtime, setRuntime] = useState('NODEJS');
+  // `null` means "let the core decide from the files". Anything else is an
+  // override the user asked for.
+  const [runtime, setRuntime] = useState<string | null>(null);
+  const [runtimes, setRuntimes] = useState<RuntimeOption[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind>('EMPTY');
   const [url, setUrl] = useState('');
   const [gitRef, setGitRef] = useState('');
@@ -192,6 +241,14 @@ function CreateDialog({
 
   const remote = sourceKind !== 'EMPTY';
 
+  // The override list comes from the core, so the dialog cannot offer a language
+  // the planner would refuse.
+  useEffect(() => {
+    void supportedRuntimes()
+      .then(setRuntimes)
+      .catch(() => setRuntimes([]));
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -200,7 +257,9 @@ function CreateDialog({
       await onCreate({
         displayName: name,
         description,
-        runtime,
+        // Undefined rather than null: the command reads an absent field as
+        // "detect", and JSON has no reason to carry an explicit null here.
+        runtime: runtime ?? undefined,
         source: {
           kind: sourceKind,
           // Sent only for the kind that uses them, so the core is never asked to
@@ -349,32 +408,70 @@ function CreateDialog({
         )}
 
         <fieldset className="mt-4">
-          <legend className="text-sm text-neutral-300">Runtime</legend>
-          <div className="mt-2 space-y-2">
-            {RUNTIMES.map((option) => (
+          <legend className="text-sm text-neutral-300">Language</legend>
+
+          {remote ? (
+            <>
               <label
-                key={option.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm ${
-                  runtime === option.id
+                className={`mt-2 flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm ${
+                  runtime === null
                     ? 'border-accent bg-accent/10'
                     : 'border-edge hover:border-white/25'
                 }`}
               >
                 <input
                   type="radio"
-                  name="runtime"
-                  value={option.id}
-                  checked={runtime === option.id}
-                  onChange={() => setRuntime(option.id)}
+                  name="runtime-mode"
+                  checked={runtime === null}
+                  onChange={() => setRuntime(null)}
                   className="accent-[#2f6bff]"
                 />
                 <span className="flex-1">
-                  <span className="font-medium">{option.label}</span>
-                  <span className="ml-2 text-neutral-500">{option.hint}</span>
+                  <span className="font-medium">Detect automatically</span>
+                  <span className="ml-2 text-neutral-500">Read the files and decide</span>
                 </span>
               </label>
-            ))}
-          </div>
+
+              <label
+                className={`mt-2 flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm ${
+                  runtime !== null
+                    ? 'border-accent bg-accent/10'
+                    : 'border-edge hover:border-white/25'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="runtime-mode"
+                  checked={runtime !== null}
+                  onChange={() => setRuntime(runtimes[0]?.id ?? 'NODEJS')}
+                  className="accent-[#2f6bff]"
+                />
+                <span className="flex-1">
+                  <span className="font-medium">Choose it myself</span>
+                </span>
+              </label>
+            </>
+          ) : (
+            <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+              An empty project has no files to read, so pick the language yourself. You can change
+              this later.
+            </p>
+          )}
+
+          {(runtime !== null || !remote) && (
+            <select
+              value={runtime ?? ''}
+              onChange={(event) => setRuntime(event.target.value)}
+              className="mt-2 w-full rounded-md border border-edge bg-black/30 px-3 py-2 text-sm outline-none focus:border-accent"
+            >
+              {!remote && runtime === null && <option value="">Choose a language…</option>}
+              {runtimes.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
         </fieldset>
 
         {failure && (
@@ -393,7 +490,12 @@ function CreateDialog({
           </button>
           <button
             type="submit"
-            disabled={busy || name.trim().length === 0 || (remote && url.trim().length === 0)}
+            disabled={
+              busy ||
+              name.trim().length === 0 ||
+              (remote && url.trim().length === 0) ||
+              (!remote && runtime === null)
+            }
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? (remote ? 'Fetching…' : 'Creating…') : 'Create'}

@@ -110,14 +110,39 @@ export interface ProjectSource {
 export interface NewProjectRequest {
   displayName: string;
   description: string;
-  runtime: string;
+  /**
+   * Leave undefined to let the core look at the files and decide. An empty
+   * project has no files, so it needs one.
+   */
+  runtime?: string;
   source?: ProjectSource;
 }
 
-export async function createProject(request: NewProjectRequest): Promise<ProjectSummary> {
+/** What a project turned out to be, once its files were there to look at. */
+export interface CreatedProject extends ProjectSummary {
+  runtime: string;
+  /** True when the runtime came from the files rather than from a choice. */
+  detected: boolean;
+  /** Every language found in the tree. */
+  languages: string[];
+  /** Detection warnings, already phrased for a person. */
+  notes: string[];
+}
+
+export interface RuntimeOption {
+  id: string;
+  label: string;
+}
+
+/** The override list, served from the same table the planner uses. */
+export async function supportedRuntimes(): Promise<RuntimeOption[]> {
+  return toCamel<RuntimeOption[]>(await invoke('supported_runtimes'));
+}
+
+export async function createProject(request: NewProjectRequest): Promise<CreatedProject> {
   // The command reads snake_case, so the one place that converts back is here
   // rather than in the form.
-  return toCamel<ProjectSummary>(
+  return toCamel<CreatedProject>(
     await invoke('create_project', {
       request: {
         display_name: request.displayName,
