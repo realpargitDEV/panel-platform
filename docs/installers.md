@@ -23,6 +23,7 @@ GitHub release.
 | -------- | -------------------------------------------------------------------- |
 | Windows  | `Panel.Platform_<version>_x64-setup.exe` (NSIS), `..._x64_en-US.msi` |
 | Linux    | `Panel.Platform_<version>_amd64.deb`, `..._amd64.AppImage`           |
+| Setup    | `PanelPlatformSetup.exe`, `panel-platform-setup-x86_64` — see §8     |
 | Updates  | `latest.json`, plus a `.sig` beside each updater artefact            |
 | Both     | `SHA256SUMS.txt`                                                     |
 
@@ -188,18 +189,19 @@ These run in the release workflow, against the artefacts the draft release
 carries — downloaded from it, never rebuilt. They must pass before the draft is
 fit to publish.
 
-| Test                                                         | Job             |
-| ------------------------------------------------------------ | --------------- |
-| `.deb` installs with `dpkg -i`, repaired by `apt-get -f`     | `smoke-linux`   |
-| Package reports `install ok installed`, binary is executable | `smoke-linux`   |
-| Installed binary starts under `xvfb` and survives 10s        | `smoke-linux`   |
-| AppImage is executable, extracts, starts and survives 10s    | `smoke-linux`   |
-| NSIS `.exe` installs silently with `/S`                      | `smoke-windows` |
-| Installation directory and executable exist                  | `smoke-windows` |
-| Installed executable starts and survives 10s                 | `smoke-windows` |
-| Uninstaller runs                                             | `smoke-windows` |
-| SHA-256 for every attached asset                             | `checksums`     |
-| Tag matches the version in all four manifests                | `check-version` |
+| Test                                                          | Job             |
+| ------------------------------------------------------------- | --------------- |
+| Setup program resolves, downloads and verifies a real release | `bootstrap`     |
+| `.deb` installs with `dpkg -i`, repaired by `apt-get -f`      | `smoke-linux`   |
+| Package reports `install ok installed`, binary is executable  | `smoke-linux`   |
+| Installed binary starts under `xvfb` and survives 10s         | `smoke-linux`   |
+| AppImage is executable, extracts, starts and survives 10s     | `smoke-linux`   |
+| NSIS `.exe` installs silently with `/S`                       | `smoke-windows` |
+| Installation directory and executable exist                   | `smoke-windows` |
+| Installed executable starts and survives 10s                  | `smoke-windows` |
+| Uninstaller runs                                              | `smoke-windows` |
+| SHA-256 for every attached asset                              | `checksums`     |
+| Tag matches the version in all four manifests                 | `check-version` |
 
 **What these prove:** the package installs, the files land, the application
 starts, and it does not crash in its first ten seconds.
@@ -213,14 +215,72 @@ process that starts and sits there passes every one of these.
 None of these have been run. They need machines that do not exist yet, and the
 update rows additionally need two published releases.
 
-| Test                                               | Host                          |
-| -------------------------------------------------- | ----------------------------- |
-| Clean install → application opens → project starts | Windows 11 VM, Docker Desktop |
-| Upgrade preserves data and running containers      | Windows VM                    |
-| Uninstall leaves `ProgramData` intact              | Windows VM                    |
-| `.deb` install → window appears and is usable      | Ubuntu 22.04 + 24.04 VMs      |
-| `apt upgrade` preserves data                       | Ubuntu VM                     |
-| AppImage self-updates                              | Ubuntu VM                     |
-| Update offered, downloaded, verified, installed    | both, two published releases  |
-| Install with Docker absent opens with guidance     | both                          |
-| Data survives uninstall and is found on reinstall  | both                          |
+| Test                                                 | Host                          |
+| ---------------------------------------------------- | ----------------------------- |
+| Clean install → application opens → project starts   | Windows 11 VM, Docker Desktop |
+| Upgrade preserves data and running containers        | Windows VM                    |
+| Uninstall leaves `ProgramData` intact                | Windows VM                    |
+| `.deb` install → window appears and is usable        | Ubuntu 22.04 + 24.04 VMs      |
+| `apt upgrade` preserves data                         | Ubuntu VM                     |
+| AppImage self-updates                                | Ubuntu VM                     |
+| Update offered, downloaded, verified, installed      | both, two published releases  |
+| Install with Docker absent opens with guidance       | both                          |
+| Data survives uninstall and is found on reinstall    | both                          |
+| Setup program installs end to end, not only verifies | both                          |
+
+---
+
+## 8. The setup program
+
+`crates/setup`. One small binary per platform, attached to the same release as
+the installers. A user downloads it, runs it, and it works out which of the
+five artefacts their machine needs, downloads that one, proves it came from
+Panel Platform, and starts it.
+
+It exists because the download page cannot know which artefact a visitor needs,
+and because four of the five choices are wrong for any given reader.
+
+### Sequence
+
+```
+check latest release → select asset → confirm → download → verify → hand off
+```
+
+| Host                                   | Gets               | Installed by             |
+| -------------------------------------- | ------------------ | ------------------------ |
+| Windows x64                            | `*_x64-setup.exe`  | The NSIS installer's UI  |
+| Linux, `dpkg` **and** `pkexec` present | `*_amd64.deb`      | `pkexec dpkg -i`         |
+| Linux, either missing                  | `*_amd64.AppImage` | Placed in `~/.local/bin` |
+
+On Windows and for the `.deb` it adds no install logic of its own — those
+installers exist and §7.1 smoke-tests them. The AppImage is the exception,
+because no packager owns it, and that path never asks for root.
+
+### What it trusts
+
+The releases it can see come from `releases/latest`, which **excludes drafts**.
+That is the behaviour this design wants: a draft is by definition not fit to
+install, so the setup program cannot reach one even for the person who built it.
+
+| Check    | Against                             | Defeats                          |
+| -------- | ----------------------------------- | -------------------------------- |
+| minisign | Public key compiled into the binary | A forged or substituted artefact |
+| SHA-256  | `SHA256SUMS.txt` from the release   | Corruption in transit            |
+
+Both are required and the signature is the one that matters: `SHA256SUMS.txt`
+travels the same channel as the artefact, so anyone able to substitute one can
+substitute the other. It is an integrity check, not an authenticity check.
+
+The public key is read from `tauri.conf.json` by `build.rs`, so the setup
+program and the in-app updater trust the same key by construction. A file that
+fails either check is deleted rather than run, and nothing is written to disk
+until it has passed. There is no override flag.
+
+The setup program is **unsigned**, like every other Windows artefact here — see
+§6. It says so on its confirmation screen rather than only in this document.
+
+### `--silent`
+
+The same pipeline as text, for machines with no display. `--dry-run` stops
+after verification without changing anything, which is what the `bootstrap` job
+runs.

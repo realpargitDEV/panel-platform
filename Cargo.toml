@@ -11,6 +11,7 @@ members = [
     "crates/discord",
     "crates/updater",
     "crates/app-core",
+    "crates/setup",
     "apps/desktop/src-tauri",
 ]
 
