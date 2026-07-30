@@ -889,6 +889,25 @@ async fn check_for_update() -> CommandResult<UpdateCheck> {
     .map_err(CommandError::from)
 }
 
+/// Why this installation cannot replace itself, or `None` when it can.
+///
+/// Only the `.deb` cannot: `docs/installers.md` §5 lists NSIS, MSI and AppImage
+/// as self-updating and dpkg's package as not. An AppImage sets `APPIMAGE` to
+/// its own path when it runs, so its absence on Linux means the binary came
+/// from the package.
+fn self_update_unavailable() -> Option<String> {
+    if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {
+        return Some(
+            "This copy was installed from the .deb package, which apt owns and \
+             the application cannot replace by itself. Update it with \
+             `sudo apt install ./Panel.Platform_<version>_amd64.deb`, or \
+             download the new release from the website."
+                .to_string(),
+        );
+    }
+    None
+}
+
 /// Download the offered update, verify its signature, and install it.
 ///
 /// Only ever called after [`check_for_update`] has returned an update and the
@@ -906,6 +925,15 @@ async fn check_for_update() -> CommandResult<UpdateCheck> {
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> CommandResult<()> {
     use tauri_plugin_updater::UpdaterExt;
+
+    // A `.deb` install is owned by dpkg: replacing those files from inside the
+    // running process would leave the package manager describing a version that
+    // is no longer on disk. The plugin refuses, but its message is about a
+    // missing `APPIMAGE` variable, which tells the reader nothing about what to
+    // do. This says it plainly, before any download happens.
+    if let Some(message) = self_update_unavailable() {
+        return Err(CommandError { message });
+    }
 
     let update = app
         .updater()

@@ -88,6 +88,18 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
   return toCamel<UpdateCheck>(await invoke('check_for_update'));
 }
 
+/**
+ * Download the offered update, verify its signature, and install it.
+ *
+ * Resolves only on Linux, where the AppImage is replaced in place and the new
+ * version appears on the next start. On Windows the installer takes over and
+ * this process exits, so nothing here runs afterwards — the caller must not
+ * depend on code after the await.
+ */
+export async function installUpdate(): Promise<void> {
+  await invoke('install_update');
+}
+
 /** Where a new project's files come from. */
 export type SourceKind = 'EMPTY' | 'GIT_CLONE' | 'REMOTE_ARCHIVE' | 'GITHUB_CLI';
 

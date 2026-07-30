@@ -3,11 +3,13 @@ import {
   appSettings,
   checkForUpdate,
   errorMessage,
+  installUpdate,
   type AppSettings,
   type SystemStatus,
   type UpdateCheck,
 } from '../api';
 import PageHeader from '../components/PageHeader';
+import { buttonLabel, canStart, failureMessage, idle, type InstallPhase } from '../update';
 
 /**
  * Settings.
@@ -22,6 +24,19 @@ export default function SettingsView({ status }: { status: SystemStatus | null }
   const [check, setCheck] = useState<UpdateCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [phase, setPhase] = useState<InstallPhase>(idle);
+
+  async function install() {
+    setPhase({ state: 'installing' });
+    try {
+      await installUpdate();
+      // Linux only: on Windows the installer takes over and this process exits
+      // before the await returns.
+      setPhase({ state: 'installed' });
+    } catch (error) {
+      setPhase({ state: 'failed', message: failureMessage(error) });
+    }
+  }
 
   useEffect(() => {
     appSettings()
@@ -77,12 +92,20 @@ export default function SettingsView({ status }: { status: SystemStatus | null }
             {check.notes && <p className="mt-1.5 text-sm text-neutral-300">{check.notes}</p>}
             <button
               type="button"
-              disabled
-              title="Installing updates is not implemented yet"
-              className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void install()}
+              disabled={!canStart(phase)}
+              className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm font-medium hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Update now
+              {buttonLabel(phase)}
             </button>
+            {phase.state === 'failed' && (
+              <p className="mt-2 text-sm text-amber-400">{phase.message}</p>
+            )}
+            {phase.state === 'installed' && (
+              <p className="mt-2 text-sm text-neutral-300">
+                Installed. Close and reopen Panel Platform to finish.
+              </p>
+            )}
           </div>
         )}
       </Section>
