@@ -89,6 +89,46 @@ impl SafePath {
         })
     }
 
+    /// Name the final component *without following it*.
+    ///
+    /// [`SafePath::new`] resolves the whole path, so a symlink pointing out of
+    /// the project is an [`PathError::Escape`] and cannot be addressed at all.
+    /// That is right for reading and writing — following such a link is the
+    /// cheapest way out of the sandbox — but it also made the link invisible to
+    /// listing and impossible to delete, which contradicts this module's
+    /// contract that a link is shown and refused as the target of anything
+    /// else. A user cannot remove what they cannot see.
+    ///
+    /// So the *parent* is resolved and must lie within the root, and the last
+    /// component is appended literally. The result names the link itself, which
+    /// is what `symlink_metadata` and `remove_file` act on; neither touches the
+    /// target. Reading and writing still go through [`SafePath::new`] and are
+    /// still refused.
+    pub fn new_no_follow(root: &Path, relative: &str) -> Result<Self, PathError> {
+        let canonical_root = canonicalise(root)?;
+        let cleaned = validate_relative(relative)?;
+
+        let name = cleaned.file_name().ok_or(PathError::Empty)?.to_os_string();
+        let parent = match cleaned.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => {
+                canonicalise(&canonical_root.join(parent))?
+            }
+            _ => canonical_root.clone(),
+        };
+
+        // The containment check moves to the parent. A name within a directory
+        // that is itself inside the project cannot escape, whatever it points
+        // at, because nothing here dereferences it.
+        if !is_within(&canonical_root, &parent) {
+            return Err(PathError::Escape);
+        }
+
+        Ok(Self {
+            absolute: parent.join(&name),
+            relative: cleaned.to_string_lossy().replace('\\', "/"),
+        })
+    }
+
     /// The project root itself.
     pub fn root(root: &Path) -> Result<Self, PathError> {
         let canonical = canonicalise(root)?;
@@ -133,6 +173,19 @@ impl SafePath {
             format!("{}/{}", self.relative, segment)
         };
         SafePath::new(root, &combined)
+    }
+
+    /// [`SafePath::join`], without following the joined component.
+    ///
+    /// See [`SafePath::new_no_follow`] for why this exists and what it does not
+    /// permit.
+    pub fn join_no_follow(&self, root: &Path, segment: &str) -> Result<Self, PathError> {
+        let combined = if self.relative.is_empty() {
+            segment.to_string()
+        } else {
+            format!("{}/{}", self.relative, segment)
+        };
+        SafePath::new_no_follow(root, &combined)
     }
 }
 
@@ -464,6 +517,40 @@ mod tests {
         let dir = project();
         let safe = SafePath::new(dir.path(), "src\\app.js").expect("accept");
         assert_eq!(safe.relative(), "src/app.js");
+    }
+
+    /// Not following the last component must not become a way to skip the
+    /// checks that apply to every other one. Runs on all platforms, because the
+    /// escape it guards against does not need a symlink to attempt.
+    #[test]
+    fn not_following_the_last_component_still_validates_the_rest() {
+        let dir = project();
+
+        assert_eq!(
+            SafePath::new_no_follow(dir.path(), "../escape"),
+            Err(PathError::Traversal)
+        );
+        assert_eq!(
+            SafePath::new_no_follow(dir.path(), "src/../../escape"),
+            Err(PathError::Traversal)
+        );
+        assert_eq!(
+            SafePath::new_no_follow(dir.path(), "/etc/passwd"),
+            Err(PathError::Absolute)
+        );
+        assert_eq!(
+            SafePath::new_no_follow(dir.path(), ""),
+            Err(PathError::Empty)
+        );
+
+        // A name in a directory that is inside the project is fine, and the
+        // relative form is unchanged from the following version.
+        let safe = SafePath::new_no_follow(dir.path(), "src/app.js").expect("accept");
+        assert_eq!(safe.relative(), "src/app.js");
+
+        // Naming something that does not exist is fine: nothing is stat'd here.
+        let absent = SafePath::new_no_follow(dir.path(), "src/nothing.txt").expect("accept");
+        assert_eq!(absent.relative(), "src/nothing.txt");
     }
 
     #[test]

@@ -229,6 +229,14 @@ pub fn list_directory(
         // can only have arrived from outside the product.
         let child = match safe.join(root, &name) {
             Ok(child) => child,
+            // A link whose target leaves the project is still shown. Hiding it
+            // would leave an entry the user can neither inspect nor delete,
+            // and `entry_from` stats the link rather than the target, so
+            // nothing here follows it.
+            Err(PathError::Escape) => match safe.join_no_follow(root, &name) {
+                Ok(child) => child,
+                Err(_) => continue,
+            },
             Err(_) => continue,
         };
 
@@ -494,7 +502,25 @@ pub fn create_directory(root: &Path, relative: &str) -> Result<FileEntry, FileEr
 /// `recursive` is required for a non-empty directory: the caller has to state
 /// that it means it, and the API layer turns that into a confirmation dialog.
 pub fn delete(root: &Path, relative: &str, recursive: bool) -> Result<(), FileError> {
-    let safe = resolve(root, relative)?;
+    let safe = match resolve(root, relative) {
+        Ok(safe) => safe,
+        // A link out of the project fails the containment check, but removing
+        // the link never touches what it points at — and the listing shows it,
+        // so refusing would leave an entry that cannot be got rid of. The
+        // fallback is deliberately narrow: only a symlink takes it, and
+        // anything else still escapes.
+        Err(FileError::Path(PathError::Escape)) => {
+            let candidate = SafePath::new_no_follow(root, relative)?;
+            let is_link = std::fs::symlink_metadata(candidate.absolute())
+                .map(|metadata| metadata.is_symlink())
+                .unwrap_or(false);
+            if !is_link {
+                return Err(FileError::Path(PathError::Escape));
+            }
+            candidate
+        }
+        Err(other) => return Err(other),
+    };
 
     if safe.relative().is_empty() {
         return Err(FileError::Refused(
