@@ -181,8 +181,24 @@ over SSH and in CI, and it is the mode §4's smoke test runs.
 
 ## 4. Release integration
 
-A `bootstrap` job in `release.yml`, ordered after `build` and before
-`checksums`, so both stubs are attached in time to appear in `SHA256SUMS.txt`.
+A `bootstrap` job in `release.yml` with `needs: check-version`, building both
+stubs and attaching them to the draft.
+
+Two existing jobs change, because the current graph is
+`check-version → build → {checksums, smoke-linux, smoke-windows} → release-gate`
+and `checksums` today needs only `build`:
+
+| Job            | Was                                          | Becomes                                                   |
+| -------------- | -------------------------------------------- | --------------------------------------------------------- |
+| `checksums`    | `needs: build`                                | `needs: [build, bootstrap]`                                |
+| `release-gate` | `needs: [build, checksums, smoke-*]`          | `needs: [build, bootstrap, checksums, smoke-*]`             |
+
+Without the first, `checksums` races `bootstrap` and `SHA256SUMS.txt` silently
+omits the two artefacts most in need of a checksum. Without the second, a broken
+stub cannot fail the gate.
+
+The stubs do not depend on `build` — nothing in them is produced by it — so they
+compile in parallel with the Tauri builds rather than after them.
 
 Its smoke step runs `--silent --dry-run` on both runners: resolve the latest
 release, download, verify, stop. This proves the real path against real
