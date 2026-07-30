@@ -101,28 +101,30 @@ deleted by hand.
 ### Layout
 
 ```
-/usr/bin/panel-platform                       binary
+/usr/bin/project-host-desktop                 binary
 /usr/share/applications/panel-platform.desktop
-/var/lib/project-host/                        data
-/etc/project-host/                            config
-/var/log/project-host/                        logs
+~/.local/share/project-host/                  data, projects, backups, tmp
+~/.config/project-host/                       config
+~/.local/state/project-host/                  logs
 ```
 
-> **Open problem.** Those three data locations come from
-> `StandardPaths::linux()` in `crates/platform/src/paths.rs`, and
-> `Runtime::start` creates them with `ensure_all()` at launch. They are all
-> root-owned system directories, so **a normal desktop user starting the
-> application cannot create them** and startup is expected to fail.
+Data is per-user, under the XDG base directories and honouring
+`XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when they are set to
+absolute paths.
+
+> These were `/var/lib`, `/etc` and `/var/log` until the first Linux smoke test
+> ran. The installed `.deb` started as an ordinary user and died in under a
+> second:
 >
-> They are left over from the design where a system service owned the data and
-> ran as its own user. That service was deleted in the single-process rewrite,
-> and the architecture note in the README now says the opposite: "the process
-> runs as you, on your machine". The paths were never updated to match.
+> ```
+> Panel Platform could not start: could not prepare directories:
+> could not create /var/lib/project-host
+> ```
 >
-> The fix is per-user XDG locations, and it is not applied here because it
-> changes where an installed application looks for its data — a decision worth
-> making deliberately rather than as a footnote to a release pipeline. The
-> Linux smoke test is what turns this from a prediction into evidence.
+> Those locations came from the design where a background service owned the
+> data and ran as its own service user. That service was deleted in the
+> single-process rewrite; the paths were not. Nothing caught it because the
+> `.deb` had never been installed and started anywhere.
 
 ### Dependencies
 

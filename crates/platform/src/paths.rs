@@ -96,16 +96,45 @@ impl StandardPaths {
         }
     }
 
-    /// Linux: FHS locations.
+    /// Linux: per-user XDG locations.
+    ///
+    /// These were the FHS system directories — `/var/lib`, `/etc`, `/var/log` —
+    /// from the design where a background service owned the data and ran as its
+    /// own service user. That service was deleted in the single-process
+    /// rewrite. The application now runs as the person using it, and a person
+    /// cannot create anything under `/var` or `/etc`.
+    ///
+    /// Nothing caught it until an installed `.deb` was launched in CI as an
+    /// ordinary user and died in under a second with
+    /// `could not create /var/lib/project-host` — the first time the Linux
+    /// build had ever been started.
+    ///
+    /// `projects`, `backups` and `tmp` stay under one root, because staging an
+    /// extraction and renaming it into place is only atomic within a single
+    /// filesystem.
     pub fn linux() -> Self {
-        let state = PathBuf::from("/var/lib/project-host");
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+
+        let base = |variable: &str, fallback: &str| -> PathBuf {
+            std::env::var_os(variable)
+                .map(PathBuf::from)
+                // The specification says a relative `XDG_*` value must be
+                // ignored. Honouring one would put the database wherever the
+                // process happened to be started from.
+                .filter(|path| path.is_absolute())
+                .or_else(|| home.as_ref().map(|home| home.join(fallback)))
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join("project-host")
+        };
+
+        let state = base("XDG_DATA_HOME", ".local/share");
         Self {
-            data: state.clone(),
-            config: PathBuf::from("/etc/project-host"),
-            logs: PathBuf::from("/var/log/project-host"),
+            config: base("XDG_CONFIG_HOME", ".config"),
+            logs: base("XDG_STATE_HOME", ".local/state"),
             projects: state.join("projects"),
             backups: state.join("backups"),
             temp: state.join("tmp"),
+            data: state,
         }
     }
 
@@ -222,12 +251,34 @@ mod tests {
         );
     }
 
+    /// The exact directories depend on the environment this runs in, so the
+    /// invariants are asserted instead of literal paths — which also lets this
+    /// run on every platform rather than only on Linux. A `#[cfg(unix)]` test
+    /// is one that never runs on the machine this is developed on, and the
+    /// `/var` layout survived precisely because nothing exercised it.
     #[test]
-    fn linux_layout_follows_the_fhs() {
+    fn linux_layout_is_per_user_and_shares_one_root() {
         let paths = StandardPaths::linux();
-        assert_eq!(paths.data_dir(), Path::new("/var/lib/project-host"));
-        assert_eq!(paths.config_dir(), Path::new("/etc/project-host"));
-        assert_eq!(paths.log_dir(), Path::new("/var/log/project-host"));
+
+        for directory in [paths.data_dir(), paths.config_dir(), paths.log_dir()] {
+            assert!(
+                directory.ends_with("project-host"),
+                "{directory:?} should be namespaced"
+            );
+            // The service that owned these is gone. The application runs as the
+            // user, who cannot create anything here — which is exactly how the
+            // installed `.deb` failed to start.
+            assert!(
+                !directory.starts_with("/var") && !directory.starts_with("/etc"),
+                "{directory:?} is a system location the user cannot write to"
+            );
+        }
+
+        // Staging and renaming into place is only atomic within one
+        // filesystem, so these three must share a parent.
+        assert_eq!(paths.projects_dir().parent(), Some(paths.data_dir()));
+        assert_eq!(paths.backups_dir().parent(), Some(paths.data_dir()));
+        assert_eq!(paths.temp_dir().parent(), Some(paths.data_dir()));
     }
 
     #[test]
