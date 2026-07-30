@@ -210,3 +210,223 @@ jobs:
           sha256sum * | sort -k2 > SHA256SUMS.txt
           cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+  # Smoke tests. These install the artefacts the release actually carries —
+  # downloaded from the draft release, never rebuilt — and prove two things
+  # only: that the package installs, and that the application starts and stays
+  # up. They say nothing about whether any feature works.
+  smoke-linux:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install a desktop runtime for the application to start against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libwebkit2gtk-4.1-0 libgtk-3-0 \
+            libayatana-appindicator3-1 dbus-x11
+
+      - name: Download the release artefacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artefacts && cd artefacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.deb' --pattern '*.AppImage'
+          ls -lh
+
+      - name: Install the .deb
+        run: |
+          set -euo pipefail
+          cd artefacts
+          deb="$(ls *.deb | head -n 1)"
+          echo "Installing $deb"
+          # `dpkg -i` fails rather than resolving dependencies; `apt-get -f`
+          # is the documented repair step and is what a user hitting this
+          # would run.
+          sudo dpkg -i "$deb" || sudo apt-get install -f -y
+          # Read the package name from the archive rather than assuming it:
+          # it derives from productName and would change with it.
+          pkg="$(dpkg-deb -f "$deb" Package)"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Verify the package is installed
+        run: |
+          set -euo pipefail
+          dpkg -s "$PKG"
+          dpkg -s "$PKG" | grep -q '^Status: install ok installed'
+          echo "Files installed:"
+          dpkg -L "$PKG"
+          bin="$(dpkg -L "$PKG" | grep -E '^/usr/bin/' | head -n 1)"
+          test -x "$bin"
+          echo "BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: Launch the installed application under xvfb
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          echo "Launching $BIN"
+          xvfb-run -a --server-args="-screen 0 1280x900x24" \
+            "$BIN" > logs/deb-launch.log 2>&1 &
+          pid=$!
+          # Ten seconds is enough to distinguish "started" from "died on
+          # startup", which is the only distinction this test is entitled to
+          # make.
+          for i in $(seq 1 10); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"; code=$?
+              echo "::error::The .deb application exited after ${i}s with code $code"
+              echo "--- output ---"; cat logs/deb-launch.log
+              exit 1
+            fi
+          done
+          echo "Still running after 10s."
+          kill "$pid" 2>/dev/null || true
+          cat logs/deb-launch.log
+
+      - name: Launch the AppImage under xvfb
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          cd artefacts
+          app="$(ls *.AppImage | head -n 1)"
+          chmod +x "$app"
+          echo "Launching $app"
+          # No FUSE on the runner, so the AppImage is extracted and its inner
+          # entry point run — the same binary, without needing a kernel module.
+          ./"$app" --appimage-extract > /dev/null 2>&1
+          xvfb-run -a --server-args="-screen 0 1280x900x24" \
+            ./squashfs-root/AppRun > ../logs/appimage-launch.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 10); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"; code=$?
+              echo "::error::The AppImage exited after ${i}s with code $code"
+              echo "--- output ---"; cat ../logs/appimage-launch.log
+              exit 1
+            fi
+          done
+          echo "Still running after 10s."
+          kill "$pid" 2>/dev/null || true
+          cat ../logs/appimage-launch.log
+
+      - name: Upload launch logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-linux-logs
+          path: logs/
+          if-no-files-found: warn
+
+  smoke-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download the release artefacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artefacts && cd artefacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-setup.exe'
+          ls -l
+
+      - name: Install silently
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-ChildItem artefacts\*-setup.exe | Select-Object -First 1
+          Write-Host "Installing $($setup.Name)"
+          # /S is NSIS's silent switch. Per-user, so no elevation is needed.
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
+
+      - name: Verify the installation directory and executable exist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The install location is not assumed: it is found, so a change to
+          # productName does not silently turn this check into a no-op.
+          $roots = @(
+            "$env:LOCALAPPDATA\Panel Platform",
+            "$env:ProgramFiles\Panel Platform",
+            "${env:ProgramFiles(x86)}\Panel Platform"
+          )
+          $dir = $roots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $dir) { throw "No installation directory found. Looked in:`n$($roots -join "`n")" }
+          Write-Host "Installed to $dir"
+          Get-ChildItem -Recurse $dir | Select-Object FullName, Length | Format-Table -AutoSize
+
+          $exe = Get-ChildItem -Path $dir -Filter *.exe -Recurse |
+                 Where-Object { $_.Name -notmatch 'uninstall' } |
+                 Select-Object -First 1
+          if (-not $exe) { throw "No application executable under $dir" }
+          Write-Host "Executable: $($exe.FullName)"
+          "APP_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APP_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Launch it and confirm it stays running
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          Write-Host "Launching $env:APP_EXE"
+          $p = Start-Process -FilePath $env:APP_EXE `
+                 -RedirectStandardOutput logs\win-launch.out.log `
+                 -RedirectStandardError  logs\win-launch.err.log `
+                 -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) {
+            Write-Host "::error::The application exited after less than 10s with code $($p.ExitCode)"
+            Get-Content logs\win-launch.out.log -ErrorAction SilentlyContinue
+            Get-Content logs\win-launch.err.log -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "Still running after 10s."
+          Stop-Process -Id $p.Id -Force
+          Get-Content logs\win-launch.out.log -ErrorAction SilentlyContinue
+          Get-Content logs\win-launch.err.log -ErrorAction SilentlyContinue
+
+      - name: Uninstall
+        if: always()
+        shell: pwsh
+        run: |
+          $un = Get-ChildItem -Path $env:APP_DIR -Filter '*ninstall*.exe' -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+          if ($un) {
+            Write-Host "Uninstalling with $($un.FullName)"
+            Start-Process -FilePath $un.FullName -ArgumentList '/S' -Wait
+          } else {
+            Write-Host "No uninstaller found; nothing to do."
+          }
+
+      - name: Upload launch logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-windows-logs
+          path: logs/
+          if-no-files-found: warn
+
+  # A single place to read whether the draft is fit to publish. It does not
+  # publish anything: a person still presses the button, and this only records
+  # that every gate before it went green.
+  release-gate:
+    needs: [build, checksums, smoke-linux, smoke-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          echo "Builds, checksums and both smoke tests passed for $TAG."
+          echo
+          echo "The release is still a DRAFT. Publishing is manual and deliberate."
+          echo "These tests prove the installers install and the application"
+          echo "starts without immediately crashing. They do NOT prove that any"
+          echo "feature works — see docs/installers.md for what still needs a VM."
