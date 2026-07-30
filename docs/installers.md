@@ -161,6 +161,12 @@ install can ever be updated again**, because clients trust exactly one key.
 
 Nothing installs without the user pressing the button.
 
+The `.deb` case is refused **before** anything is downloaded, and says which
+command to run instead. An AppImage sets `APPIMAGE` to its own path when it
+runs, so its absence on Linux identifies a packaged install. Left to the
+plugin, the same case fails partway through with a complaint about a missing
+environment variable — true, and no use to the person reading it.
+
 ---
 
 ## 6. Signing
