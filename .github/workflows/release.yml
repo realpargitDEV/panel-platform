@@ -113,6 +113,17 @@ jobs:
             added by GitHub automatically and are only useful if you intend to
             build the application yourself.
 
+            **If you would rather not choose**, download the setup program for
+            your system. It works out which of the files below you need, checks
+            it against Panel Platform's signature, and starts the installer.
+
+            | Your system | Setup program |
+            | --- | --- |
+            | Windows 10 / 11 (64-bit) | `PanelPlatformSetup.exe` |
+            | 64-bit Linux | `panel-platform-setup-x86_64` |
+
+            Or pick a file yourself:
+
             | Your system | Download this | |
             | --- | --- | --- |
             | **Windows 10 / 11** (64-bit) | `Panel.Platform_*_x64-setup.exe` | **Recommended** |
@@ -187,10 +198,98 @@ jobs:
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
-  # Checksums are only meaningful once every platform's assets exist, so this
-  # runs after the matrix rather than inside it.
-  checksums:
+  # The setup program: a small binary that downloads the right installer from
+  # this release, verifies it, and starts it. Built after `build` rather than
+  # beside it only because the draft release it uploads into does not exist
+  # until `tauri-action` creates it.
+  bootstrap:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            binary: panel-platform-setup.exe
+            asset: PanelPlatformSetup.exe
+          - platform: ubuntu-22.04
+            binary: panel-platform-setup
+            asset: panel-platform-setup-x86_64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # eframe on the glow backend. Deliberately *not* webkit2gtk: this program
+      # runs before the application is installed, so it may not depend on
+      # anything the .deb exists to provide.
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ -> target'
+
+      - name: Build
+        run: cargo build --release -p panel-platform-setup
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "target/release/${{ matrix.binary }}" "${{ matrix.asset }}"
+          gh release upload "$TAG" "${{ matrix.asset }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      # The real path, against the real artefacts, over the real network:
+      # resolve the latest release, download it, check its signature and its
+      # checksum, and stop before installing anything.
+      #
+      # It reads the *latest published* release, which is not the draft this
+      # run just built. Until a release is published there is nothing to read,
+      # and the step says so rather than reporting a green it did not earn.
+      - name: Verify it can resolve, download and check a real release
+        shell: bash
+        run: |
+          set -uo pipefail
+          output=$(./"${{ matrix.asset }}" --dry-run 2>&1) && code=0 || code=$?
+          echo "$output"
+
+          if [ $code -eq 0 ]; then
+            echo "Verified a published release end to end."
+            exit 0
+          fi
+
+          if echo "$output" | grep -q "no published release yet"; then
+            echo "::warning::No release is published yet, so only the error"
+            echo "::warning::path was exercised. This step will verify a real"
+            echo "::warning::download once a release has been published."
+            exit 0
+          fi
+
+          echo "::error::The setup program failed against the published release."
+          exit 1
+
+  # Checksums are only meaningful once every platform's assets exist, so this
+  # runs after the matrix rather than inside it. It must also wait for
+  # `bootstrap`, or SHA256SUMS.txt would silently omit the two artefacts most
+  # in need of a checksum.
+  checksums:
+    needs: [build, bootstrap]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -417,7 +516,7 @@ jobs:
   # publish anything: a person still presses the button, and this only records
   # that every gate before it went green.
   release-gate:
-    needs: [build, checksums, smoke-linux, smoke-windows]
+    needs: [build, bootstrap, checksums, smoke-linux, smoke-windows]
     runs-on: ubuntu-22.04
     steps:
       - name: Report

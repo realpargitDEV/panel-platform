@@ -1,7 +1,7 @@
 # Download manager
 
 Date: 2026-07-31
-Status: approved, not yet implemented
+Status: implemented in `crates/setup`
 
 A small binary a user downloads and runs, which fetches the real installer for
 their platform, verifies it, and hands off to it. Shipped for Windows and Linux
@@ -24,10 +24,10 @@ is deleted rather than run.
 Built by `.github/workflows/release.yml` on a `v*` tag and attached to the same
 draft release as the installers.
 
-| Platform | Artefact                        | Approx. size |
-| -------- | ------------------------------- | ------------ |
-| Windows  | `PanelPlatformSetup.exe`        | ~5 MB        |
-| Linux    | `panel-platform-setup-x86_64`   | ~5 MB        |
+| Platform | Artefact                      | Approx. size |
+| -------- | ----------------------------- | ------------ |
+| Windows  | `PanelPlatformSetup.exe`      | ~5 MB        |
+| Linux    | `panel-platform-setup-x86_64` | ~5 MB        |
 
 Both are listed in `SHA256SUMS.txt` with every other asset.
 
@@ -54,8 +54,8 @@ check latest release → select asset → confirm → download → verify → ha
 Each step is a module with one job, and the two that decide anything are pure
 functions over data rather than code that touches the network.
 
-| Module        | Responsibility                                                  |
-| ------------- | --------------------------------------------------------------- |
+| Module        | Responsibility                                                   |
+| ------------- | ---------------------------------------------------------------- |
 | `release.rs`  | Parse the GitHub API response into `Release { version, assets }` |
 | `target.rs`   | `select_asset(&Release, Platform, LinuxTools) -> Result<&Asset>` |
 | `download.rs` | Streaming GET to a private temp file, progress, cap, timeout     |
@@ -80,7 +80,7 @@ anonymous, no token.
 That endpoint **excludes drafts**, which is the correct behaviour for this
 purpose: a draft is by definition not fit to install, and the stub must not be
 able to reach one. While no release is published it returns 404, and the stub
-says so in those words — *no published release yet* — rather than reporting a
+says so in those words — _no published release yet_ — rather than reporting a
 network error for a server that answered correctly.
 
 Anonymous GitHub API calls are rate-limited by IP. A 403 with
@@ -92,12 +92,12 @@ as a failure to reach GitHub.
 Pure, total, and tested for every platform on every platform — not behind
 `#[cfg]`, for the reason §5 gives.
 
-| Host                                  | Asset                       |
-| ------------------------------------- | --------------------------- |
-| Windows x64                           | `*_x64-setup.exe` (NSIS)    |
+| Host                                   | Asset                       |
+| -------------------------------------- | --------------------------- |
+| Windows x64                            | `*_x64-setup.exe` (NSIS)    |
 | Linux, `dpkg` **and** `pkexec` present | `*_amd64.deb`               |
-| Linux, either missing                 | `*_amd64.AppImage`          |
-| Anything else                         | Refuse, naming the platform |
+| Linux, either missing                  | `*_amd64.AppImage`          |
+| Anything else                          | Refuse, naming the platform |
 
 The NSIS `.exe` is chosen over the `.msi` for the reason `docs/installers.md`
 §1 already gives: it bootstraps WebView2, the one dependency the application
@@ -133,10 +133,10 @@ verification and execution.
 
 Two independent checks, both required:
 
-| Check     | Against                                   | Defeats                          |
-| --------- | ----------------------------------------- | -------------------------------- |
-| minisign  | Public key compiled into the binary       | A forged or substituted artefact |
-| SHA-256   | `SHA256SUMS.txt` from the same release     | Corruption in transit            |
+| Check    | Against                                | Defeats                          |
+| -------- | -------------------------------------- | -------------------------------- |
+| minisign | Public key compiled into the binary    | A forged or substituted artefact |
+| SHA-256  | `SHA256SUMS.txt` from the same release | Corruption in transit            |
 
 The signature is the one that matters. `SHA256SUMS.txt` is fetched over the same
 channel as the artefact, so anyone able to substitute one can substitute the
@@ -152,21 +152,31 @@ A file that fails either check is deleted and the failure is reported as a
 failed verification, in those words. There is no override, no `--insecure`, and
 no "continue anyway" button.
 
+> Both encodings of a minisign signature are read. `tauri-plugin-updater` writes
+> its `.sig` files base64'd whole, the way it writes the public key; the
+> minisign tool writes plain text. The first end-to-end run failed here — every
+> byte downloaded, then verified against nothing — because only the plain form
+> was accepted. `verify::decode_signature` now reads either, and a test holds
+> the real 0.1.0 signature so the encoding the project actually ships cannot
+> stop being understood. Accepting a second encoding does not weaken the check:
+> a genuine signature over different bytes still fails, and there is a test for
+> that too.
+
 ### 2.6 Hand off
 
-| Host                  | Action                                                                     |
-| --------------------- | -------------------------------------------------------------------------- |
-| Windows               | Spawn the NSIS installer, let its UI take over, exit                        |
-| Linux, `.deb`         | `pkexec dpkg -i` — one password prompt — then `apt-get -f install` if needed |
-| Linux, AppImage       | `chmod +x`, move to `~/.local/bin`, write a `.desktop` entry                 |
+| Host            | Action                                                                       |
+| --------------- | ---------------------------------------------------------------------------- |
+| Windows         | Spawn the NSIS installer, let its UI take over, exit                         |
+| Linux, `.deb`   | `pkexec dpkg -i` — one password prompt — then `apt-get -f install` if needed |
+| Linux, AppImage | `chmod +x`, move to `~/.local/bin`, write a `.desktop` entry                 |
 
 The stub adds no install logic of its own on Windows or for the `.deb`: those
 paths are already built and already smoke-tested in CI, and a second
 implementation of them would be a second thing to get wrong. The AppImage path
 is the exception because no packager owns it.
 
-`pkexec` returning 126/127 (dismissed or unavailable) is reported as *not
-authorised*, distinctly from a failed install.
+`pkexec` returning 126/127 (dismissed or unavailable) is reported as _not
+authorised_, distinctly from a failed install.
 
 ---
 
@@ -181,33 +191,37 @@ over SSH and in CI, and it is the mode §4's smoke test runs.
 
 ## 4. Release integration
 
-A `bootstrap` job in `release.yml` with `needs: check-version`, building both
-stubs and attaching them to the draft.
+A `bootstrap` job in `release.yml` with `needs: build`, building both stubs and
+attaching them to the draft.
 
 Two existing jobs change, because the current graph is
 `check-version → build → {checksums, smoke-linux, smoke-windows} → release-gate`
 and `checksums` today needs only `build`:
 
-| Job            | Was                                          | Becomes                                                   |
-| -------------- | -------------------------------------------- | --------------------------------------------------------- |
-| `checksums`    | `needs: build`                                | `needs: [build, bootstrap]`                                |
-| `release-gate` | `needs: [build, checksums, smoke-*]`          | `needs: [build, bootstrap, checksums, smoke-*]`             |
+| Job            | Was                                  | Becomes                                         |
+| -------------- | ------------------------------------ | ----------------------------------------------- |
+| `checksums`    | `needs: build`                       | `needs: [build, bootstrap]`                     |
+| `release-gate` | `needs: [build, checksums, smoke-*]` | `needs: [build, bootstrap, checksums, smoke-*]` |
 
 Without the first, `checksums` races `bootstrap` and `SHA256SUMS.txt` silently
 omits the two artefacts most in need of a checksum. Without the second, a broken
 stub cannot fail the gate.
 
-The stubs do not depend on `build` — nothing in them is produced by it — so they
-compile in parallel with the Tauri builds rather than after them.
+Nothing in the stubs is produced by `build`, so they could in principle compile
+beside it. They do not, because the draft release they upload into does not
+exist until `tauri-action` creates it in `build`. The stub takes about a minute
+to compile, so the serialisation costs nothing worth reclaiming.
 
 Its smoke step runs `--silent --dry-run` on both runners: resolve the latest
 release, download, verify, stop. This proves the real path against real
 artefacts over the real network.
 
-**This test cannot pass until a release is published.** Until then the endpoint
-in §2.1 returns 404 by design, and the only branch CI can exercise is the error
-path. That is stated here rather than discovered later, and the job asserts the
-404 path explicitly so it is a test that ran rather than a test that was skipped.
+This needed a published release to mean anything: until one existed the endpoint
+in §2.1 returned 404 by design and only the error path was reachable. `v0.1.0`
+was published on 2026-07-31 after `smoke-linux` passed on a tag containing the
+Linux paths fix, so the step now exercises a real download. It still tolerates
+the 404 — with a warning, not a pass in disguise — so that a fresh fork with no
+releases does not fail the run for a reason that is not a defect.
 
 `site/index.html`'s download button points at the stub. `docs/installers.md`
 gains a section describing it alongside the other artefacts.
@@ -216,15 +230,15 @@ gains a section describing it alongside the other artefacts.
 
 ## 5. Testing
 
-| Test                                                    | Runs                  |
-| ------------------------------------------------------- | --------------------- |
-| `select_asset` for every platform × tool combination    | Every host            |
-| Release JSON parsed from fixtures, including 404 and 403 | Every host            |
-| Verification accepts a good artefact                     | Every host            |
-| Verification rejects a tampered byte, a wrong signature, and a missing one | Every host |
-| Download honours the size cap and the timeout            | Local server          |
-| Handoff builds the right command per platform, without spawning | Every host    |
-| `--silent --dry-run` against the published release       | Both release runners  |
+| Test                                                                       | Runs                 |
+| -------------------------------------------------------------------------- | -------------------- |
+| `select_asset` for every platform × tool combination                       | Every host           |
+| Release JSON parsed from fixtures, including 404 and 403                   | Every host           |
+| Verification accepts a good artefact                                       | Every host           |
+| Verification rejects a tampered byte, a wrong signature, and a missing one | Every host           |
+| Download honours the size cap and the timeout                              | Local server         |
+| Handoff builds the right command per platform, without spawning            | Every host           |
+| `--silent --dry-run` against the published release                         | Both release runners |
 
 No test is behind `#[cfg(unix)]` or `#[cfg(windows)]`. The Linux paths defect —
 an application that had never once started for a non-root user — survived

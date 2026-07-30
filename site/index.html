@@ -266,6 +266,22 @@
         </div>
       </section>
 
+      <section class="card">
+        <h2>Would rather not choose?</h2>
+        <p style="margin: 0 0 10px">
+          <code>PanelPlatformSetup.exe</code> on Windows, or
+          <code>panel-platform-setup-x86_64</code> on Linux, works out which of the files above your
+          machine needs, downloads only that one, checks it against Panel Platform's signature, and
+          starts the installer for you.
+        </p>
+        <p style="margin: 0" class="muted">
+          It refuses to run anything whose signature does not verify, and there is no way to skip
+          that check. On Linux it prefers the <code>.deb</code> when <code>dpkg</code> and
+          <code>pkexec</code> are both available, and otherwise places the AppImage in
+          <code>~/.local/bin</code> without ever asking for root.
+        </p>
+      </section>
+
       <div class="note">
         <strong>These builds are not code-signed.</strong> There is no signing certificate yet, so
         Windows SmartScreen warns on first run — choose <em>More info</em> then <em>Run anyway</em>.

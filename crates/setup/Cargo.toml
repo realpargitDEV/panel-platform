@@ -1,0 +1,49 @@
+[package]
+name = "panel-platform-setup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Downloads, verifies and launches the Panel Platform installer for this platform"
+
+# The decisions this program makes live in the library and are tested without a
+# window, a network or a target platform. The binary is wiring.
+[lib]
+name = "panel_platform_setup"
+path = "src/lib.rs"
+
+[[bin]]
+name = "panel-platform-setup"
+path = "src/main.rs"
+
+[dependencies]
+# A stub that runs before the application is installed cannot link anything the
+# application's packages provide. `glow` links libGL and X11/Wayland, which a
+# desktop already has, and never webkit2gtk — which is what the .deb is for.
+eframe = { version = "0.29", default-features = false, features = [
+    "glow",
+    "default_fonts",
+] }
+# Verification is the spine of this program, so the signature check is a real
+# minisign implementation and not a hand-rolled one.
+minisign-verify = "0.2.3"
+# The key in tauri.conf.json is the minisign key *file*, base64'd whole.
+base64 = "0.22.1"
+sha2 = "0.10.8"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+# rustls rather than the platform TLS stack: one behaviour on both platforms,
+# and no OpenSSL to find at build time.
+ureq = { version = "2.12.1", default-features = false, features = [
+    "tls",
+    "json",
+    "gzip",
+] }
+
+[build-dependencies]
+serde_json = "1.0.151"
+
+[lints]
+workspace = true
