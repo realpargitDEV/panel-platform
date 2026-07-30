@@ -28,6 +28,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Tag must match tauri.conf.json, Cargo.toml and package.json
         run: bash scripts/check-version.sh "${{ github.event.inputs.tag || github.ref_name }}"
+      # `tauri-action` parses these manifests with a TOML reader that rejects a
+      # BOM. Failing here costs seconds; failing in the build costs the whole
+      # matrix.
+      - name: No file starts with a BOM
+        run: bash scripts/check-no-bom.sh
 
   build:
     needs: check-version
