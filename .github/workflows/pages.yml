@@ -1,0 +1,42 @@
+name: Download page
+
+# Publishes `site/` to GitHub Pages. The page has no build step and no
+# dependencies: it is one static file that asks the GitHub releases API for the
+# newest release at load time. That means a new release appears on the download
+# page without this workflow running again — publishing a release is enough.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a queued run supersedes a waiting one but never
+# cancels a deployment already in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
