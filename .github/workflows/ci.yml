@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cheap, and runs before anything expensive: a BOM in a manifest builds
+      # and tests fine here, then fails the release job that parses it.
+      - name: No file starts with a BOM
+        shell: bash
+        run: bash scripts/check-no-bom.sh
+
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |

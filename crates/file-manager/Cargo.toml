@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "project-host-file-manager"
 version.workspace = true
 edition.workspace = true

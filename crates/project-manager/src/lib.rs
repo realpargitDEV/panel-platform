@@ -1,4 +1,4 @@
-﻿//! Project lifecycle: detection, templates, naming and port allocation.
+//! Project lifecycle: detection, templates, naming and port allocation.
 //!
 //! Phase 4 delivers everything that can be verified without a Docker daemon —
 //! which is most of it, because the security-critical parts are about what is
