@@ -28,6 +28,58 @@ project gets a log channel and a control panel, with role-based permissions.
 
 ---
 
+## Download
+
+Installers are attached to every [release](https://github.com/realpargitDEV/panel-platform/releases).
+
+| Platform           | File                                      | Notes                                       |
+| ------------------ | ----------------------------------------- | ------------------------------------------- |
+| Windows 10/11 x64  | `Panel.Platform_<version>_x64-setup.exe`  | Recommended. Installs the WebView2 runtime. |
+| Windows 10/11 x64  | `Panel.Platform_<version>_x64_en-US.msi`  | For deployment tooling and Group Policy.    |
+| Debian, Ubuntu     | `Panel.Platform_<version>_amd64.deb`      | `sudo apt install ./<file>.deb`             |
+| Other Linux x86-64 | `Panel.Platform_<version>_amd64.AppImage` | `chmod +x` and run. Self-updates.           |
+
+Running projects needs **Docker**. The application installs and opens without
+it, and tells you it is missing rather than failing at launch.
+
+### These builds are unsigned
+
+There is no code-signing certificate yet, and the release notes say so rather
+than leaving you to guess:
+
+- **Windows** shows a SmartScreen warning on first run. "More info" → "Run
+  anyway". A signed build would not do this, and training people to click
+  through warnings undoes more security than most controls add.
+- **Linux** packages carry no repository signature.
+
+Every release has a `SHA256SUMS.txt`. To check what you downloaded:
+
+```powershell
+# Windows
+Get-FileHash .\Panel.Platform_0.1.0_x64-setup.exe -Algorithm SHA256
+```
+
+```bash
+# Linux
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+### Updates
+
+The application checks for new releases and offers them; nothing installs
+without you pressing the button. Downloads are verified against a signing key
+compiled into the binary, not one supplied by the feed.
+
+**The `.deb` cannot update itself** — a package manager owns those files, so
+Debian and Ubuntu users upgrade by installing the next `.deb`. The AppImage and
+both Windows installers update in place.
+
+> **Not yet verified.** No release has been published, so the update path has
+> never run end to end, and neither installer has been installed on a clean
+> machine. See [Verification status](#verification-status).
+
+---
+
 ## Status: it launches
 
 `pnpm --filter project-host-desktop exec tauri build` produces a signed-in-name
@@ -344,4 +396,4 @@ an Ubuntu machine with Docker Engine, and both on one network.
 
 ## Licence
 
-Not yet chosen.
+[MIT](LICENSE).

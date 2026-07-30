@@ -1,218 +1,178 @@
-# Installer Design
+# Installers and Releases
 
-One installer per platform installs both components — the desktop application
-and the background service — and leaves a machine where projects start at boot
-with nobody logged in.
+One installer per platform installs a single desktop application. There is no
+background service, no service user, and no admin CLI: the single-process
+rewrite removed all three, and this document describes what is actually built.
 
 Two rules govern every path through these installers:
 
 1. **Project data is never destroyed without an explicit answer.** Upgrades
-   always preserve it; uninstall asks, defaults to keeping it, and only removes
-   it when the user actively chooses removal.
+   always preserve it; uninstall leaves it in place.
 2. **Every step is idempotent.** Repair and upgrade re-run the same steps.
-   Installing an installed service, creating an existing directory, or adding an
-   existing firewall rule all succeed quietly.
+   Installing over an install, or creating an existing directory, succeeds
+   quietly.
 
 ---
 
 ## 1. Outputs
 
-| Platform | Artefacts                                                                   |
-| -------- | --------------------------------------------------------------------------- |
-| Windows  | `ProjectHost-<version>-x64.msi`, `ProjectHost-<version>-x64-setup.exe`      |
-| Linux    | `project-host_<version>_amd64.deb`, `ProjectHost-<version>-x86_64.AppImage` |
+Built by `.github/workflows/release.yml` on a `v*` tag, and attached to a draft
+GitHub release.
 
-The MSI is the primary Windows artefact — it supports proper upgrade, repair and
-uninstall semantics. The NSIS `.exe` wraps it for users who expect a setup
-program and handles the WebView2 bootstrap.
+| Platform | Artefacts                                                            |
+| -------- | -------------------------------------------------------------------- |
+| Windows  | `Panel.Platform_<version>_x64-setup.exe` (NSIS), `..._x64_en-US.msi` |
+| Linux    | `Panel.Platform_<version>_amd64.deb`, `..._amd64.AppImage`           |
+| Updates  | `latest.json`, plus a `.sig` beside each updater artefact            |
+| Both     | `SHA256SUMS.txt`                                                     |
 
-The `.deb` is the primary Linux artefact, because it is the only one that can
-install a systemd service and a service user. **The AppImage ships the desktop
-client only** — an AppImage cannot register a system service. This is stated in
-the download page and in `docs/linux-installation.md` rather than discovered:
-an AppImage user managing a remote agent is a perfectly good arrangement, but an
-AppImage user expecting local hosting would be confused.
+The NSIS `.exe` is the primary Windows artefact: it handles the WebView2
+bootstrap, which is the one dependency a Tauri application cannot supply
+itself. The MSI exists for deployment tooling that requires one.
+
+On Linux the `.deb` is the primary artefact. The AppImage is the fallback for
+distributions that are not Debian-derived, and is the **only** Linux artefact
+that can update itself.
+
+`rpm` is deliberately not built. Nothing has tested it, and shipping an
+untested package format is worse than not shipping it.
 
 ---
 
-## 2. Windows
+## 2. Release process
+
+1. Bump the version in all four places — `Cargo.toml`, `package.json`,
+   `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`.
+   `scripts/check-version.sh` verifies they agree and runs in CI.
+2. Tag `vX.Y.Z` and push it.
+3. The workflow builds each platform, signs the updater artefacts, and opens a
+   **draft** release.
+4. Check the artefacts, then publish. Nothing reaches a user, and no client
+   sees `latest.json`, until that press.
+
+The draft step is the only gate between a green build and everyone's updater.
+
+---
+
+## 3. Windows
 
 ### Layout
 
 ```
-C:\Program Files\Project Host\
-    project-host.exe            desktop client
-    project-host-agent.exe      service binary
-    project-host-ctl.exe        admin CLI
-    resources\, templates\
-
-C:\ProgramData\ProjectHost\     data — preserved across upgrade
+C:\Users\<user>\AppData\Local\Panel Platform\    application
+C:\ProgramData\ProjectHost\                      data — preserved across upgrade
     data\  config\  logs\  projects\  backups\  tmp\
 ```
 
+The application installs per-user; the data directory is machine-wide because
+projects outlive the account that created them.
+
 ### Install sequence
 
-1. Check Windows 10 1809+ / 11, x64, administrator rights.
-2. Install or repair the **WebView2 Evergreen runtime** — the one dependency a
-   Tauri app cannot supply itself.
-3. Write program files.
-4. Create `ProgramData\ProjectHost` and subdirectories.
-5. Apply ACLs: Full Control to `SYSTEM` and `Administrators`, inheritance
-   disabled, nothing for `Users`.
-6. Register `ProjectHostAgent` — `LocalSystem`, Automatic (Delayed Start),
-   failure actions 5s/15s/60s.
-7. Start the service; wait for it to report `Running`. The agent creates its
-   database, applies migrations and generates its TLS certificate on that first
-   start.
-8. Start Menu and optional desktop shortcuts.
-9. Register the uninstall entry with publisher, version and icon.
-10. **Firewall rule: only if the user ticked "allow access from my local
-    network", which is unticked by default.**
+1. Install or repair the **WebView2 Evergreen runtime**.
+2. Write program files, Start Menu entry, optional desktop shortcut.
+3. Register the uninstall entry with publisher, version and icon.
 
-Docker is not installed and not bundled. The installer detects Docker Desktop
-and, if absent, finishes successfully while showing a page explaining that
-Docker is required to run projects, with a link. An installer that refuses to
-complete because an optional-at-install-time dependency is missing is a worse
-experience than one that explains.
+The data directory is **not** created by the installer. The application creates
+it and applies migrations on first launch, so that a user who has never opened
+the application has nothing on disk to clean up.
+
+Docker is not installed and not bundled. The application detects it at runtime
+and explains its absence rather than refusing to start.
 
 ### Upgrade
 
-Detect the installed version by upgrade code; stop the service; replace
-binaries; leave `ProgramData` untouched; start the service, which applies any
-pending migrations; preserve firewall and autostart choices. **Running project
-containers are not stopped** — Docker keeps them up while the agent is briefly
-down, and the reconciler adopts them on start.
-
-### Repair
-
-Re-runs file installation, ACLs and service registration without touching data.
-The direct answer to a deleted binary or a disabled service.
+Replace program files; leave `ProgramData` untouched; the application applies
+pending migrations on next launch. **Running project containers are not
+stopped** — Docker keeps them up, and the reconciler adopts them on start.
 
 ### Uninstall
 
-1. Stop and delete the service.
-2. Remove program files, shortcuts, firewall rule, uninstall entry.
-3. **Ask about data**, with a dialog that names the directory and states its
-   size:
-
-```
-Remove project data?
-
-  ○ Keep projects, backups and settings  (default)
-     C:\ProgramData\ProjectHost  —  4.2 GB
-
-  ○ Delete everything permanently
-     This cannot be undone.
-```
-
-4. Project containers, volumes and images are **left alone** by default and
-   removed only under "delete everything". Silently deleting a user's running
-   services during an uninstall of the manager would be indefensible.
-
-Unattended uninstall defaults to keeping data; removal requires an explicit
-`REMOVE_DATA=1`.
+Removes program files, shortcuts and the uninstall entry. **`ProgramData` is
+left in place**, along with every project, backup and container. Removing a
+user's running services during an uninstall of the manager would be
+indefensible; the directory is named in the final uninstaller page so it can be
+deleted by hand.
 
 ---
 
-## 3. Linux
+## 4. Linux
 
 ### Layout
 
 ```
-/usr/bin/project-host                 desktop client
-/usr/lib/project-host/
-    project-host-agent
-    project-host-ctl
-    templates/
-/lib/systemd/system/project-host-agent.service
-/usr/share/applications/project-host.desktop
-/etc/project-host/                    config, TLS cert  (conffiles)
-/var/lib/project-host/                data — preserved
-/var/log/project-host/
+/usr/bin/panel-platform                       binary
+/usr/share/applications/panel-platform.desktop
+~/.local/share/project-host/                  data — preserved
 ```
 
-### Maintainer scripts
+Data is per-user under `$XDG_DATA_HOME`, because the application runs as the
+user rather than as a system service.
 
-**`preinst`** — verify the distribution is supported; on upgrade, stop the
-service.
+### Dependencies
 
-**`postinst`** —
+`libwebkit2gtk-4.1-0` and `libgtk-3-0`, declared in the `.deb`. Docker is not a
+dependency at all — not even `Recommends`. Forcing a particular Docker package
+on a user who already runs one is presumptuous, and the application is useful
+without it.
 
-1. Create system user and group `project-host` (`--system`, no login shell, no
-   home). Skipped if it exists.
-2. Create data directories with the modes in `docs/platform-support.md` §3.1.
-3. Add `project-host` to the `docker` group if that group exists; if not, warn
-   that Docker appears absent and continue.
-4. `systemctl daemon-reload`, `enable`, `start`.
-5. Wait for `sd_notify` readiness, then report status.
-6. Print next steps: create the administrator with `project-host-ctl`, and open
-   the desktop app.
+### AppImage
 
-**`prerm`** — stop and disable the service.
-
-**`postrm`** —
-
-- `remove`: leave `/var/lib/project-host`, `/etc/project-host` and the service
-  user in place. This is what makes reinstall-after-remove keep working.
-- `purge`: prompt via debconf, defaulting to keep. Only on an explicit answer
-  are data directories and the service user removed. Non-interactive purge
-  preserves data unless `PROJECT_HOST_PURGE_DATA=1` is set.
-
-Dependencies: `libwebkit2gtk-4.1-0`, `libayatana-appindicator3-1`, `adduser`.
-Docker is `Recommends`, not `Depends` — the agent is useful without it, and
-forcing a particular Docker package on a user who already runs one is
-presumptuous.
+Ships the same application with no package manager involved. `chmod +x` and
+run. This is the artefact the updater can replace in place.
 
 ---
 
-## 4. First-run experience
+## 5. Updates
 
-Both platforms converge here. After install, no administrator exists and the
-agent is in setup mode, serving only `/api/v1/setup/*`.
+`crates/updater` decides **whether** to offer a release: it rejects a version
+older than or equal to the installed one, requires `https` from a host on
+`ALLOWED_HOSTS`, and requires a signature. `tauri-plugin-updater` performs the
+install, verifying against a minisign public key compiled into the binary from
+`tauri.conf.json` — never one supplied by the feed.
 
-1. The user opens the desktop app.
-2. It reads the bootstrap file (administrator rights required) and connects.
-3. Setup wizard: create the administrator, show recovery codes **once**, check
-   Docker, offer LAN access (default off).
-4. The dashboard appears, with real data and no projects.
+The private key lives only in the `TAURI_SIGNING_PRIVATE_KEY` repository
+secret and in the maintainer's offline copy. **Losing it means no existing
+install can ever be updated again**, because clients trust exactly one key.
 
-`project-host-ctl create-admin` does the same thing from a terminal, which is
-the path for a headless Linux install.
+| Artefact | Can self-update            |
+| -------- | -------------------------- |
+| NSIS/MSI | Yes — installer takes over |
+| AppImage | Yes — replaced in place    |
+| `.deb`   | **No** — dpkg owns it      |
+
+Nothing installs without the user pressing the button.
 
 ---
 
-## 5. Signing
+## 6. Signing
 
-| Platform | Mechanism                                                                   |
-| -------- | --------------------------------------------------------------------------- |
-| Windows  | Authenticode over the MSI, the EXE and both binaries                        |
-| Linux    | Detached signature over the `.deb`; a signed repository is a later addition |
-| Updates  | Minisign signature verified before any file is written                      |
+| Platform | Mechanism                           | State          |
+| -------- | ----------------------------------- | -------------- |
+| Windows  | Authenticode over the installers    | **Not signed** |
+| Linux    | Detached signature over the `.deb`  | **Not signed** |
+| Updates  | Minisign, verified before any write | Signed         |
 
 Unsigned Windows binaries trip SmartScreen and train users to click through
-warnings, which undoes more security than most controls add. Until a certificate
-exists, the release notes say plainly that builds are unsigned and how to verify
-checksums, rather than leaving people to guess.
+warnings. Until a certificate exists, the release notes and the README say
+plainly that builds are unsigned and how to verify checksums, rather than
+leaving people to guess.
 
 ---
 
-## 6. Testing
+## 7. Testing
 
 | Test                                               | Host                          |
 | -------------------------------------------------- | ----------------------------- |
-| Clean install → service running → project starts   | Windows 11 VM, Docker Desktop |
+| Clean install → application opens → project starts | Windows 11 VM, Docker Desktop |
 | Upgrade preserves data and running containers      | Windows VM                    |
-| Repair restores a deleted binary                   | Windows VM                    |
-| Uninstall keep-data, then reinstall finds projects | Windows VM                    |
-| Uninstall delete-data removes everything           | Windows VM                    |
-| `.deb` install → `systemctl status` active         | Ubuntu 22.04 + 24.04 VMs      |
+| Uninstall leaves `ProgramData` intact              | Windows VM                    |
+| `.deb` install → application opens                 | Ubuntu 22.04 + 24.04 VMs      |
 | `apt upgrade` preserves data                       | Ubuntu VM                     |
-| `apt remove` keeps data; `apt purge` prompts       | Ubuntu VM                     |
-| Reboot → projects auto-start                       | both                          |
-| AppImage runs the client only                      | Ubuntu VM                     |
-| Install with Docker absent completes with guidance | both                          |
+| AppImage runs and self-updates                     | Ubuntu VM                     |
+| Update offered, downloaded, verified, installed    | both, two published releases  |
+| Install with Docker absent opens with guidance     | both                          |
 
-**None of these can run on the current development machine.** The MSI can be
-_built_ here; installing it, and everything Linux, needs virtual machines that do
-not yet exist. Acceptance criteria 1, 2, 5, 27 and 28 depend entirely on this
-table, and remain unverified until it has been executed.
+**None of these have been run.** CI proves the artefacts _build_; installing
+them needs virtual machines that do not exist, and the update path additionally
+needs two published releases. Every row here is unverified.
