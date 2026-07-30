@@ -48,13 +48,32 @@ Numbered, forward-only, applied in a transaction, embedded in the binary via
 ```
 crates/database/migrations/
   0001_initial.sql
-  0002_….sql
+  0002_discord.sql
+  0003_remote_sources.sql
+  0004_runtimes.sql
 ```
 
-The agent applies pending migrations at startup before serving, and refuses to
-start if the database's schema version is _newer_ than the binary — a downgrade
+The application applies pending migrations at startup before serving, and refuses
+to start if the database's schema version is _newer_ than the binary — a downgrade
 after a failed update must fail loudly rather than corrupt data. A timestamped
 copy of the database is taken before any migration that is not purely additive.
+
+**Foreign keys are disabled for the duration of the run, and checked
+afterwards.** SQLite cannot alter a `CHECK` constraint, so widening one means
+rebuilding the table: copy, drop, rename. With enforcement on, the implicit
+`DELETE FROM` inside `DROP TABLE projects` fires every `ON DELETE CASCADE`
+aimed at it and takes the user's environment variables, ports and backups with
+it. The pragma cannot live in the migration file — sqlx wraps each migration in a
+transaction, `PRAGMA foreign_keys` is a no-op inside one, and the SQLite driver
+ignores the `-- no-transaction` marker — so `Database::migrate` acquires one
+connection, sets it there, and restores it afterwards even when a migration
+failed. `PRAGMA foreign_key_check` then runs, and a migration that orphaned a row
+fails startup rather than being discovered by a query months later.
+
+Because 0003 rebuilds `projects`, the definition of that table in 0001 is no
+longer the one in force. The enum-parity test therefore reads `sqlite_master`
+rather than the migration text: a test trusting the first file would keep passing
+while the database it describes had moved on.
 
 ---
 
@@ -64,27 +83,27 @@ Stored as `TEXT` with `CHECK` constraints. Readable in the file, validated by th
 database, and mirrored by Rust enums with a parity test that fails when the two
 drift.
 
-| Enum                   | Values                                                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `UserRole`             | `ADMIN`                                                                                                                           |
-| `ProjectType`          | `DISCORD_BOT`, `NODE_APP`, `PYTHON_APP`, `WEBSITE`, `STATIC_SITE`, `REST_API`, `WORKER`, `SERVICE`                                |
-| `Runtime`              | `NODEJS`, `PYTHON`, `STATIC`                                                                                                      |
-| `PackageManager`       | `PNPM`, `NPM`, `YARN`, `PIP`, `POETRY`, `UV`, `PIPENV`, `NONE`                                                                    |
-| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING` |
-| `DesiredState`         | `RUNNING`, `STOPPED`, `ARCHIVED`                                                                                                  |
-| `RestartPolicy`        | `NO`, `ON_FAILURE`, `UNLESS_STOPPED`, `ALWAYS`                                                                                    |
-| `NetworkMode`          | `NONE`, `INTERNAL`, `LAN`, `INTERNET`                                                                                             |
-| `DeploymentType`       | `INITIAL`, `REBUILD`, `RESTORE`, `CONFIG_CHANGE`, `IMPORT`                                                                        |
-| `DeploymentStatus`     | `PENDING`, `BUILDING`, `STARTING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                              |
-| `ContainerEventType`   | `CREATED`, `STARTED`, `STOPPED`, `RESTARTED`, `DIED`, `OOM_KILLED`, `HEALTH_PASS`, `HEALTH_FAIL`, `DESTROYED`                     |
-| `BackupStatus`         | `PENDING`, `CREATING`, `COMPLETED`, `FAILED`, `CANCELLED`, `CORRUPT`                                                              |
-| `BackupOperationKind`  | `CREATE`, `RESTORE`, `VERIFY`, `EXPORT`, `IMPORT`, `DELETE`                                                                       |
-| `BackupOperationState` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                           |
-| `SourceType`           | `EMPTY`, `ZIP_UPLOAD`, `LOCAL_FOLDER`, `DUPLICATE`, `IMPORT_ARCHIVE`                                                              |
-| `AuditResult`          | `SUCCESS`, `FAILURE`, `DENIED`                                                                                                    |
-| `HealthState`          | `UNKNOWN`, `STARTING`, `HEALTHY`, `UNHEALTHY`, `NONE`                                                                             |
-| `ConnectionKind`       | `LOCAL`, `LAN`, `TAILSCALE`, `MANUAL`                                                                                             |
-| `NotificationLevel`    | `INFO`, `SUCCESS`, `WARNING`, `ERROR`                                                                                             |
+| Enum                   | Values                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UserRole`             | `ADMIN`                                                                                                                                                 |
+| `ProjectType`          | `DISCORD_BOT`, `NODE_APP`, `PYTHON_APP`, `WEBSITE`, `STATIC_SITE`, `REST_API`, `WORKER`, `SERVICE`                                                      |
+| `Runtime`              | `NODEJS`, `TYPESCRIPT`, `BUN`, `DENO`, `PYTHON`, `GO`, `RUST`, `JAVA`, `PHP`, `RUBY`, `DOTNET`, `STATIC`, `POLYGLOT`                                    |
+| `PackageManager`       | `PNPM`, `NPM`, `YARN`, `BUN`, `DENO`, `PIP`, `POETRY`, `UV`, `PIPENV`, `GO_MODULES`, `CARGO`, `MAVEN`, `GRADLE`, `COMPOSER`, `BUNDLER`, `NUGET`, `NONE` |
+| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING`                       |
+| `DesiredState`         | `RUNNING`, `STOPPED`, `ARCHIVED`                                                                                                                        |
+| `RestartPolicy`        | `NO`, `ON_FAILURE`, `UNLESS_STOPPED`, `ALWAYS`                                                                                                          |
+| `NetworkMode`          | `NONE`, `INTERNAL`, `LAN`, `INTERNET`                                                                                                                   |
+| `DeploymentType`       | `INITIAL`, `REBUILD`, `RESTORE`, `CONFIG_CHANGE`, `IMPORT`                                                                                              |
+| `DeploymentStatus`     | `PENDING`, `BUILDING`, `STARTING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                                    |
+| `ContainerEventType`   | `CREATED`, `STARTED`, `STOPPED`, `RESTARTED`, `DIED`, `OOM_KILLED`, `HEALTH_PASS`, `HEALTH_FAIL`, `DESTROYED`                                           |
+| `BackupStatus`         | `PENDING`, `CREATING`, `COMPLETED`, `FAILED`, `CANCELLED`, `CORRUPT`                                                                                    |
+| `BackupOperationKind`  | `CREATE`, `RESTORE`, `VERIFY`, `EXPORT`, `IMPORT`, `DELETE`                                                                                             |
+| `BackupOperationState` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `INTERRUPTED`                                                                                 |
+| `SourceType`           | `EMPTY`, `ZIP_UPLOAD`, `LOCAL_FOLDER`, `DUPLICATE`, `IMPORT_ARCHIVE`, `GIT_CLONE`, `REMOTE_ARCHIVE`                                                     |
+| `AuditResult`          | `SUCCESS`, `FAILURE`, `DENIED`                                                                                                                          |
+| `HealthState`          | `UNKNOWN`, `STARTING`, `HEALTHY`, `UNHEALTHY`, `NONE`                                                                                                   |
+| `ConnectionKind`       | `LOCAL`, `LAN`, `TAILSCALE`, `MANUAL`                                                                                                                   |
+| `NotificationLevel`    | `INFO`, `SUCCESS`, `WARNING`, `ERROR`                                                                                                                   |
 
 `UserRole` has one value today. The column exists so that adding roles later is
 a migration of one table rather than a redesign.
@@ -202,6 +221,10 @@ CREATE TABLE projects (
     source_type     TEXT NOT NULL,
     directory       TEXT NOT NULL UNIQUE,      -- absolute, canonical, UUID-derived
 
+    source_url      TEXT,                      -- GIT_CLONE and REMOTE_ARCHIVE only
+    source_ref      TEXT,                      -- GIT_CLONE only: branch or tag
+    source_commit   TEXT,                      -- the commit actually checked out
+
     autostart       INTEGER NOT NULL DEFAULT 0,
     restart_policy  TEXT NOT NULL DEFAULT 'UNLESS_STOPPED',
     network_mode    TEXT NOT NULL DEFAULT 'INTERNAL',
@@ -225,7 +248,16 @@ CREATE TABLE projects (
     CHECK (memory_limit_mb  BETWEEN 64 AND 65536),
     CHECK (cpu_limit_cores  > 0 AND cpu_limit_cores <= 64),
     CHECK (process_limit    BETWEEN 8 AND 4096),
-    CHECK (slug GLOB '[a-z0-9][a-z0-9-]*')
+    CHECK (slug GLOB '[a-z0-9][a-z0-9-]*'),
+    -- A remote source without a URL is not a remote source...
+    CHECK (source_type NOT IN ('GIT_CLONE','REMOTE_ARCHIVE') OR source_url IS NOT NULL),
+    -- ...and no local source may carry one, which makes `source_url IS NOT NULL`
+    -- a reliable question to ask.
+    CHECK (source_type IN ('GIT_CLONE','REMOTE_ARCHIVE') OR source_url IS NULL),
+    CHECK (source_type = 'GIT_CLONE' OR (source_ref IS NULL AND source_commit IS NULL)),
+    -- A URL carrying a token in its userinfo would put a secret in this column,
+    -- in every backup of this file, and in any log line that echoes it.
+    CHECK (source_url IS NULL OR source_url NOT LIKE '%@%')
 );
 CREATE INDEX idx_projects_status  ON projects(status);
 CREATE INDEX idx_projects_desired ON projects(desired_state) WHERE archived_at IS NULL;
@@ -327,6 +359,37 @@ The final `CHECK` is worth more than it looks: it makes "a secret stored in
 plaintext" a constraint violation the database refuses, not a bug waiting to be
 noticed in review. The `key` pattern blocks the injection of names that would
 confuse a shell or an env file.
+
+### Source credentials
+
+An access token for a project's private remote, if one was supplied:
+
+```sql
+CREATE TABLE project_source_credentials (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    ciphertext BLOB NOT NULL,                  -- XChaCha20-Poly1305
+    nonce      BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (length(ciphertext) > 0),
+    CHECK (length(nonce) = 24)
+);
+```
+
+The same shape, and for the same reason, as `discord_bot`: a ciphertext column, a
+nonce column, and nothing a plaintext token could occupy. A writer that wanted to
+store one in the clear would have to alter the table first.
+
+Two absences are deliberate. The repository over this table never receives an
+encryption key — a token arrives as ciphertext and leaves as ciphertext, so the
+one piece of code that can turn a stored blob back into a usable credential lives
+outside the layer that talks to SQLite. And there is no query that lists every
+credential; nothing needs one, and its only use would be building the report a
+compromise wants.
+
+The ciphertext is bound to its project by the associated data, so a row copied to
+another project does not decrypt. The API answers `has_credential: bool` and has
+no route that returns the token.
 
 ---
 

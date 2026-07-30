@@ -20,5 +20,9 @@ workspace = true
 # compared against the Rust enums they mirror. The dependency is one-way — the
 # `discord` crate knows nothing about storage.
 project-host-discord = { version = "0.1.0", path = "../discord" }
+# Only for the credential tests: a token is encrypted for real and asserted
+# absent from the stored bytes. Storage itself never sees a key, which is the
+# property being demonstrated.
+project-host-security = { version = "0.1.0", path = "../security" }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

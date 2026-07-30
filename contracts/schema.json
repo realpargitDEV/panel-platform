@@ -1052,10 +1052,19 @@
         "PNPM",
         "NPM",
         "YARN",
+        "BUN",
+        "DENO",
         "PIP",
         "POETRY",
         "UV",
         "PIPENV",
+        "GO_MODULES",
+        "CARGO",
+        "MAVEN",
+        "GRADLE",
+        "COMPOSER",
+        "BUNDLER",
+        "NUGET",
         "NONE"
       ],
       "type": "string"
@@ -1235,6 +1244,11 @@
         "display_name": {
           "type": "string"
         },
+        "has_credential": {
+          "default": false,
+          "description": "Whether a token is stored for this project's remote. Deliberately a\nboolean: there is no route that returns the token itself.",
+          "type": "boolean"
+        },
         "health": {
           "$ref": "#/$defs/HealthState"
         },
@@ -1298,8 +1312,28 @@
         "slug": {
           "type": "string"
         },
+        "source_commit": {
+          "description": "The commit that was actually checked out, which is the only honest\nanswer to \"what is running\" when the ref was a moving branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "source_type": {
           "$ref": "#/$defs/SourceType"
+        },
+        "source_url": {
+          "description": "Where a `GIT_CLONE` or `REMOTE_ARCHIVE` project came from. The URL is\nsafe to return because a token never travels inside it — see\n[`ProjectSource::credential`].",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "started_at": {
           "type": [
@@ -1402,13 +1436,38 @@
       "type": "object"
     },
     "ProjectSource": {
-      "description": "Where the project's files come from. Git is deliberately absent in version\none; `docs/api-design.md` records it as a future source.",
+      "description": "Where the project's files come from.",
       "properties": {
+        "credential": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceCredential"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Access token for a private remote. Write-only: this field is populated\non the way in and is never returned, which is why responses carry\n`has_credential` instead. `Debug` is hand-written so a token cannot\nreach a log line through a derived formatter."
+        },
+        "git_ref": {
+          "description": "Branch, tag or full commit id for `GIT_CLONE`. Omitted means the\nremote's default branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "$ref": "#/$defs/SourceType"
         },
         "local_path": {
           "description": "Absolute host path for `LOCAL_FOLDER`. Validated server-side before use.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo_url": {
+          "description": "`https://` remote for `GIT_CLONE` and `REMOTE_ARCHIVE`. Validated\nagainst `file-manager`'s `remote_url` rules before any connection is\nopened, and again for every redirect.",
           "type": [
             "string",
             "null"
@@ -1424,6 +1483,13 @@
             }
           ],
           "description": "Source project for `DUPLICATE`."
+        },
+        "subdirectory": {
+          "description": "Path within the fetched tree to promote, for repositories that hold more\nthan one project. Relative; traversal is refused.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "upload_id": {
           "description": "Upload session id for `ZIP_UPLOAD`.",
@@ -1595,11 +1661,21 @@
       "type": "string"
     },
     "Runtime": {
-      "description": "Which approved template family builds the image.",
+      "description": "Which approved template family builds the image.\n\n`TYPESCRIPT` is its own runtime rather than a flavour of `NODEJS`\nbecause it is the presence of a compile step, not a different\ninterpreter, that changes how the image is built.\n\n`POLYGLOT` is for a project that genuinely needs more than one\ntoolchain — a Python service with a Node build, say. Its image carries\nseveral toolchains and is correspondingly large, which is why it is a\ndeliberate choice and never a detection default.",
       "enum": [
         "NODEJS",
+        "TYPESCRIPT",
+        "BUN",
+        "DENO",
         "PYTHON",
-        "STATIC"
+        "GO",
+        "RUST",
+        "JAVA",
+        "PHP",
+        "RUBY",
+        "DOTNET",
+        "STATIC",
+        "POLYGLOT"
       ],
       "type": "string"
     },
@@ -1769,13 +1845,19 @@
       ],
       "type": "object"
     },
+    "SourceCredential": {
+      "description": "A token for a private remote, kept in its own type so that the only way to\nread it is to ask for it by name.",
+      "type": "string"
+    },
     "SourceType": {
       "enum": [
         "EMPTY",
         "ZIP_UPLOAD",
         "LOCAL_FOLDER",
         "DUPLICATE",
-        "IMPORT_ARCHIVE"
+        "IMPORT_ARCHIVE",
+        "GIT_CLONE",
+        "REMOTE_ARCHIVE"
       ],
       "type": "string"
     },

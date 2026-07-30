@@ -43,6 +43,13 @@ pub struct ProjectRecord {
     pub source_type: String,
     pub directory: String,
 
+    /// Where a remote-sourced project came from, and the commit that was
+    /// actually checked out. All three are `None` for a local source; the schema
+    /// refuses any other combination.
+    pub source_url: Option<String>,
+    pub source_ref: Option<String>,
+    pub source_commit: Option<String>,
+
     pub autostart: bool,
     pub restart_policy: String,
     pub network_mode: String,
@@ -109,6 +116,11 @@ pub struct NewProject {
     pub color: Option<String>,
     pub source_type: String,
     pub directory: String,
+    /// Only for `GIT_CLONE` and `REMOTE_ARCHIVE`, and required for them.
+    pub source_url: Option<String>,
+    /// Only for `GIT_CLONE`.
+    pub source_ref: Option<String>,
+    pub source_commit: Option<String>,
     pub container_name: String,
     pub network_name: String,
     pub volume_name: String,
@@ -171,6 +183,9 @@ fn project_from_row(row: &sqlx::sqlite::SqliteRow) -> ProjectRecord {
         volume_name: row.get("volume_name"),
         source_type: row.get("source_type"),
         directory: row.get("directory"),
+        source_url: row.get("source_url"),
+        source_ref: row.get("source_ref"),
+        source_commit: row.get("source_commit"),
         autostart: row.get::<i64, _>("autostart") == 1,
         restart_policy: row.get("restart_policy"),
         network_mode: row.get("network_mode"),
@@ -192,7 +207,8 @@ fn project_from_row(row: &sqlx::sqlite::SqliteRow) -> ProjectRecord {
 
 const PROJECT_COLUMNS: &str = "id, slug, display_name, description, project_type, icon, color,
      status, desired_state, health, container_id, container_name, image_tag,
-     network_name, volume_name, source_type, directory, autostart, restart_policy,
+     network_name, volume_name, source_type, directory,
+     source_url, source_ref, source_commit, autostart, restart_policy,
      network_mode, memory_limit_mb, cpu_limit_cores, storage_limit_mb, process_limit,
      started_at, stopped_at, last_exit_code, last_failure_at, last_failure_reason,
      restart_count, archived_at, created_at, updated_at";
@@ -212,11 +228,12 @@ pub async fn create_project(database: &Database, new: &NewProject) -> Result<Pro
         "INSERT INTO projects (
             id, slug, display_name, description, project_type, icon, color,
             status, desired_state, health, container_name, network_name, volume_name,
-            source_type, directory, autostart, restart_policy, network_mode,
+            source_type, directory, source_url, source_ref, source_commit,
+            autostart, restart_policy, network_mode,
             memory_limit_mb, cpu_limit_cores, storage_limit_mb, process_limit,
             created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'CREATING', 'STOPPED', 'UNKNOWN', ?, ?, ?,
-                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&new.slug)
@@ -230,6 +247,9 @@ pub async fn create_project(database: &Database, new: &NewProject) -> Result<Pro
     .bind(&new.volume_name)
     .bind(&new.source_type)
     .bind(&new.directory)
+    .bind(&new.source_url)
+    .bind(&new.source_ref)
+    .bind(&new.source_commit)
     .bind(i64::from(new.autostart))
     .bind(&new.restart_policy)
     .bind(&new.network_mode)

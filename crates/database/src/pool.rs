@@ -10,7 +10,7 @@ use crate::error::{DatabaseError, Result};
 
 /// Schema version this build understands. Bumped alongside a migration that is
 /// not backward compatible.
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 2;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 4;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
@@ -78,11 +78,59 @@ impl Database {
             .pragma("cache_size", "-16000"))
     }
 
+    /// Apply pending migrations with foreign keys disabled, then verify none
+    /// were left dangling.
+    ///
+    /// Foreign keys are off for the duration because a migration that rebuilds
+    /// a table has to drop the old one, and with enforcement on, SQLite's
+    /// implicit `DELETE FROM` inside `DROP TABLE` fires every
+    /// `ON DELETE CASCADE` pointing at it — which for `projects` would take the
+    /// user's environment variables, ports and backups with it.
+    ///
+    /// The pragma cannot live in the migration file: sqlx wraps each migration
+    /// in a transaction, `PRAGMA foreign_keys` is a no-op inside one, and the
+    /// SQLite driver ignores the `-- no-transaction` marker entirely. It also
+    /// cannot go on `connect_options`, because that would leave enforcement off
+    /// for the life of every pooled connection.
+    ///
+    /// `foreign_key_check` afterwards is what makes this safe rather than
+    /// merely convenient: a migration that did orphan a row fails startup here
+    /// instead of being discovered by a query months later.
     async fn migrate(&self) -> Result<()> {
-        MIGRATOR
-            .run(&self.pool)
+        let mut connection = self
+            .pool
+            .acquire()
             .await
-            .map_err(DatabaseError::Migration)?;
+            .map_err(DatabaseError::Connection)?;
+
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *connection)
+            .await?;
+
+        let outcome = MIGRATOR
+            .run(&mut *connection)
+            .await
+            .map_err(DatabaseError::Migration);
+
+        // Restored even when a migration failed: this connection goes back to
+        // the pool either way, and one with enforcement off is a connection
+        // that quietly accepts a broken write.
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *connection)
+            .await?;
+
+        outcome?;
+
+        let orphans = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&mut *connection)
+            .await?
+            .len();
+        if orphans > 0 {
+            return Err(DatabaseError::MigrationBrokeReferences {
+                orphans: orphans.try_into().unwrap_or(u32::MAX),
+            });
+        }
+
         Ok(())
     }
 

@@ -7,9 +7,19 @@
 //! build instead of a runtime insert that a `CHECK` refuses in production.
 
 /// The `CREATE TABLE` body for one table, or `None` if there is no such table.
+///
+/// Accepts a quoted table name as well as a bare one. Migration text is written
+/// bare, but the definition SQLite keeps in `sqlite_master` for a table that has
+/// been through an `ALTER TABLE ... RENAME TO` is quoted — and reading the live
+/// schema is the only way to be sure which migration currently owns a table.
 pub fn table_body<'a>(sql: &'a str, table: &str) -> Option<&'a str> {
-    let needle = format!("CREATE TABLE {table} (");
-    let start = sql.find(&needle)? + needle.len();
+    let start = [
+        format!("CREATE TABLE {table} ("),
+        format!("CREATE TABLE \"{table}\" ("),
+    ]
+    .iter()
+    .find_map(|needle| sql.find(needle.as_str()).map(|at| at + needle.len()))?;
+
     let rest = sql.get(start..)?;
 
     // Walk to the matching close paren, tracking nesting so the parentheses
@@ -91,6 +101,14 @@ CREATE TABLE others (
             body.contains("BETWEEN 1 AND 2"),
             "stopped at a nested paren"
         );
+    }
+
+    #[test]
+    fn a_renamed_tables_quoted_definition_is_still_found() {
+        // What `sqlite_master` holds after a table rebuild.
+        let renamed = "CREATE TABLE \"things\" (\n    status TEXT CHECK (status IN ('A','B'))\n)";
+        let body = table_body(renamed, "things").expect("quoted things");
+        assert_eq!(check_values(body, "status").expect("status"), ["A", "B"]);
     }
 
     #[test]

@@ -18,11 +18,22 @@
 )]
 
 pub mod extract;
+pub mod git_clone;
+pub mod github_cli;
+pub mod http_archive;
 pub mod operations;
+pub mod remote_url;
 pub mod safe_path;
 pub mod zip_import;
 
-pub use extract::{extract_into, import_archive_file};
+pub use extract::{extract_into, extract_tar_gzip_into, import_archive_file};
+pub use git_clone::{clone_project, CloneError, CloneLimits, CloneReport, CloneRequest};
+pub use github_cli::{is_available as gh_available, GhCommand, GitHubCliError, RepoName};
+pub use http_archive::{
+    import_remote_archive, ArchiveFormat, FetchError, FetchLimits, HttpTransport,
+    RemoteArchiveRequest, ReqwestTransport,
+};
 pub use operations::{EntryKind, FileEntry, FileError, FileLimits, Listing, TextFile};
+pub use remote_url::{HostResolver, RemoteUrl, SystemResolver, UrlError};
 pub use safe_path::{PathError, SafePath};
 pub use zip_import::{ArchiveError, ArchiveLimits, ImportReport, Staging};

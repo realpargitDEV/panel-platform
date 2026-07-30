@@ -32,6 +32,13 @@ pub enum DatabaseError {
     #[error("query failed: {0}")]
     Query(#[source] sqlx::Error),
 
+    /// A migration left a child row pointing at a parent that no longer
+    /// exists. Foreign keys are enforced again immediately after migrating, so
+    /// this can only come from `PRAGMA foreign_key_check` — and starting anyway
+    /// would mean serving a database that references rows it does not have.
+    #[error("migrations left {orphans} orphaned row(s) behind")]
+    MigrationBrokeReferences { orphans: u32 },
+
     /// A caller passed a value the schema would refuse.
     ///
     /// Checked before the statement runs so the error names the offending
@@ -55,6 +62,7 @@ impl DatabaseError {
             DatabaseError::SchemaTooNew { .. }
             | DatabaseError::Connection(_)
             | DatabaseError::Migration(_)
+            | DatabaseError::MigrationBrokeReferences { .. }
             | DatabaseError::Query(_) => ErrorCode::Internal,
         }
     }

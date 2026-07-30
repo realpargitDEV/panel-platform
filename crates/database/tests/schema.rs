@@ -13,7 +13,10 @@
 
 use project_host_api_types::*;
 use project_host_database::schema_parity::{check_values, table_body};
-use project_host_database::{time, Database, DatabaseError, INITIAL_MIGRATION};
+use project_host_database::{
+    time, Database, DatabaseError, DISCORD_MIGRATION, INITIAL_MIGRATION, REMOTE_SOURCES_MIGRATION,
+    RUNTIMES_MIGRATION,
+};
 use sqlx::Row;
 
 async fn db() -> Database {
@@ -111,11 +114,29 @@ async fn a_fresh_database_passes_its_integrity_check() {
 /// Each Rust enum must list exactly the values its `CHECK` constraint allows.
 /// A variant added on one side only would otherwise fail at insert time, in
 /// production, on the one code path that finally uses it.
-#[test]
-fn rust_enums_match_the_check_constraints() {
-    fn assert_parity(table: &str, column: &str, variants: &[&str]) {
-        let body = table_body(INITIAL_MIGRATION, table)
-            .unwrap_or_else(|| panic!("no CREATE TABLE for {table}"));
+///
+/// Read from the *live* schema rather than from the migration text. Migration
+/// 0003 rebuilds `projects`, so the definition in 0001 is no longer the one in
+/// force, and a test trusting the initial file would keep passing while the
+/// database it describes had moved on.
+#[tokio::test]
+async fn rust_enums_match_the_check_constraints() {
+    let database = db().await;
+    let rows = sqlx::query("SELECT name, sql FROM sqlite_master WHERE type = 'table'")
+        .fetch_all(database.pool())
+        .await
+        .unwrap();
+    let schema: std::collections::HashMap<String, String> = rows
+        .iter()
+        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("sql")))
+        .collect();
+
+    let assert_parity = |table: &str, column: &str, variants: &[&str]| {
+        let sql = schema
+            .get(table)
+            .unwrap_or_else(|| panic!("no live table {table}"));
+        let body =
+            table_body(sql, table).unwrap_or_else(|| panic!("no CREATE TABLE body for {table}"));
         let allowed = check_values(body, column)
             .unwrap_or_else(|| panic!("no CHECK list for {table}.{column}"));
 
@@ -127,7 +148,7 @@ fn rust_enums_match_the_check_constraints() {
             actual, expected,
             "{table}.{column} disagrees with its Rust enum"
         );
-    }
+    };
 
     let as_strs = |values: &[&'static str]| values.to_vec();
 
@@ -642,4 +663,559 @@ async fn timestamps_sort_in_chronological_order() {
     let ordered: Vec<String> = rows.iter().map(|row| row.get::<String, _>(0)).collect();
     assert_eq!(ordered[0], time::format_unix_seconds(1_700_000_000));
     assert_eq!(ordered[2], time::format_unix_seconds(1_600_000_000));
+}
+
+// ------------------------------------------------------- remote sources (v3)
+
+/// A pool holding a schema-version-2 database with one project and children,
+/// built by applying the first two migrations by hand.
+///
+/// Migration 0003 rebuilds `projects`, and the failure mode worth testing is
+/// not "does the new table exist" but "did the rebuild take the user's data with
+/// it". That can only be seen by populating the old shape first, so these tests
+/// drive the migration text directly rather than through `Database::open`.
+async fn v2_database_with_data() -> (sqlx::SqlitePool, String) {
+    // One connection, for two reasons: every connection to `:memory:` would
+    // otherwise get its own empty database, and `PRAGMA foreign_keys` is
+    // per-connection — a pragma set on one connection and a migration run on
+    // another is the exact mistake these tests exist to catch.
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory sqlite");
+
+    sqlx::raw_sql(INITIAL_MIGRATION)
+        .execute(&pool)
+        .await
+        .expect("0001 should apply");
+    sqlx::raw_sql(DISCORD_MIGRATION)
+        .execute(&pool)
+        .await
+        .expect("0002 should apply");
+
+    let id = ProjectId::generate().to_string();
+    let now = time::now();
+    sqlx::query(
+        "INSERT INTO projects (id, slug, display_name, project_type, source_type,
+                               directory, created_at, updated_at)
+         VALUES (?, ?, 'Kept', 'NODE_APP', 'ZIP_UPLOAD', ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(format!("proj-{}", &id[4..]))
+    .bind(format!("/var/lib/project-host/projects/{id}"))
+    .bind(&now)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .expect("project insert");
+
+    sqlx::query(
+        "INSERT INTO environment_variables (id, project_id, key, value_plain, is_secret,
+                                            created_at, updated_at)
+         VALUES (?, ?, 'KEEP_ME', 'yes', 0, ?, ?)",
+    )
+    .bind(EnvVarId::generate().to_string())
+    .bind(&id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .expect("env var insert");
+
+    (pool, id)
+}
+
+/// Apply migration 0003 the way `Database::migrate` does: foreign keys off for
+/// the duration, then checked.
+async fn apply_0003(pool: &sqlx::SqlitePool) {
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(REMOTE_SOURCES_MIGRATION)
+        .execute(pool)
+        .await
+        .expect("0003 should apply");
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let orphans = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(
+        orphans.is_empty(),
+        "the rebuild orphaned {} row(s)",
+        orphans.len()
+    );
+}
+
+#[tokio::test]
+async fn rebuilding_projects_keeps_the_rows_and_their_children() {
+    let (pool, project) = v2_database_with_data().await;
+    apply_0003(&pool).await;
+
+    let name: String = sqlx::query_scalar("SELECT display_name FROM projects WHERE id = ?")
+        .bind(&project)
+        .fetch_one(&pool)
+        .await
+        .expect("the project should have survived the rebuild");
+    assert_eq!(name, "Kept");
+
+    // The reason foreign keys are disabled during migration: with them on,
+    // DROP TABLE projects cascades and this row is gone.
+    let kept: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM environment_variables WHERE project_id = ? AND key = 'KEEP_ME'",
+    )
+    .bind(&project)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(kept, 1, "the rebuild cascaded into the child tables");
+}
+
+#[tokio::test]
+async fn the_rebuilt_table_keeps_enforcing_its_cascade() {
+    // Disabling foreign keys for the migration must not leave them disabled, and
+    // the rebuilt table must still be a cascade parent.
+    let (pool, project) = v2_database_with_data().await;
+    apply_0003(&pool).await;
+
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(&project)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let orphans: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM environment_variables WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(orphans, 0, "deleting a project left its variables behind");
+}
+
+#[tokio::test]
+async fn the_rebuilt_table_keeps_its_indexes() {
+    let (pool, _) = v2_database_with_data().await;
+    apply_0003(&pool).await;
+
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'projects'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for expected in ["idx_projects_status", "idx_projects_desired"] {
+        assert!(
+            names.iter().any(|name| name == expected),
+            "the rebuild dropped {expected}; it exists to keep the reconciler's \
+             scan off a full table"
+        );
+    }
+}
+
+/// Insert a project with an arbitrary source, returning what the database said.
+async fn try_source(
+    database: &Database,
+    source_type: &str,
+    url: Option<&str>,
+    git_ref: Option<&str>,
+    commit: Option<&str>,
+) -> std::result::Result<(), sqlx::Error> {
+    let id = ProjectId::generate().to_string();
+    let now = time::now();
+    sqlx::query(
+        "INSERT INTO projects (id, slug, display_name, project_type, source_type,
+                               directory, source_url, source_ref, source_commit,
+                               created_at, updated_at)
+         VALUES (?, ?, 'Sourced', 'NODE_APP', ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(format!("proj-{}", &id[4..]))
+    .bind(source_type)
+    .bind(format!("/var/lib/project-host/projects/{id}"))
+    .bind(url)
+    .bind(git_ref)
+    .bind(commit)
+    .bind(&now)
+    .bind(&now)
+    .execute(database.pool())
+    .await
+    .map(|_| ())
+}
+
+#[tokio::test]
+async fn a_project_can_come_from_a_git_remote_or_an_archive_url() {
+    let database = db().await;
+
+    try_source(
+        &database,
+        "GIT_CLONE",
+        Some("https://github.com/owner/repo.git"),
+        Some("main"),
+        Some("0f5c1d0a"),
+    )
+    .await
+    .expect("a git clone should be a storable source");
+
+    try_source(
+        &database,
+        "REMOTE_ARCHIVE",
+        Some("https://example.com/release.tar.gz"),
+        None,
+        None,
+    )
+    .await
+    .expect("an archive URL should be a storable source");
+}
+
+#[tokio::test]
+async fn a_remote_source_without_a_url_is_refused() {
+    let database = db().await;
+    for kind in ["GIT_CLONE", "REMOTE_ARCHIVE"] {
+        assert!(
+            try_source(&database, kind, None, None, None).await.is_err(),
+            "{kind} was stored with no record of where it came from"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_local_source_cannot_claim_a_remote_url() {
+    // Makes `source_url IS NOT NULL` a reliable question.
+    let database = db().await;
+    assert!(
+        try_source(
+            &database,
+            "ZIP_UPLOAD",
+            Some("https://example.com/repo.git"),
+            None,
+            None
+        )
+        .await
+        .is_err(),
+        "an uploaded project was allowed to claim a remote"
+    );
+}
+
+#[tokio::test]
+async fn only_a_git_clone_may_carry_a_ref_or_a_commit() {
+    let database = db().await;
+    assert!(
+        try_source(
+            &database,
+            "REMOTE_ARCHIVE",
+            Some("https://example.com/release.zip"),
+            Some("main"),
+            None
+        )
+        .await
+        .is_err(),
+        "an archive was allowed a git ref"
+    );
+    assert!(
+        try_source(&database, "EMPTY", None, None, Some("0f5c1d0a"))
+            .await
+            .is_err(),
+        "an empty project was allowed a commit id"
+    );
+}
+
+#[tokio::test]
+async fn a_url_carrying_a_token_in_its_userinfo_cannot_be_stored() {
+    // The leak this prevents: a token in this column is a token in every backup
+    // of the file and in any diagnostic that prints a project's origin.
+    let database = db().await;
+    assert!(
+        try_source(
+            &database,
+            "GIT_CLONE",
+            Some("https://user:ghp_token@github.com/owner/repo.git"),
+            None,
+            None
+        )
+        .await
+        .is_err(),
+        "a URL with embedded credentials reached the database"
+    );
+}
+
+#[tokio::test]
+async fn there_is_nowhere_to_store_a_source_token_in_the_clear() {
+    let database = db().await;
+    let columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('project_source_credentials')")
+            .fetch_all(database.pool())
+            .await
+            .unwrap();
+
+    assert_eq!(
+        columns,
+        [
+            "project_id",
+            "ciphertext",
+            "nonce",
+            "created_at",
+            "updated_at"
+        ],
+        "project_source_credentials grew a column a plaintext token could live in"
+    );
+}
+
+#[tokio::test]
+async fn a_source_token_nonce_of_the_wrong_length_is_refused() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+    let now = time::now();
+
+    let wrong = sqlx::query(
+        "INSERT INTO project_source_credentials (project_id, ciphertext, nonce,
+                                                 created_at, updated_at)
+         VALUES (?, X'0102', X'0102', ?, ?)",
+    )
+    .bind(&project)
+    .bind(&now)
+    .bind(&now)
+    .execute(database.pool())
+    .await;
+    assert!(wrong.is_err(), "a 2-byte nonce was accepted");
+
+    sqlx::query(
+        "INSERT INTO project_source_credentials (project_id, ciphertext, nonce,
+                                                 created_at, updated_at)
+         VALUES (?, X'0102', ?, ?, ?)",
+    )
+    .bind(&project)
+    .bind(vec![0u8; 24])
+    .bind(&now)
+    .bind(&now)
+    .execute(database.pool())
+    .await
+    .expect("a 24-byte nonce is what XChaCha20-Poly1305 uses");
+}
+
+#[tokio::test]
+async fn deleting_a_project_takes_its_source_token_with_it() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+    let now = time::now();
+
+    sqlx::query(
+        "INSERT INTO project_source_credentials (project_id, ciphertext, nonce,
+                                                 created_at, updated_at)
+         VALUES (?, X'0102', ?, ?, ?)",
+    )
+    .bind(&project)
+    .bind(vec![0u8; 24])
+    .bind(&now)
+    .bind(&now)
+    .execute(database.pool())
+    .await
+    .unwrap();
+
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(&project)
+        .execute(database.pool())
+        .await
+        .unwrap();
+
+    let left: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM project_source_credentials WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(database.pool())
+            .await
+            .unwrap();
+    assert_eq!(left, 0, "a deleted project left its token in the database");
+}
+
+// ------------------------------------------------------------ runtimes (v4)
+
+/// Apply one migration the way `Database::migrate` does.
+async fn apply_with_foreign_keys_off(pool: &sqlx::SqlitePool, sql: &str) {
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(sql)
+        .execute(pool)
+        .await
+        .expect("the migration should apply");
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let orphans = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(
+        orphans.is_empty(),
+        "the rebuild orphaned {} row(s)",
+        orphans.len()
+    );
+}
+
+#[tokio::test]
+async fn rebuilding_project_runtimes_keeps_its_rows() {
+    let (pool, project) = v2_database_with_data().await;
+
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, 'NODEJS', '22', 'NPM', 'node index.js', 'nodejs')",
+    )
+    .bind(&project)
+    .execute(&pool)
+    .await
+    .expect("runtime insert");
+
+    apply_with_foreign_keys_off(&pool, REMOTE_SOURCES_MIGRATION).await;
+    apply_with_foreign_keys_off(&pool, RUNTIMES_MIGRATION).await;
+
+    let start: String =
+        sqlx::query_scalar("SELECT start_command FROM project_runtimes WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(&pool)
+            .await
+            .expect("the runtime row should have survived the rebuild");
+    assert_eq!(start, "node index.js");
+}
+
+#[tokio::test]
+async fn the_rebuilt_runtimes_table_still_cascades() {
+    let (pool, project) = v2_database_with_data().await;
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, 'PYTHON', '3.12', 'PIP', 'python main.py', 'python')",
+    )
+    .bind(&project)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_with_foreign_keys_off(&pool, REMOTE_SOURCES_MIGRATION).await;
+    apply_with_foreign_keys_off(&pool, RUNTIMES_MIGRATION).await;
+
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(&project)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let left: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM project_runtimes WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0, "deleting a project left its runtime row behind");
+}
+
+/// Try to store a runtime, returning what the database said.
+async fn try_runtime(
+    database: &Database,
+    project: &str,
+    runtime: &str,
+    manager: &str,
+) -> std::result::Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO project_runtimes (project_id, runtime, runtime_version, package_manager,
+                                       start_command, template_id)
+         VALUES (?, ?, '1', ?, 'run', 'tpl')
+         ON CONFLICT(project_id) DO UPDATE SET
+             runtime = excluded.runtime,
+             package_manager = excluded.package_manager",
+    )
+    .bind(project)
+    .bind(runtime)
+    .bind(manager)
+    .execute(database.pool())
+    .await
+    .map(|_| ())
+}
+
+#[tokio::test]
+async fn every_runtime_this_build_offers_can_be_stored() {
+    // The parity test proves the CHECK list matches the Rust enum. This proves
+    // the values in that list are actually insertable, which is the thing a user
+    // hits.
+    let database = db().await;
+    let project = insert_project(&database).await;
+
+    for runtime in SourceRuntimes::ALL {
+        try_runtime(&database, &project, runtime, "NONE")
+            .await
+            .unwrap_or_else(|error| panic!("{runtime} was refused: {error}"));
+    }
+}
+
+/// The runtimes this build offers, spelled out rather than imported, so that
+/// adding one to the enum without adding it to the migration fails here.
+struct SourceRuntimes;
+
+impl SourceRuntimes {
+    const ALL: [&'static str; 13] = [
+        "NODEJS",
+        "TYPESCRIPT",
+        "BUN",
+        "DENO",
+        "PYTHON",
+        "GO",
+        "RUST",
+        "JAVA",
+        "PHP",
+        "RUBY",
+        "DOTNET",
+        "STATIC",
+        "POLYGLOT",
+    ];
+}
+
+#[tokio::test]
+async fn every_package_manager_this_build_offers_can_be_stored() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+
+    for manager in [
+        "PNPM",
+        "NPM",
+        "YARN",
+        "BUN",
+        "DENO",
+        "PIP",
+        "POETRY",
+        "UV",
+        "PIPENV",
+        "GO_MODULES",
+        "CARGO",
+        "MAVEN",
+        "GRADLE",
+        "COMPOSER",
+        "BUNDLER",
+        "NUGET",
+        "NONE",
+    ] {
+        try_runtime(&database, &project, "POLYGLOT", manager)
+            .await
+            .unwrap_or_else(|error| panic!("{manager} was refused: {error}"));
+    }
+}
+
+#[tokio::test]
+async fn a_runtime_this_build_does_not_offer_is_refused() {
+    let database = db().await;
+    let project = insert_project(&database).await;
+    assert!(
+        try_runtime(&database, &project, "COBOL", "NONE")
+            .await
+            .is_err(),
+        "an unknown runtime reached the database"
+    );
 }

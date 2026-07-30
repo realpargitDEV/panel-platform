@@ -10,7 +10,9 @@ repository.workspace = true
 project-host-database = { version = "0.1.0", path = "../database" }
 project-host-discord = { version = "0.1.0", path = "../discord" }
 project-host-docker-manager = { version = "0.1.0", path = "../docker-manager" }
+project-host-file-manager = { version = "0.1.0", path = "../file-manager" }
 project-host-platform = { version = "0.1.0", path = "../platform" }
+project-host-project-manager = { version = "0.1.0", path = "../project-manager" }
 project-host-security = { version = "0.1.0", path = "../security" }
 serde = { version = "1.0.229", features = ["derive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }

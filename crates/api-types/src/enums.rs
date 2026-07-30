@@ -89,10 +89,29 @@ string_enum! {
 
 string_enum! {
     /// Which approved template family builds the image.
+    ///
+    /// `TYPESCRIPT` is its own runtime rather than a flavour of `NODEJS`
+    /// because it is the presence of a compile step, not a different
+    /// interpreter, that changes how the image is built.
+    ///
+    /// `POLYGLOT` is for a project that genuinely needs more than one
+    /// toolchain — a Python service with a Node build, say. Its image carries
+    /// several toolchains and is correspondingly large, which is why it is a
+    /// deliberate choice and never a detection default.
     Runtime {
         NodeJs => "NODEJS",
+        TypeScript => "TYPESCRIPT",
+        Bun => "BUN",
+        Deno => "DENO",
         Python => "PYTHON",
+        Go => "GO",
+        Rust => "RUST",
+        Java => "JAVA",
+        Php => "PHP",
+        Ruby => "RUBY",
+        DotNet => "DOTNET",
         Static => "STATIC",
+        Polyglot => "POLYGLOT",
     }
 }
 
@@ -101,10 +120,19 @@ string_enum! {
         Pnpm => "PNPM",
         Npm => "NPM",
         Yarn => "YARN",
+        Bun => "BUN",
+        Deno => "DENO",
         Pip => "PIP",
         Poetry => "POETRY",
         Uv => "UV",
         Pipenv => "PIPENV",
+        GoModules => "GO_MODULES",
+        Cargo => "CARGO",
+        Maven => "MAVEN",
+        Gradle => "GRADLE",
+        Composer => "COMPOSER",
+        Bundler => "BUNDLER",
+        NuGet => "NUGET",
         None => "NONE",
     }
 }
@@ -233,6 +261,8 @@ string_enum! {
         LocalFolder => "LOCAL_FOLDER",
         Duplicate => "DUPLICATE",
         ImportArchive => "IMPORT_ARCHIVE",
+        GitClone => "GIT_CLONE",
+        RemoteArchive => "REMOTE_ARCHIVE",
     }
 }
 

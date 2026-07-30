@@ -20,8 +20,12 @@ project-host-core = { version = "0.1.0", path = "../../../crates/app-core" }
 project-host-database = { version = "0.1.0", path = "../../../crates/database" }
 project-host-api-types = { version = "0.1.0", path = "../../../crates/api-types" }
 project-host-docker-manager = { version = "0.1.0", path = "../../../crates/docker-manager" }
+project-host-file-manager = { version = "0.1.0", path = "../../../crates/file-manager" }
 project-host-platform = { version = "0.1.0", path = "../../../crates/platform" }
 project-host-project-manager = { version = "0.1.0", path = "../../../crates/project-manager" }
+# Only for `Secret`: a token from the creation form is wrapped the moment it is
+# read, so nothing downstream can print it by accident.
+project-host-security = { version = "0.1.0", path = "../../../crates/security" }
 project-host-updater = { version = "0.1.0", path = "../../../crates/updater" }
 # Only used to fetch the release manifest. rustls rather than the platform TLS
 # stack so the same code path runs on Windows and Linux.
@@ -37,6 +41,20 @@ tauri = { version = "2", features = [] }
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync"] }
 tracing = "0.1.44"
+
+[features]
+# Serve the frontend from inside the binary rather than from `devUrl`.
+#
+# `tauri build` sets this; a plain `cargo build` does not, and the resulting
+# executable points its window at the Vite dev server — which, with no dev server
+# running, shows the WebView's own "can't reach this page" instead of the
+# application. Anyone running the debug binary directly wants:
+#
+#     cargo run -p project-host-desktop --features custom-protocol
+#
+# It requires `pnpm --filter project-host-desktop build` to have produced
+# `apps/desktop/dist` first, because that is what gets embedded.
+custom-protocol = ["tauri/custom-protocol"]
 
 [lints]
 workspace = true

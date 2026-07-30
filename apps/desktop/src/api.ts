@@ -88,21 +88,91 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
   return toCamel<UpdateCheck>(await invoke('check_for_update'));
 }
 
+/** Where a new project's files come from. */
+export type SourceKind = 'EMPTY' | 'GIT_CLONE' | 'REMOTE_ARCHIVE' | 'GITHUB_CLI';
+
+export interface ProjectSource {
+  kind: SourceKind;
+  /**
+   * An `https://` address — or, for `GITHUB_CLI`, an `owner/repo` name. Both are
+   * validated by the core, not here.
+   */
+  url?: string;
+  /** Branch or tag. A commit id is refused with an explanation. */
+  gitRef?: string;
+  subdirectory?: string;
+  /**
+   * A token for a private remote.
+   *
+   * Deliberately never read back: no function in this file returns one, and the
+   * core has no command that would. It travels one way.
+   */
+  token?: string;
+}
+
 export interface NewProjectRequest {
   displayName: string;
   description: string;
-  runtime: string;
+  /**
+   * Leave undefined to let the core look at the files and decide. An empty
+   * project has no files, so it needs one.
+   */
+  runtime?: string;
+  source?: ProjectSource;
 }
 
-export async function createProject(request: NewProjectRequest): Promise<ProjectSummary> {
+/** What a project turned out to be, once its files were there to look at. */
+export interface CreatedProject extends ProjectSummary {
+  runtime: string;
+  /** True when the runtime came from the files rather than from a choice. */
+  detected: boolean;
+  /** Every language found in the tree. */
+  languages: string[];
+  /** Detection warnings, already phrased for a person. */
+  notes: string[];
+}
+
+export interface GitHubCliStatus {
+  installed: boolean;
+  /** The logged-in account. Null with `installed: true` means nobody is. */
+  account: string | null;
+  /** What the user needs to do, when something needs doing. */
+  hint: string | null;
+}
+
+/** Asked before the GitHub CLI option is offered. */
+export async function githubCliStatus(): Promise<GitHubCliStatus> {
+  return toCamel<GitHubCliStatus>(await invoke('github_cli_status'));
+}
+
+export interface RuntimeOption {
+  id: string;
+  label: string;
+}
+
+/** The override list, served from the same table the planner uses. */
+export async function supportedRuntimes(): Promise<RuntimeOption[]> {
+  return toCamel<RuntimeOption[]>(await invoke('supported_runtimes'));
+}
+
+export async function createProject(request: NewProjectRequest): Promise<CreatedProject> {
   // The command reads snake_case, so the one place that converts back is here
   // rather than in the form.
-  return toCamel<ProjectSummary>(
+  return toCamel<CreatedProject>(
     await invoke('create_project', {
       request: {
         display_name: request.displayName,
         description: request.description,
         runtime: request.runtime,
+        source: request.source
+          ? {
+              kind: request.source.kind,
+              url: request.source.url,
+              git_ref: request.source.gitRef,
+              subdirectory: request.source.subdirectory,
+              token: request.source.token,
+            }
+          : undefined,
       },
     }),
   );
@@ -118,6 +188,84 @@ export async function stopProject(projectId: string): Promise<void> {
 
 export async function restartProject(projectId: string): Promise<string> {
   return invoke('restart_project', { projectId });
+}
+
+// ------------------------------------------------------------- project files
+
+export interface FileEntry {
+  name: string;
+  /** Relative to the project root, forward-slashed on every platform. */
+  path: string;
+  kind: 'file' | 'directory' | 'other';
+  sizeBytes: number;
+  modifiedUnixMs: number | null;
+  isSymlink: boolean;
+}
+
+export interface Listing {
+  path: string;
+  entries: FileEntry[];
+  /** True when there were more entries than the core will return at once. */
+  truncated: boolean;
+}
+
+export interface TextFile {
+  path: string;
+  text: string;
+  sizeBytes: number;
+  /** The Monaco language id, decided by the core from the extension. */
+  language: string;
+  /** True while the project is being built or removed. */
+  readOnly: boolean;
+}
+
+/**
+ * Every path below is *relative to the project root*, and the core builds the
+ * real path itself. There is deliberately no way to send an absolute path: the
+ * editor is the first feature with a reason to want one, and it does not get it.
+ */
+export async function listProjectFiles(projectId: string, path: string): Promise<Listing> {
+  return toCamel<Listing>(await invoke('list_project_files', { projectId, path }));
+}
+
+export async function readProjectFile(projectId: string, path: string): Promise<TextFile> {
+  return toCamel<TextFile>(await invoke('read_project_file', { projectId, path }));
+}
+
+export async function writeProjectFile(
+  projectId: string,
+  path: string,
+  text: string,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(await invoke('write_project_file', { projectId, path, text }));
+}
+
+export async function createProjectFile(
+  projectId: string,
+  path: string,
+  directory: boolean,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(await invoke('create_project_file', { projectId, path, directory }));
+}
+
+export async function renameProjectFile(
+  projectId: string,
+  path: string,
+  newName: string,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(await invoke('rename_project_file', { projectId, path, newName }));
+}
+
+export async function deleteProjectFile(
+  projectId: string,
+  path: string,
+  recursive: boolean,
+): Promise<void> {
+  return invoke('delete_project_file', { projectId, path, recursive });
+}
+
+export async function searchProjectFiles(projectId: string, query: string): Promise<FileEntry[]> {
+  return toCamel<FileEntry[]>(await invoke('search_project_files', { projectId, query }));
 }
 
 export interface AppSettings {
