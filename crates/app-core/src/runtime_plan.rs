@@ -14,6 +14,7 @@
 
 use std::path::Path;
 
+use project_host_api_types::ProjectType;
 use project_host_database::projects::RuntimeSpec;
 use project_host_project_manager::detection::{self, Detection, Runtime};
 
@@ -27,6 +28,10 @@ pub struct RuntimePlan {
     /// True when the runtime came from looking at the files rather than from the
     /// user naming it.
     pub detected: bool,
+    /// The coarse category for `projects.project_type`, decided here because
+    /// this is where the runtime is decided. The desktop used to invent this
+    /// value at the call site and got it wrong — see [`project_type_for`].
+    pub project_type: ProjectType,
     /// Every language the tree showed evidence of, for the interface to report.
     pub languages: Vec<String>,
     /// Detection warnings, in the words the user should see.
@@ -68,6 +73,7 @@ pub fn plan_named(runtime: &str) -> Result<RuntimePlan, PlanError> {
         spec,
         container_port: port,
         detected: false,
+        project_type: project_type_for(runtime),
         languages: vec![runtime.display_name().to_string()],
         notes: Vec::new(),
     })
@@ -116,6 +122,7 @@ pub fn plan_detected(
         spec,
         container_port: port,
         detected: true,
+        project_type: project_type_for(detection.runtime),
         languages,
         notes,
     })
@@ -514,4 +521,118 @@ mod tests {
             "the script's contents must not become the command"
         );
     }
+}
+
+/// The coarse category stored on the project row, derived from its runtime.
+///
+/// `projects.project_type` is one of eight values and the runtime is one of
+/// thirteen, so this is a narrowing and several runtimes share an answer. Only
+/// the three categories a runtime can honestly imply are produced here:
+/// `DISCORD_BOT`, `WEBSITE`, `REST_API` and `WORKER` describe what a project is
+/// *for*, which no amount of looking at its files can establish, so they are
+/// never guessed.
+///
+/// This exists because the desktop wrote the literal `"GENERIC"` into that
+/// column — a value no `CHECK` allows — and every project creation failed with
+/// "value rejected by a database constraint". The column now takes the enum, so
+/// a literal cannot come back; this decides *which* variant.
+pub fn project_type_for(runtime: Runtime) -> ProjectType {
+    match runtime {
+        // Anything on a Node-compatible toolchain. Deno and Bun are their own
+        // runtimes but produce the same shape of application.
+        Runtime::NodeJs | Runtime::TypeScript | Runtime::Bun | Runtime::Deno => {
+            ProjectType::NodeApp
+        }
+        Runtime::Python => ProjectType::PythonApp,
+        // The one runtime that says something about the output rather than the
+        // toolchain: a static build has no server process.
+        Runtime::Static => ProjectType::StaticSite,
+        // A long-running process in a language whose category we cannot narrow
+        // further. `SERVICE` is the honest answer, not a placeholder.
+        Runtime::Go
+        | Runtime::Rust
+        | Runtime::Java
+        | Runtime::Php
+        | Runtime::Ruby
+        | Runtime::DotNet
+        | Runtime::Polyglot => ProjectType::Service,
+    }
+}
+
+#[cfg(test)]
+mod project_type_tests {
+    use super::*;
+
+    /// Total by construction — the match has no wildcard — but a new `Runtime`
+    /// variant should be a deliberate decision here rather than something that
+    /// compiles by accident.
+    #[test]
+    fn every_runtime_maps_to_a_type_the_schema_allows() {
+        for runtime in ALL_RUNTIMES {
+            let kind = project_type_for(runtime);
+            assert!(
+                ProjectType::ALL.contains(&kind),
+                "{runtime:?} mapped to {}, which is not a ProjectType",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// The value that caused the defect. No runtime may produce anything
+    /// outside the eight the constraint lists.
+    #[test]
+    fn no_runtime_produces_a_value_outside_the_constraint() {
+        const ALLOWED: [&str; 8] = [
+            "DISCORD_BOT",
+            "NODE_APP",
+            "PYTHON_APP",
+            "WEBSITE",
+            "STATIC_SITE",
+            "REST_API",
+            "WORKER",
+            "SERVICE",
+        ];
+
+        for runtime in ALL_RUNTIMES {
+            let written = project_type_for(runtime).as_str();
+            assert!(
+                ALLOWED.contains(&written),
+                "{runtime:?} would write {written}, which the CHECK refuses"
+            );
+        }
+    }
+
+    #[test]
+    fn the_node_family_shares_one_category() {
+        for runtime in [
+            Runtime::NodeJs,
+            Runtime::TypeScript,
+            Runtime::Bun,
+            Runtime::Deno,
+        ] {
+            assert_eq!(project_type_for(runtime), ProjectType::NodeApp);
+        }
+    }
+
+    #[test]
+    fn a_static_build_is_not_a_service() {
+        assert_eq!(project_type_for(Runtime::Static), ProjectType::StaticSite);
+        assert_eq!(project_type_for(Runtime::Go), ProjectType::Service);
+    }
+
+    const ALL_RUNTIMES: [Runtime; 13] = [
+        Runtime::NodeJs,
+        Runtime::TypeScript,
+        Runtime::Bun,
+        Runtime::Deno,
+        Runtime::Python,
+        Runtime::Go,
+        Runtime::Rust,
+        Runtime::Java,
+        Runtime::Php,
+        Runtime::Ruby,
+        Runtime::DotNet,
+        Runtime::Static,
+        Runtime::Polyglot,
+    ];
 }

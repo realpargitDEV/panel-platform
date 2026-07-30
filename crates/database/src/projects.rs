@@ -12,7 +12,7 @@
 //! but a collision would mean two projects sharing a container, so the database
 //! refuses it rather than trusting that the generator stayed correct.
 
-use project_host_api_types::{DeploymentId, EventId, PortId, ProjectId};
+use project_host_api_types::{DeploymentId, EventId, PortId, ProjectId, ProjectType};
 use sqlx::Row;
 
 use crate::error::{DatabaseError, Result};
@@ -111,7 +111,14 @@ pub struct NewProject {
     pub slug: String,
     pub display_name: String,
     pub description: String,
-    pub project_type: String,
+    /// The enum rather than a `String`.
+    ///
+    /// This was a `String`, and the desktop wrote `"GENERIC"` into it — a value
+    /// no `CHECK` allows — so every project creation failed with "value
+    /// rejected by a database constraint". The parity test could not catch it:
+    /// it compares `ProjectType` against the constraint, and those two agreed.
+    /// Nothing was watching the literal in between. Now the compiler is.
+    pub project_type: ProjectType,
     pub icon: Option<String>,
     pub color: Option<String>,
     pub source_type: String,
@@ -239,7 +246,7 @@ pub async fn create_project(database: &Database, new: &NewProject) -> Result<Pro
     .bind(&new.slug)
     .bind(&new.display_name)
     .bind(&new.description)
-    .bind(&new.project_type)
+    .bind(new.project_type.as_str())
     .bind(&new.icon)
     .bind(&new.color)
     .bind(&new.container_name)

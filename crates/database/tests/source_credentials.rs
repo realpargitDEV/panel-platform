@@ -13,6 +13,7 @@
 )]
 
 use project_host_api_types::ids::ProjectId;
+use project_host_api_types::ProjectType;
 use project_host_database::projects::{self, NewPort, NewProject, RuntimeSpec};
 use project_host_database::source_credentials::{
     forget_source_credential, has_source_credential, load_source_credential,
@@ -57,7 +58,7 @@ async fn a_cloned_project(database: &Database, slug: &str) -> String {
             slug: slug.to_string(),
             display_name: "Some CLI".to_string(),
             description: "installed from GitHub".to_string(),
-            project_type: "WORKER".to_string(),
+            project_type: ProjectType::Worker,
             icon: None,
             color: None,
             source_type: "GIT_CLONE".to_string(),
