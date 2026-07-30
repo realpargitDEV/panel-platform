@@ -1,0 +1,17 @@
+# The development machine is Windows and has `core.autocrlf` on; the CI runners
+# are Linux. A shell script checked out with CRLF fails there with a confusing
+# `bad interpreter: /usr/bin/env bash^M`, so the line endings are pinned rather
+# than left to each clone's configuration.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+
+# Never touched.
+*.png binary
+*.ico binary
+*.icns binary

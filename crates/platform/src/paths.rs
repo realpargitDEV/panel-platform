@@ -205,8 +205,17 @@ mod tests {
     #[test]
     fn windows_layout_sits_under_program_data() {
         let paths = StandardPaths::windows(Path::new("C:\\ProgramData"));
-        assert!(paths.data_dir().ends_with("ProjectHost\\data"));
-        assert!(paths.projects_dir().ends_with("ProjectHost\\projects"));
+        // `Path::ends_with` matches whole components, and a literal
+        // `"ProjectHost\\data"` is two of them only where `\` separates. On
+        // Linux it is one component with a backslash in its name, which never
+        // matches — so the expected suffix is built with `join` and picks up
+        // whatever separator the platform running the test uses.
+        assert!(paths
+            .data_dir()
+            .ends_with(Path::new("ProjectHost").join("data")));
+        assert!(paths
+            .projects_dir()
+            .ends_with(Path::new("ProjectHost").join("projects")));
         assert_eq!(
             paths.database_path().file_name().and_then(|n| n.to_str()),
             Some("project-host.db")

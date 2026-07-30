@@ -889,6 +889,51 @@ async fn check_for_update() -> CommandResult<UpdateCheck> {
     .map_err(CommandError::from)
 }
 
+/// Download the offered update, verify its signature, and install it.
+///
+/// Only ever called after [`check_for_update`] has returned an update and the
+/// user has pressed the button; nothing here decides whether an update *should*
+/// happen. The plugin performs its own fetch of the same manifest, so this
+/// costs one extra request at the moment of the click — the alternative is
+/// handing the plugin a manifest we parsed ourselves, which would move
+/// signature verification off the path that Tauri actually audits.
+///
+/// The signature is checked against the public key compiled into the binary
+/// from `tauri.conf.json`, never one supplied by the feed. On Windows the
+/// installer takes over and the process exits; on Linux the AppImage is
+/// replaced in place. A `.deb` install cannot update itself and returns an
+/// error saying so.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> CommandResult<()> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let update = app
+        .updater()
+        .map_err(|error| CommandError {
+            message: error.to_string(),
+        })?
+        .check()
+        .await
+        .map_err(|error| CommandError {
+            message: error.to_string(),
+        })?;
+
+    let Some(update) = update else {
+        return Err(CommandError {
+            message: "There is no update to install.".to_string(),
+        });
+    };
+
+    update
+        .download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|error| CommandError {
+            message: error.to_string(),
+        })?;
+
+    Ok(())
+}
+
 /// Build and run the application.
 ///
 /// The runtime is started *before* the window so that a database that cannot be
@@ -910,6 +955,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = Arc::new(tokio::sync::Mutex::new(Some(runtime)));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             system_status,
@@ -920,6 +966,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             restart_project,
             app_settings,
             check_for_update,
+            install_update,
             supported_runtimes,
             github_cli_status,
             list_project_files,

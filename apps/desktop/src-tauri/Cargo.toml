@@ -38,6 +38,11 @@ reqwest = { version = "0.12", default-features = false, features = [
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tauri = { version = "2", features = [] }
+# The install half of the update flow. `crates/updater` decides *whether* to
+# offer a release; this replaces the running application, which is the one step
+# only the shell can perform — on Windows a running `.exe` cannot overwrite
+# itself, so the installer has to take over.
+tauri-plugin-updater = "2"
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync"] }
 tracing = "0.1.44"

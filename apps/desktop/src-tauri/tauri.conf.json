@@ -26,13 +26,31 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis", "deb", "appimage"],
+    "createUpdaterArtifacts": true,
+    "shortDescription": "Host and manage projects on your own machine.",
+    "longDescription": "Panel Platform creates, runs and manages containerised projects on a machine you control, with a file editor, per-project console and backups.",
+    "publisher": "realpargit",
+    "category": "DeveloperTool",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCRjk0MkY5QkVFNTI5NDMKUldSREtlVysrVUw1S3dod2hnL3owalJJVG5Tdzk5czlmdTVKc2IxT2RGZC96TEsxUTZkYnY3Q04K",
+      "endpoints": [
+        "https://github.com/realpargitDEV/panel-platform/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

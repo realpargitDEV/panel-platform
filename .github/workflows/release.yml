@@ -1,0 +1,133 @@
+name: Release
+
+# Pushing a `v*` tag builds installers for every supported platform and attaches
+# them to a draft release, together with the `latest.json` the in-app updater
+# reads. The release is a draft on purpose: nothing reaches users until someone
+# has looked at the artefacts and pressed publish.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Cheap gate. A tag that disagrees with the version in the tree produces a
+  # release whose installers announce a different version than their filename,
+  # and the updater compares versions — so this fails the run in seconds rather
+  # than shipping the confusion.
+  check-version:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match tauri.conf.json, Cargo.toml and package.json
+        run: bash scripts/check-version.sh "${{ github.event.inputs.tag || github.ref_name }}"
+
+  build:
+    needs: check-version
+    strategy:
+      # One platform failing should not cancel the others: a broken Linux build
+      # is worth knowing about at the same time as a working Windows one.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+          # 22.04 rather than 24.04: the glibc a binary is built against is the
+          # oldest it can run on, and webkit2gtk-4.1 is packaged here.
+          - platform: ubuntu-22.04
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ -> target'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artefacts. Without these the build still produces
+          # installers, but `latest.json` would carry no usable signature and
+          # every client would reject the update.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: 'Panel Platform __VERSION__'
+          releaseBody: |
+            Installers for Windows and Linux are attached below.
+
+            **These builds are not code-signed.** Windows SmartScreen will warn
+            on first run — "More info" then "Run anyway". Verify the checksums
+            below if you want to confirm what you downloaded.
+
+            Running projects requires Docker; the app installs and opens
+            without it, and says so.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  # Checksums are only meaningful once every platform's assets exist, so this
+  # runs after the matrix rather than inside it.
+  checksums:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute SHA-256 for every attached asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets && cd assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' || true
+          if [ -z "$(ls -A)" ]; then
+            echo "No assets found on $TAG" >&2
+            exit 1
+          fi
+          sha256sum * | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
