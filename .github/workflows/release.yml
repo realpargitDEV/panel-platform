@@ -99,15 +99,89 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'Panel Platform __VERSION__'
+          # GitHub always appends "Source code (zip/tar.gz)" to a release and
+          # that cannot be turned off. So the installers are named first and
+          # explicitly, and the source archives are named as what they are —
+          # otherwise the two most prominent links on the page are the two
+          # nobody wanting to *use* the application should click.
           releaseBody: |
-            Installers for Windows and Linux are attached below.
+            ## Download
 
-            **These builds are not code-signed.** Windows SmartScreen will warn
-            on first run — "More info" then "Run anyway". Verify the checksums
-            below if you want to confirm what you downloaded.
+            **Pick one of the installers below — you do not need to download
+            the source code, clone anything, or install any development
+            tools.** The "Source code" archives at the bottom of this list are
+            added by GitHub automatically and are only useful if you intend to
+            build the application yourself.
 
-            Running projects requires Docker; the app installs and opens
-            without it, and says so.
+            | Your system | Download this | |
+            | --- | --- | --- |
+            | **Windows 10 / 11** (64-bit) | `Panel.Platform_*_x64-setup.exe` | **Recommended** |
+            | Windows, for deployment tooling | `Panel.Platform_*_x64_en-US.msi` | Group Policy, Intune |
+            | **Debian / Ubuntu** | `Panel.Platform_*_amd64.deb` | **Recommended** |
+            | Any other 64-bit Linux | `Panel.Platform_*_amd64.AppImage` | Portable, self-updating |
+
+            An easier front door, which picks the right file for you:
+            **https://realpargitdev.github.io/panel-platform/**
+
+            ## Installing
+
+            **Windows** — run the `-setup.exe` and follow the prompts. It
+            installs the WebView2 runtime if your machine does not already have
+            it. The application appears in the Start Menu as *Panel Platform*.
+
+            **Debian / Ubuntu**
+
+            ```bash
+            sudo apt install ./Panel.Platform_*_amd64.deb
+            ```
+
+            **Other Linux**
+
+            ```bash
+            chmod +x Panel.Platform_*_amd64.AppImage
+            ./Panel.Platform_*_amd64.AppImage
+            ```
+
+            ## What you need
+
+            Nothing is required to *install* or *open* the application — no
+            Node.js, no Rust, no pnpm, no toolchain of any kind. Everything it
+            needs is inside the installer.
+
+            **Docker is required to actually run projects**, because a project
+            runs in a container. The application installs and opens without
+            Docker and tells you it is missing, rather than failing at launch.
+            Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+            on Windows, or Docker Engine on Linux.
+
+            ## These builds are not code-signed
+
+            There is no signing certificate yet, and saying so plainly beats
+            letting you discover it:
+
+            - **Windows** shows a SmartScreen warning on first run. Choose
+              **More info**, then **Run anyway**.
+            - **Linux** packages carry no repository signature.
+
+            `SHA256SUMS.txt` is attached. To check what you downloaded:
+
+            ```powershell
+            # Windows
+            Get-FileHash .\<file> -Algorithm SHA256
+            ```
+
+            ```bash
+            # Linux
+            sha256sum -c SHA256SUMS.txt --ignore-missing
+            ```
+
+            ## Updates
+
+            The application checks for new releases and offers them; nothing
+            installs until you press the button. Downloads are verified against
+            a signing key built into the application, not one supplied by the
+            release feed. The `.deb` cannot update itself — dpkg owns those
+            files — so upgrade it by installing the next `.deb`.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
@@ -136,3 +210,223 @@ jobs:
           sha256sum * | sort -k2 > SHA256SUMS.txt
           cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+  # Smoke tests. These install the artefacts the release actually carries —
+  # downloaded from the draft release, never rebuilt — and prove two things
+  # only: that the package installs, and that the application starts and stays
+  # up. They say nothing about whether any feature works.
+  smoke-linux:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install a desktop runtime for the application to start against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libwebkit2gtk-4.1-0 libgtk-3-0 \
+            libayatana-appindicator3-1 dbus-x11
+
+      - name: Download the release artefacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artefacts && cd artefacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.deb' --pattern '*.AppImage'
+          ls -lh
+
+      - name: Install the .deb
+        run: |
+          set -euo pipefail
+          cd artefacts
+          deb="$(ls *.deb | head -n 1)"
+          echo "Installing $deb"
+          # `dpkg -i` fails rather than resolving dependencies; `apt-get -f`
+          # is the documented repair step and is what a user hitting this
+          # would run.
+          sudo dpkg -i "$deb" || sudo apt-get install -f -y
+          # Read the package name from the archive rather than assuming it:
+          # it derives from productName and would change with it.
+          pkg="$(dpkg-deb -f "$deb" Package)"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Verify the package is installed
+        run: |
+          set -euo pipefail
+          dpkg -s "$PKG"
+          dpkg -s "$PKG" | grep -q '^Status: install ok installed'
+          echo "Files installed:"
+          dpkg -L "$PKG"
+          bin="$(dpkg -L "$PKG" | grep -E '^/usr/bin/' | head -n 1)"
+          test -x "$bin"
+          echo "BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: Launch the installed application under xvfb
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          echo "Launching $BIN"
+          xvfb-run -a --server-args="-screen 0 1280x900x24" \
+            "$BIN" > logs/deb-launch.log 2>&1 &
+          pid=$!
+          # Ten seconds is enough to distinguish "started" from "died on
+          # startup", which is the only distinction this test is entitled to
+          # make.
+          for i in $(seq 1 10); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"; code=$?
+              echo "::error::The .deb application exited after ${i}s with code $code"
+              echo "--- output ---"; cat logs/deb-launch.log
+              exit 1
+            fi
+          done
+          echo "Still running after 10s."
+          kill "$pid" 2>/dev/null || true
+          cat logs/deb-launch.log
+
+      - name: Launch the AppImage under xvfb
+        run: |
+          set -uo pipefail
+          mkdir -p logs
+          cd artefacts
+          app="$(ls *.AppImage | head -n 1)"
+          chmod +x "$app"
+          echo "Launching $app"
+          # No FUSE on the runner, so the AppImage is extracted and its inner
+          # entry point run — the same binary, without needing a kernel module.
+          ./"$app" --appimage-extract > /dev/null 2>&1
+          xvfb-run -a --server-args="-screen 0 1280x900x24" \
+            ./squashfs-root/AppRun > ../logs/appimage-launch.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 10); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"; code=$?
+              echo "::error::The AppImage exited after ${i}s with code $code"
+              echo "--- output ---"; cat ../logs/appimage-launch.log
+              exit 1
+            fi
+          done
+          echo "Still running after 10s."
+          kill "$pid" 2>/dev/null || true
+          cat ../logs/appimage-launch.log
+
+      - name: Upload launch logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-linux-logs
+          path: logs/
+          if-no-files-found: warn
+
+  smoke-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download the release artefacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artefacts && cd artefacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-setup.exe'
+          ls -l
+
+      - name: Install silently
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-ChildItem artefacts\*-setup.exe | Select-Object -First 1
+          Write-Host "Installing $($setup.Name)"
+          # /S is NSIS's silent switch. Per-user, so no elevation is needed.
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer exited with $($p.ExitCode)" }
+
+      - name: Verify the installation directory and executable exist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The install location is not assumed: it is found, so a change to
+          # productName does not silently turn this check into a no-op.
+          $roots = @(
+            "$env:LOCALAPPDATA\Panel Platform",
+            "$env:ProgramFiles\Panel Platform",
+            "${env:ProgramFiles(x86)}\Panel Platform"
+          )
+          $dir = $roots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $dir) { throw "No installation directory found. Looked in:`n$($roots -join "`n")" }
+          Write-Host "Installed to $dir"
+          Get-ChildItem -Recurse $dir | Select-Object FullName, Length | Format-Table -AutoSize
+
+          $exe = Get-ChildItem -Path $dir -Filter *.exe -Recurse |
+                 Where-Object { $_.Name -notmatch 'uninstall' } |
+                 Select-Object -First 1
+          if (-not $exe) { throw "No application executable under $dir" }
+          Write-Host "Executable: $($exe.FullName)"
+          "APP_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APP_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Launch it and confirm it stays running
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          Write-Host "Launching $env:APP_EXE"
+          $p = Start-Process -FilePath $env:APP_EXE `
+                 -RedirectStandardOutput logs\win-launch.out.log `
+                 -RedirectStandardError  logs\win-launch.err.log `
+                 -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) {
+            Write-Host "::error::The application exited after less than 10s with code $($p.ExitCode)"
+            Get-Content logs\win-launch.out.log -ErrorAction SilentlyContinue
+            Get-Content logs\win-launch.err.log -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "Still running after 10s."
+          Stop-Process -Id $p.Id -Force
+          Get-Content logs\win-launch.out.log -ErrorAction SilentlyContinue
+          Get-Content logs\win-launch.err.log -ErrorAction SilentlyContinue
+
+      - name: Uninstall
+        if: always()
+        shell: pwsh
+        run: |
+          $un = Get-ChildItem -Path $env:APP_DIR -Filter '*ninstall*.exe' -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+          if ($un) {
+            Write-Host "Uninstalling with $($un.FullName)"
+            Start-Process -FilePath $un.FullName -ArgumentList '/S' -Wait
+          } else {
+            Write-Host "No uninstaller found; nothing to do."
+          }
+
+      - name: Upload launch logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-windows-logs
+          path: logs/
+          if-no-files-found: warn
+
+  # A single place to read whether the draft is fit to publish. It does not
+  # publish anything: a person still presses the button, and this only records
+  # that every gate before it went green.
+  release-gate:
+    needs: [build, checksums, smoke-linux, smoke-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          echo "Builds, checksums and both smoke tests passed for $TAG."
+          echo
+          echo "The release is still a DRAFT. Publishing is manual and deliberate."
+          echo "These tests prove the installers install and the application"
+          echo "starts without immediately crashing. They do NOT prove that any"
+          echo "feature works — see docs/installers.md for what still needs a VM."

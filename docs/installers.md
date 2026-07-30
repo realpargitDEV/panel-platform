@@ -103,11 +103,26 @@ deleted by hand.
 ```
 /usr/bin/panel-platform                       binary
 /usr/share/applications/panel-platform.desktop
-~/.local/share/project-host/                  data — preserved
+/var/lib/project-host/                        data
+/etc/project-host/                            config
+/var/log/project-host/                        logs
 ```
 
-Data is per-user under `$XDG_DATA_HOME`, because the application runs as the
-user rather than as a system service.
+> **Open problem.** Those three data locations come from
+> `StandardPaths::linux()` in `crates/platform/src/paths.rs`, and
+> `Runtime::start` creates them with `ensure_all()` at launch. They are all
+> root-owned system directories, so **a normal desktop user starting the
+> application cannot create them** and startup is expected to fail.
+>
+> They are left over from the design where a system service owned the data and
+> ran as its own user. That service was deleted in the single-process rewrite,
+> and the architecture note in the README now says the opposite: "the process
+> runs as you, on your machine". The paths were never updated to match.
+>
+> The fix is per-user XDG locations, and it is not applied here because it
+> changes where an installed application looks for its data — a decision worth
+> making deliberately rather than as a footnote to a release pipeline. The
+> Linux smoke test is what turns this from a prediction into evidence.
 
 ### Dependencies
 
@@ -162,17 +177,48 @@ leaving people to guess.
 
 ## 7. Testing
 
+Split by what actually runs, because "tested" covering both a machine check and
+a human one is how an untested thing gets called tested.
+
+### 7.1 Automated, in CI
+
+These run in the release workflow, against the artefacts the draft release
+carries — downloaded from it, never rebuilt. They must pass before the draft is
+fit to publish.
+
+| Test                                                         | Job             |
+| ------------------------------------------------------------ | --------------- |
+| `.deb` installs with `dpkg -i`, repaired by `apt-get -f`     | `smoke-linux`   |
+| Package reports `install ok installed`, binary is executable | `smoke-linux`   |
+| Installed binary starts under `xvfb` and survives 10s        | `smoke-linux`   |
+| AppImage is executable, extracts, starts and survives 10s    | `smoke-linux`   |
+| NSIS `.exe` installs silently with `/S`                      | `smoke-windows` |
+| Installation directory and executable exist                  | `smoke-windows` |
+| Installed executable starts and survives 10s                 | `smoke-windows` |
+| Uninstaller runs                                             | `smoke-windows` |
+| SHA-256 for every attached asset                             | `checksums`     |
+| Tag matches the version in all four manifests                | `check-version` |
+
+**What these prove:** the package installs, the files land, the application
+starts, and it does not crash in its first ten seconds.
+
+**What they do not prove:** that any feature works. No window is looked at, no
+project is created, no container is started, no data survives an upgrade. A
+process that starts and sits there passes every one of these.
+
+### 7.2 Manual, still requiring a human and a VM
+
+None of these have been run. They need machines that do not exist yet, and the
+update rows additionally need two published releases.
+
 | Test                                               | Host                          |
 | -------------------------------------------------- | ----------------------------- |
 | Clean install → application opens → project starts | Windows 11 VM, Docker Desktop |
 | Upgrade preserves data and running containers      | Windows VM                    |
 | Uninstall leaves `ProgramData` intact              | Windows VM                    |
-| `.deb` install → application opens                 | Ubuntu 22.04 + 24.04 VMs      |
+| `.deb` install → window appears and is usable      | Ubuntu 22.04 + 24.04 VMs      |
 | `apt upgrade` preserves data                       | Ubuntu VM                     |
-| AppImage runs and self-updates                     | Ubuntu VM                     |
+| AppImage self-updates                              | Ubuntu VM                     |
 | Update offered, downloaded, verified, installed    | both, two published releases  |
 | Install with Docker absent opens with guidance     | both                          |
-
-**None of these have been run.** CI proves the artefacts _build_; installing
-them needs virtual machines that do not exist, and the update path additionally
-needs two published releases. Every row here is unverified.
+| Data survives uninstall and is found on reinstall  | both                          |
