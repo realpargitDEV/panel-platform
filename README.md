@@ -28,9 +28,18 @@ project gets a log channel and a control panel, with role-based permissions.
 
 ---
 
-## Download
+## Download the app
 
-Installers are attached to every [release](https://github.com/realpargitDEV/panel-platform/releases).
+### ➡ [**Download the latest release**](https://github.com/realpargitDEV/panel-platform/releases/latest)
+
+or use the [**download page**](https://realpargitdev.github.io/panel-platform/),
+which picks the right file for your system.
+
+**You do not need to clone this repository, download the source code, or
+install any development tools.** No Node.js, no Rust, no pnpm, no toolchain —
+everything the application needs is inside the installer. The "Source code"
+archives GitHub attaches to every release are only for people who intend to
+build it themselves.
 
 | Platform           | File                                      | Notes                                       |
 | ------------------ | ----------------------------------------- | ------------------------------------------- |
@@ -39,8 +48,23 @@ Installers are attached to every [release](https://github.com/realpargitDEV/pane
 | Debian, Ubuntu     | `Panel.Platform_<version>_amd64.deb`      | `sudo apt install ./<file>.deb`             |
 | Other Linux x86-64 | `Panel.Platform_<version>_amd64.AppImage` | `chmod +x` and run. Self-updates.           |
 
-Running projects needs **Docker**. The application installs and opens without
-it, and tells you it is missing rather than failing at launch.
+### Installing
+
+**Windows** — run the `-setup.exe`. It installs the WebView2 runtime if the
+machine does not already have it, and the application appears in the Start Menu
+as _Panel Platform_.
+
+**Debian or Ubuntu** — `sudo apt install ./Panel.Platform_<version>_amd64.deb`
+
+**Any other Linux** — `chmod +x` the AppImage and run it.
+
+### What you need
+
+Nothing to install or open the application. **Docker is required to actually
+run projects**, because a project runs in a container — the application
+installs and opens without it and tells you it is missing, rather than failing
+at launch. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+on Windows, or Docker Engine on Linux.
 
 ### These builds are unsigned
 

@@ -99,15 +99,89 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'Panel Platform __VERSION__'
+          # GitHub always appends "Source code (zip/tar.gz)" to a release and
+          # that cannot be turned off. So the installers are named first and
+          # explicitly, and the source archives are named as what they are —
+          # otherwise the two most prominent links on the page are the two
+          # nobody wanting to *use* the application should click.
           releaseBody: |
-            Installers for Windows and Linux are attached below.
+            ## Download
 
-            **These builds are not code-signed.** Windows SmartScreen will warn
-            on first run — "More info" then "Run anyway". Verify the checksums
-            below if you want to confirm what you downloaded.
+            **Pick one of the installers below — you do not need to download
+            the source code, clone anything, or install any development
+            tools.** The "Source code" archives at the bottom of this list are
+            added by GitHub automatically and are only useful if you intend to
+            build the application yourself.
 
-            Running projects requires Docker; the app installs and opens
-            without it, and says so.
+            | Your system | Download this | |
+            | --- | --- | --- |
+            | **Windows 10 / 11** (64-bit) | `Panel.Platform_*_x64-setup.exe` | **Recommended** |
+            | Windows, for deployment tooling | `Panel.Platform_*_x64_en-US.msi` | Group Policy, Intune |
+            | **Debian / Ubuntu** | `Panel.Platform_*_amd64.deb` | **Recommended** |
+            | Any other 64-bit Linux | `Panel.Platform_*_amd64.AppImage` | Portable, self-updating |
+
+            An easier front door, which picks the right file for you:
+            **https://realpargitdev.github.io/panel-platform/**
+
+            ## Installing
+
+            **Windows** — run the `-setup.exe` and follow the prompts. It
+            installs the WebView2 runtime if your machine does not already have
+            it. The application appears in the Start Menu as *Panel Platform*.
+
+            **Debian / Ubuntu**
+
+            ```bash
+            sudo apt install ./Panel.Platform_*_amd64.deb
+            ```
+
+            **Other Linux**
+
+            ```bash
+            chmod +x Panel.Platform_*_amd64.AppImage
+            ./Panel.Platform_*_amd64.AppImage
+            ```
+
+            ## What you need
+
+            Nothing is required to *install* or *open* the application — no
+            Node.js, no Rust, no pnpm, no toolchain of any kind. Everything it
+            needs is inside the installer.
+
+            **Docker is required to actually run projects**, because a project
+            runs in a container. The application installs and opens without
+            Docker and tells you it is missing, rather than failing at launch.
+            Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+            on Windows, or Docker Engine on Linux.
+
+            ## These builds are not code-signed
+
+            There is no signing certificate yet, and saying so plainly beats
+            letting you discover it:
+
+            - **Windows** shows a SmartScreen warning on first run. Choose
+              **More info**, then **Run anyway**.
+            - **Linux** packages carry no repository signature.
+
+            `SHA256SUMS.txt` is attached. To check what you downloaded:
+
+            ```powershell
+            # Windows
+            Get-FileHash .\<file> -Algorithm SHA256
+            ```
+
+            ```bash
+            # Linux
+            sha256sum -c SHA256SUMS.txt --ignore-missing
+            ```
+
+            ## Updates
+
+            The application checks for new releases and offers them; nothing
+            installs until you press the button. Downloads are verified against
+            a signing key built into the application, not one supplied by the
+            release feed. The `.deb` cannot update itself — dpkg owns those
+            files — so upgrade it by installing the next `.deb`.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
