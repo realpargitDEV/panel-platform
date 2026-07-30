@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+project-host-api-types = { version = "0.1.0", path = "../api-types" }
 project-host-database = { version = "0.1.0", path = "../database" }
 project-host-discord = { version = "0.1.0", path = "../discord" }
 project-host-docker-manager = { version = "0.1.0", path = "../docker-manager" }

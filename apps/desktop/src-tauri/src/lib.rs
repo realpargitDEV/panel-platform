@@ -453,7 +453,7 @@ async fn create_project(
             slug: slug.to_string(),
             display_name: display_name.clone(),
             description: sanitise_display_name(request.description.trim()),
-            project_type: "GENERIC".to_string(),
+            project_type: plan.project_type,
             icon: None,
             color: None,
             source_type: spec.source_type().to_string(),

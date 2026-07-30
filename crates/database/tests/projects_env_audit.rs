@@ -12,6 +12,7 @@
     clippy::indexing_slicing
 )]
 
+use project_host_api_types::ProjectType;
 use project_host_database::audit::{self, AuditEvent, AuditResult};
 use project_host_database::environment::{self, StoredValue};
 use project_host_database::projects::{self, NewPort, NewProject, ProjectUpdate, RuntimeSpec};
@@ -53,7 +54,7 @@ fn new_project(slug: &str) -> NewProject {
         slug: slug.to_string(),
         display_name: "My Bot".to_string(),
         description: "a bot".to_string(),
-        project_type: "DISCORD_BOT".to_string(),
+        project_type: ProjectType::DiscordBot,
         icon: None,
         color: Some("#5865f2".to_string()),
         source_type: "EMPTY".to_string(),
@@ -966,4 +967,26 @@ async fn pruning_keeps_the_newest_entries() {
         .expect("list");
     assert_eq!(remaining.len(), 4);
     assert_eq!(remaining[0].action, "test.event9", "newest survives");
+}
+
+/// Every `ProjectType` the application can construct must be one the schema
+/// accepts.
+///
+/// The desktop used to write the literal `"GENERIC"` here, which no `CHECK`
+/// allows, so every project creation failed with "value rejected by a database
+/// constraint". `NewProject::project_type` is now the enum, so that exact
+/// mistake no longer compiles — this covers the remaining direction, where a
+/// variant is added to the enum and not to the constraint.
+#[tokio::test]
+async fn every_project_type_is_accepted_by_the_schema() {
+    let database = db().await;
+
+    for (index, kind) in ProjectType::ALL.iter().enumerate() {
+        let mut project = new_project(&format!("kind-{index}"));
+        project.project_type = *kind;
+
+        projects::create_project(&database, &project)
+            .await
+            .unwrap_or_else(|error| panic!("{} was refused: {error}", kind.as_str()));
+    }
 }

@@ -15,6 +15,7 @@
     clippy::indexing_slicing
 )]
 
+use project_host_api_types::ProjectType;
 use project_host_core::integration;
 use project_host_database::discord::{self as storage, NewChannels, NewGuildLink};
 use project_host_database::projects::{self, NewPort, NewProject, RuntimeSpec};
@@ -45,7 +46,7 @@ async fn a_project(database: &Database, slug: &str) -> String {
             slug: slug.to_string(),
             display_name: "My Bot".to_string(),
             description: "a bot".to_string(),
-            project_type: "DISCORD_BOT".to_string(),
+            project_type: ProjectType::DiscordBot,
             icon: None,
             color: None,
             source_type: "EMPTY".to_string(),
