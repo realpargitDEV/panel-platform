@@ -105,6 +105,39 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.4
+
+            **The Update button now works, start to finish.** Pressing it
+            downloads the release for your system, checks its signature against
+            a key built into the application, installs it, and starts the new
+            version. While that happens the window shows how much has arrived
+            of how much, then that it is verifying, then that it is installing —
+            rather than a button that says "Updating…" and nothing else.
+
+            The bug that made the progress bar sit still was found by running a
+            real update rather than by reading the code: the window was never
+            permitted to receive events from the core at all, so every progress
+            report was dropped on the floor. That permission is part of this
+            release.
+
+            **The application now looks for updates on its own** — once when it
+            starts and every six hours while it is open — and the Update button
+            is still there for asking immediately. Only one update can be
+            running at a time, enforced in the core rather than by hoping two
+            buttons in two places disagree politely.
+
+            What counts as an update has not changed and is worth being explicit
+            about: only a **published, stable release** newer than the one you
+            are running. Commits, tags, branches and draft releases are all
+            invisible to it, and a pre-release is only ever offered on the beta
+            channel.
+
+            Your projects, settings and database are untouched by an update. The
+            installer replaces the application; your data lives elsewhere and
+            stays where it is.
+
+            This release also carries everything in 0.1.3, below.
+
             ## What changed in 0.1.3
 
             **Creating a project no longer fails with "Value rejected by a

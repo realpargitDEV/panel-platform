@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the window is allowed to ask of Tauri's own plugins. Commands this application defines itself are not listed and do not need to be: the access-control list governs plugin commands, and every one of ours goes through `generate_handler`. Only listening is granted here — the window receives events, it does not broadcast them.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}
