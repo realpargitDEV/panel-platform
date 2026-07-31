@@ -105,6 +105,24 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.5
+
+            **The file manager now accepts drag-and-drop uploads.** Drop files
+            or folders onto the Explorer, choose the directory they should land
+            in, and the application streams each file into place with visible
+            progress. Multiple files can upload at once, failed transfers can be
+            retried, and in-progress uploads can be cancelled without leaving a
+            partial project file behind.
+
+            Uploads now protect existing project files. A dropped file is first
+            reserved as a hidden temporary sibling, written in chunks, and only
+            renamed into its final path after the upload is complete. If the
+            destination already exists at the start, or appears while the upload
+            is running, the upload fails clearly instead of overwriting the
+            user's work.
+
+            This release also carries everything in 0.1.4, below.
+
             ## What changed in 0.1.4
 
             **The Update button now works, start to finish.** Pressing it
