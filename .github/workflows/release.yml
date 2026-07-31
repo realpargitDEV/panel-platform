@@ -105,6 +105,19 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.6
+
+            **Project consoles now have direct runtime controls.** Every
+            project console includes Start, Restart, Stop and Kill buttons like
+            the server control strip, with clear disabled states while Docker is
+            unavailable or the project is already changing state.
+
+            Stop still asks the container to shut down gracefully. Kill is a new
+            immediate Docker kill path for cases where the process is wedged,
+            and it leaves project files and volumes untouched.
+
+            This release also carries everything in 0.1.5, below.
+
             ## What changed in 0.1.5
 
             **The file manager now accepts drag-and-drop uploads.** Drop files
@@ -121,7 +134,7 @@ jobs:
             is running, the upload fails clearly instead of overwriting the
             user's work.
 
-            This release also carries everything in 0.1.4, below.
+            0.1.5 also carries everything in 0.1.4, below.
 
             ## What changed in 0.1.4
 
