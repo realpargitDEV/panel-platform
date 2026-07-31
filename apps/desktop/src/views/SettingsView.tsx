@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react';
-import {
-  appSettings,
-  checkForUpdate,
-  errorMessage,
-  installUpdate,
-  type AppSettings,
-  type SystemStatus,
-  type UpdateCheck,
-} from '../api';
+import { appSettings, type AppSettings, type SystemStatus } from '../api';
 import PageHeader from '../components/PageHeader';
-import { buttonLabel, canStart, failureMessage, idle, type InstallPhase } from '../update';
+import UpdateProgress from '../components/UpdateProgress';
+import { buttonLabel, canStart, describeCheck } from '../update';
+import { updateStore, useUpdate } from '../useUpdate';
 
 /**
  * Settings.
@@ -21,43 +15,15 @@ import { buttonLabel, canStart, failureMessage, idle, type InstallPhase } from '
  */
 export default function SettingsView({ status }: { status: SystemStatus | null }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [check, setCheck] = useState<UpdateCheck | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [phase, setPhase] = useState<InstallPhase>(idle);
-
-  async function install() {
-    setPhase({ state: 'installing' });
-    try {
-      await installUpdate();
-      // Linux only: on Windows the installer takes over and this process exits
-      // before the await returns.
-      setPhase({ state: 'installed' });
-    } catch (error) {
-      setPhase({ state: 'failed', message: failureMessage(error) });
-    }
-  }
+  // The same store the banner uses, so pressing Update in either place is the
+  // same single install and both surfaces show its progress.
+  const { check, checking, checkFailure, phase } = useUpdate();
 
   useEffect(() => {
     appSettings()
       .then(setSettings)
       .catch(() => setSettings(null));
   }, []);
-
-  async function runCheck() {
-    setChecking(true);
-    setFailure(null);
-    try {
-      setCheck(await checkForUpdate());
-    } catch (error) {
-      // Unlike the startup banner, an explicit press deserves an answer even
-      // when the answer is that the feed could not be reached.
-      setFailure(errorMessage(error));
-      setCheck(null);
-    } finally {
-      setChecking(false);
-    }
-  }
 
   return (
     <div className="px-8 py-7">
@@ -72,18 +38,19 @@ export default function SettingsView({ status }: { status: SystemStatus | null }
         <Row label="Installed version" value={status?.appVersion ?? '—'} />
         <Row label="Release channel" value="stable" />
         <Row label="Check on startup" value="on" />
+        <Row label="Check while running" value="every 6 hours" />
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => void runCheck()}
-            disabled={checking}
+            onClick={() => void updateStore.check()}
+            disabled={checking || !canStart(phase)}
             className="rounded-lg border border-edge bg-raised px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
             {checking ? 'Checking…' : 'Check for updates'}
           </button>
-          {check && <span className="text-sm text-neutral-300">{describe(check)}</span>}
-          {failure && <span className="text-sm text-amber-400">{failure}</span>}
+          {check && <span className="text-sm text-neutral-300">{describeCheck(check)}</span>}
+          {checkFailure && <span className="text-sm text-amber-400">{checkFailure}</span>}
         </div>
 
         {check?.state === 'available' && (
@@ -92,20 +59,13 @@ export default function SettingsView({ status }: { status: SystemStatus | null }
             {check.notes && <p className="mt-1.5 text-sm text-neutral-300">{check.notes}</p>}
             <button
               type="button"
-              onClick={() => void install()}
+              onClick={() => void updateStore.install()}
               disabled={!canStart(phase)}
               className="mt-3 rounded-md bg-accent px-3 py-1.5 text-sm font-medium hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {buttonLabel(phase)}
             </button>
-            {phase.state === 'failed' && (
-              <p className="mt-2 text-sm text-amber-400">{phase.message}</p>
-            )}
-            {phase.state === 'installed' && (
-              <p className="mt-2 text-sm text-neutral-300">
-                Installed. Close and reopen Panel Platform to finish.
-              </p>
-            )}
+            <UpdateProgress phase={phase} tone="panel" />
           </div>
         )}
       </Section>
@@ -205,17 +165,4 @@ function formatBytes(bytes: number): string {
   const gb = bytes / (1024 * 1024 * 1024);
   if (gb >= 1) return `${Math.round(gb)} GB`;
   return `${Math.round(bytes / (1024 * 1024))} MB`;
-}
-
-function describe(check: UpdateCheck): string {
-  switch (check.state) {
-    case 'available':
-      return `Version ${check.newVersion} is available`;
-    case 'up_to_date':
-      return `${check.currentVersion} is up to date`;
-    case 'skipped':
-      return `Version ${check.skippedVersion} was skipped`;
-    case 'ahead_of_published':
-      return `Running ${check.currentVersion}, newer than the latest release`;
-  }
 }

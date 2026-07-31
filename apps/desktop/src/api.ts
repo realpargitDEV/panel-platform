@@ -6,6 +6,9 @@
  * complete list of things the interface can ask the core to do.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+
+import type { UpdateProgressEvent } from './update';
 
 export interface SystemStatus {
   appVersion: string;
@@ -98,6 +101,19 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
  */
 export async function installUpdate(): Promise<void> {
   await invoke('install_update');
+}
+
+/**
+ * Subscribe to install progress.
+ *
+ * The core emits `update://progress` as bytes arrive, when it starts verifying
+ * the signature, and when the installer takes over. Resolves to the function
+ * that stops listening.
+ */
+export async function onUpdateProgress(
+  handler: (progress: UpdateProgressEvent) => void,
+): Promise<() => void> {
+  return listen<UpdateProgressEvent>('update://progress', (event) => handler(event.payload));
 }
 
 /** Where a new project's files come from. */

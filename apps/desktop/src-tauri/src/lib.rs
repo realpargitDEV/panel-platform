@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use project_host_core::provisioning::SourceSpec;
 use project_host_core::{resolve_paths, AppConfig, AppState, Runtime};
@@ -851,11 +851,80 @@ async fn app_settings(state: tauri::State<'_, AppState>) -> CommandResult<AppSet
     })
 }
 
+/// Serialises the install so two presses cannot both replace the application.
+///
+/// The window already disables its button while an install runs, but the button
+/// exists in two places, a periodic check can fire between them, and neither of
+/// those facts should be what keeps two installers from running at once. The
+/// flag lives here, on the one side that both callers go through.
+#[derive(Debug, Default)]
+pub struct UpdateActivity {
+    installing: std::sync::atomic::AtomicBool,
+}
+
+impl UpdateActivity {
+    /// Claim the right to install, or `None` if someone already holds it.
+    fn claim(&self) -> Option<InstallGuard<'_>> {
+        self.installing
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .ok()
+            .map(|_| InstallGuard { activity: self })
+    }
+
+    pub fn is_installing(&self) -> bool {
+        self.installing.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+/// Releases the claim however the install ends — including on an early return
+/// or a panic, which is the reason this is a guard rather than a pair of calls.
+struct InstallGuard<'a> {
+    activity: &'a UpdateActivity,
+}
+
+impl Drop for InstallGuard<'_> {
+    fn drop(&mut self) {
+        self.activity
+            .installing
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// How far an install has got, for the window's progress bar.
+///
+/// Emitted as `update://progress`. `total_bytes` is `None` when the server sent
+/// no `Content-Length`, which is why the window must be able to render an
+/// indeterminate bar rather than assuming a percentage is always available.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgress {
+    /// `downloading`, `verifying`, `installing` or `restarting`.
+    pub phase: &'static str,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+}
+
+impl UpdateProgress {
+    const EVENT: &'static str = "update://progress";
+}
+
 /// Ask the release feed whether there is a newer version.
 ///
 /// Every rule about *whether to offer* an update lives in the `updater` crate;
 /// this only performs the fetch, which is the one part that needs a network and
 /// therefore cannot be unit tested.
+///
+/// What this cannot see is as important as what it can: the feed is
+/// `releases/latest`, which GitHub resolves to the newest *published,
+/// non-prerelease* release. A commit, a tag, a branch and a draft release are
+/// all invisible to it — pushing code is not shipping it. A pre-release that
+/// does reach the feed is refused a second time by [`project_host_updater`],
+/// which only offers one on the beta channel.
 #[tauri::command]
 async fn check_for_update() -> CommandResult<UpdateCheck> {
     let client = reqwest::Client::builder()
@@ -923,8 +992,19 @@ fn self_update_unavailable() -> Option<String> {
 /// replaced in place. A `.deb` install cannot update itself and returns an
 /// error saying so.
 #[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> CommandResult<()> {
+async fn install_update(
+    app: tauri::AppHandle,
+    activity: tauri::State<'_, UpdateActivity>,
+) -> CommandResult<()> {
     use tauri_plugin_updater::UpdaterExt;
+
+    // Before anything is fetched: two installers replacing the same files is
+    // the one failure here with no good ending.
+    let Some(_guard) = activity.claim() else {
+        return Err(CommandError {
+            message: "An update is already being installed.".to_string(),
+        });
+    };
 
     // A `.deb` install is owned by dpkg: replacing those files from inside the
     // running process would leave the package manager describing a version that
@@ -938,12 +1018,12 @@ async fn install_update(app: tauri::AppHandle) -> CommandResult<()> {
     let update = app
         .updater()
         .map_err(|error| CommandError {
-            message: error.to_string(),
+            message: format!("The updater could not start: {error}"),
         })?
         .check()
         .await
         .map_err(|error| CommandError {
-            message: error.to_string(),
+            message: format!("The release feed could not be reached: {error}"),
         })?;
 
     let Some(update) = update else {
@@ -952,14 +1032,88 @@ async fn install_update(app: tauri::AppHandle) -> CommandResult<()> {
         });
     };
 
-    update
-        .download_and_install(|_chunk, _total| {}, || {})
+    let emit = |progress: UpdateProgress| {
+        // A window that has gone away is not a reason to abandon an install
+        // that is already replacing files.
+        if let Err(error) = app.emit(UpdateProgress::EVENT, progress) {
+            tracing::warn!(%error, "could not report update progress to the window");
+        }
+    };
+
+    emit(UpdateProgress {
+        phase: "downloading",
+        downloaded_bytes: 0,
+        total_bytes: None,
+    });
+
+    // `download` verifies the signature against the public key compiled into
+    // this binary before it returns the bytes, so "verifying" is the step
+    // between the last chunk and the installer starting — not a stage we
+    // perform ourselves and could get wrong.
+    let mut downloaded: u64 = 0;
+    let bytes = update
+        .download(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                emit(UpdateProgress {
+                    phase: "downloading",
+                    downloaded_bytes: downloaded,
+                    total_bytes: total,
+                });
+            },
+            || {
+                emit(UpdateProgress {
+                    phase: "verifying",
+                    downloaded_bytes: 0,
+                    total_bytes: None,
+                });
+            },
+        )
         .await
         .map_err(|error| CommandError {
-            message: error.to_string(),
+            message: format!("The update could not be downloaded or verified: {error}"),
         })?;
 
-    Ok(())
+    emit(UpdateProgress {
+        phase: "installing",
+        downloaded_bytes: downloaded,
+        total_bytes: Some(downloaded),
+    });
+
+    // The installer is about to end this process — on Windows by calling
+    // `std::process::exit(0)` from inside `install`, which runs no destructor
+    // and gives the database no chance to close. A checkpoint folds the
+    // write-ahead log back into the file first, so the new version opens a
+    // tidy database instead of replaying a log written by the old one.
+    //
+    // A checkpoint rather than a shutdown, deliberately: it is idempotent and
+    // leaves the application completely usable, so an install that fails on the
+    // next line has cost the user nothing. Nothing is lost either way — the log
+    // is crash-safe and startup recovery handles an unclean stop — but "the
+    // update worked and the first thing it did was recover" reads like damage.
+    {
+        let state = app.state::<AppState>();
+        if let Err(error) = state.database().checkpoint().await {
+            tracing::warn!(%error, "could not checkpoint the database before installing");
+        }
+    }
+
+    update.install(bytes).map_err(|error| CommandError {
+        message: format!("The update could not be installed: {error}"),
+    })?;
+
+    // Only Linux gets here. On Windows the plugin hands over to the installer
+    // and calls `std::process::exit(0)` inside `install`, and the installer
+    // starts the new version itself — NSIS with `/UPDATE`, the MSI with
+    // `AUTOLAUNCHAPP=True`. On Linux the AppImage has been replaced on disk and
+    // this process is still the old one, so it has to be the thing that goes.
+    emit(UpdateProgress {
+        phase: "restarting",
+        downloaded_bytes: downloaded,
+        total_bytes: Some(downloaded),
+    });
+    tracing::info!("update installed; restarting into the new version");
+    app.restart();
 }
 
 /// Build and run the application.
@@ -985,6 +1139,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
+        .manage(UpdateActivity::default())
         .invoke_handler(tauri::generate_handler![
             system_status,
             list_projects,
@@ -1020,4 +1175,55 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The whole point of the guard: the second caller is refused, and the
+    /// refusal is not permanent.
+    #[test]
+    fn only_one_install_can_run_at_a_time() {
+        let activity = UpdateActivity::default();
+        assert!(!activity.is_installing());
+
+        let first = activity.claim().expect("the first caller takes the claim");
+        assert!(activity.is_installing());
+        assert!(
+            activity.claim().is_none(),
+            "a second install started while the first was running"
+        );
+
+        drop(first);
+        assert!(!activity.is_installing());
+        assert!(
+            activity.claim().is_some(),
+            "the claim was never released, so no further update could ever install"
+        );
+    }
+
+    /// An install that fails must not wedge the button forever. The guard is a
+    /// guard rather than two calls precisely so that every exit path releases
+    /// it, including `?` returning early.
+    #[test]
+    fn a_failed_install_releases_the_claim() {
+        let activity = UpdateActivity::default();
+
+        fn fails(activity: &UpdateActivity) -> Result<(), &'static str> {
+            let _guard = activity.claim().ok_or("busy")?;
+            Err("the download failed")
+        }
+
+        assert_eq!(fails(&activity), Err("the download failed"));
+        assert!(!activity.is_installing());
+        assert_eq!(fails(&activity), Err("the download failed"));
+    }
+
+    #[test]
+    fn the_progress_event_name_is_namespaced() {
+        // Tauri events share one namespace with everything else the window
+        // listens to.
+        assert_eq!(UpdateProgress::EVENT, "update://progress");
+    }
 }
