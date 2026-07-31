@@ -251,6 +251,16 @@ export interface TextFile {
   readOnly: boolean;
 }
 
+export interface FileImportProgressEvent {
+  importId: string;
+  projectId: string;
+  copiedBytes: number;
+  totalBytes: number;
+  copiedFiles: number;
+  totalFiles: number;
+  currentPath: string;
+}
+
 /**
  * Every path below is *relative to the project root*, and the core builds the
  * real path itself. There is deliberately no way to send an absolute path: the
@@ -308,6 +318,29 @@ export async function cancelProjectFileUpload(
   uploadId: string,
 ): Promise<void> {
   return invoke('cancel_project_file_upload', { projectId, path, uploadId });
+}
+
+export async function importProjectFiles(
+  projectId: string,
+  targetDirectory: string,
+  sourcePaths: string[],
+  importId: string,
+): Promise<FileEntry[]> {
+  return toCamel<FileEntry[]>(
+    await invoke('import_project_files', { projectId, targetDirectory, sourcePaths, importId }),
+  );
+}
+
+export async function cancelProjectFileImport(importId: string): Promise<void> {
+  return invoke('cancel_project_file_import', { importId });
+}
+
+export async function onFileImportProgress(
+  handler: (progress: FileImportProgressEvent) => void,
+): Promise<() => void> {
+  return listen<FileImportProgressEvent>('project-files://import-progress', (event) =>
+    handler(event.payload),
+  );
 }
 
 export async function createProjectFile(

@@ -18,7 +18,8 @@
     )
 )]
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -30,6 +31,32 @@ use project_host_project_manager::names::{sanitise_display_name, Slug};
 use project_host_project_manager::ports::PortPool;
 use project_host_security::Secret;
 use project_host_updater::{evaluate, ReleaseManifest, UpdateCheck, UpdatePreferences};
+
+#[derive(Debug, Clone, Default)]
+struct FileImportCancels {
+    import_ids: Arc<Mutex<HashSet<String>>>,
+}
+
+impl FileImportCancels {
+    fn clear(&self, import_id: &str) {
+        if let Ok(mut import_ids) = self.import_ids.lock() {
+            import_ids.remove(import_id);
+        }
+    }
+
+    fn cancel(&self, import_id: String) {
+        if let Ok(mut import_ids) = self.import_ids.lock() {
+            import_ids.insert(import_id);
+        }
+    }
+
+    fn is_cancelled(&self, import_id: &str) -> bool {
+        self.import_ids
+            .lock()
+            .map(|import_ids| import_ids.contains(import_id))
+            .unwrap_or(true)
+    }
+}
 
 /// How long the release check may take before giving up.
 ///
@@ -619,6 +646,22 @@ pub struct TextFileDto {
     pub read_only: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileImportProgressDto {
+    pub import_id: String,
+    pub project_id: String,
+    pub copied_bytes: u64,
+    pub total_bytes: u64,
+    pub copied_files: u64,
+    pub total_files: u64,
+    pub current_path: String,
+}
+
+impl FileImportProgressDto {
+    const EVENT: &'static str = "project-files://import-progress";
+}
+
 /// Statuses during which a project's files must not be written.
 ///
 /// `BUILDING` copies the tree into an image; `DELETING` is removing it. A save
@@ -827,6 +870,78 @@ async fn cancel_project_file_upload(
     let (root, _) = project_root(app, &project_id).await?;
     project_host_file_manager::operations::cancel_upload(&root, &path, &upload_id)
         .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn import_project_files(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    cancels: tauri::State<'_, FileImportCancels>,
+    project_id: String,
+    target_directory: String,
+    source_paths: Vec<String>,
+    import_id: String,
+) -> CommandResult<Vec<FileEntryDto>> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    let limits = file_limits(app);
+    let sources: Vec<std::path::PathBuf> = source_paths.into_iter().map(Into::into).collect();
+    let cancels_for_work = cancels.inner().clone();
+    let cancels_for_cleanup = cancels_for_work.clone();
+    cancels_for_work.clear(&import_id);
+    let import_id_for_work = import_id.clone();
+    let project_id_for_work = project_id.clone();
+    let app_handle_for_work = app_handle.clone();
+
+    let report = tokio::task::spawn_blocking(move || {
+        project_host_file_manager::operations::import_local_paths(
+            &root,
+            &target_directory,
+            &sources,
+            &import_id_for_work,
+            &limits,
+            |event| {
+                let progress = FileImportProgressDto {
+                    import_id: import_id_for_work.clone(),
+                    project_id: project_id_for_work.clone(),
+                    copied_bytes: event.copied_bytes,
+                    total_bytes: event.total_bytes,
+                    copied_files: event.copied_files,
+                    total_files: event.total_files,
+                    current_path: event.current_path,
+                };
+                if let Err(error) = app_handle_for_work.emit(FileImportProgressDto::EVENT, progress)
+                {
+                    tracing::warn!(%error, "could not report file import progress to the window");
+                }
+            },
+            || cancels_for_work.is_cancelled(&import_id_for_work),
+        )
+    })
+    .await
+    .map_err(CommandError::from)
+    .and_then(|result| result.map_err(CommandError::from));
+
+    cancels_for_cleanup.clear(&import_id);
+    let report = report?;
+    Ok(report.entries.into_iter().map(FileEntryDto::from).collect())
+}
+
+#[tauri::command]
+async fn cancel_project_file_import(
+    cancels: tauri::State<'_, FileImportCancels>,
+    import_id: String,
+) -> CommandResult<()> {
+    cancels.cancel(import_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1247,6 +1362,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
+        .manage(FileImportCancels::default())
         .manage(UpdateActivity::default())
         .invoke_handler(tauri::generate_handler![
             system_status,
@@ -1268,6 +1384,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             append_project_file_upload,
             finish_project_file_upload,
             cancel_project_file_upload,
+            import_project_files,
+            cancel_project_file_import,
             create_project_file,
             rename_project_file,
             delete_project_file,

@@ -33,7 +33,10 @@ pub use http_archive::{
     import_remote_archive, ArchiveFormat, FetchError, FetchLimits, HttpTransport,
     RemoteArchiveRequest, ReqwestTransport,
 };
-pub use operations::{EntryKind, FileEntry, FileError, FileLimits, Listing, TextFile};
+pub use operations::{
+    EntryKind, FileEntry, FileError, FileLimits, Listing, LocalImportProgress, LocalImportReport,
+    TextFile,
+};
 pub use remote_url::{HostResolver, RemoteUrl, SystemResolver, UrlError};
 pub use safe_path::{PathError, SafePath};
 pub use zip_import::{ArchiveError, ArchiveLimits, ImportReport, Staging};
