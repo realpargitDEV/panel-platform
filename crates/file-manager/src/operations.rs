@@ -14,6 +14,7 @@
 //! use for it in a project directory the product itself manages.
 
 use std::collections::VecDeque;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -436,6 +437,170 @@ pub fn write_bytes(
     }
     write_atomically(safe.absolute(), bytes)?;
     entry_from(safe.relative(), &name_of(safe.relative()), safe.absolute())
+}
+
+/// Reserve a destination for a chunked upload.
+///
+/// The real destination must not exist, so dropping a file onto the explorer can
+/// never silently replace a user's project file. Chunks land in a generated
+/// sibling first and are only renamed into place by [`finish_upload`].
+pub fn begin_upload(
+    root: &Path,
+    relative: &str,
+    upload_id: &str,
+    total_size: u64,
+    limits: &FileLimits,
+) -> Result<(), FileError> {
+    validate_upload_id(upload_id)?;
+    let destination = resolve(root, relative)?;
+    validate_upload_destination(&destination, total_size, limits)?;
+    let temporary = upload_temporary(root, destination.relative(), upload_id)?;
+
+    if destination.relative() == temporary.relative() {
+        return Err(FileError::Refused("that file name is reserved for uploads"));
+    }
+    if std::fs::symlink_metadata(destination.absolute()).is_ok() {
+        return Err(FileError::AlreadyExists(destination.relative().to_string()));
+    }
+    if let Some(parent) = destination.absolute().parent() {
+        std::fs::create_dir_all(parent).map_err(FileError::io)?;
+    }
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temporary.absolute())
+        .map_err(FileError::io)?;
+    Ok(())
+}
+
+/// Append one chunk to an upload that was reserved by [`begin_upload`].
+pub fn append_upload(
+    root: &Path,
+    relative: &str,
+    upload_id: &str,
+    offset: u64,
+    bytes: &[u8],
+    limits: &FileLimits,
+) -> Result<u64, FileError> {
+    validate_upload_id(upload_id)?;
+    let destination = resolve(root, relative)?;
+    let next_offset = offset
+        .checked_add(bytes.len() as u64)
+        .ok_or(FileError::TooLarge {
+            path: destination.relative().to_string(),
+            size: u64::MAX,
+            limit: limits.max_upload_bytes,
+        })?;
+    if next_offset > limits.max_upload_bytes {
+        return Err(FileError::TooLarge {
+            path: destination.relative().to_string(),
+            size: next_offset,
+            limit: limits.max_upload_bytes,
+        });
+    }
+
+    let temporary = upload_temporary(root, destination.relative(), upload_id)?;
+    let metadata = require_kind(&temporary, EntryKind::File)?;
+    if metadata.len() != offset {
+        return Err(FileError::Refused(
+            "upload chunks arrived out of order; retry the upload",
+        ));
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(temporary.absolute())
+        .map_err(FileError::io)?;
+    file.seek(SeekFrom::Start(offset)).map_err(FileError::io)?;
+    file.write_all(bytes).map_err(FileError::io)?;
+    Ok(next_offset)
+}
+
+/// Move a complete chunked upload into place if the destination is still free.
+pub fn finish_upload(
+    root: &Path,
+    relative: &str,
+    upload_id: &str,
+    total_size: u64,
+    limits: &FileLimits,
+) -> Result<FileEntry, FileError> {
+    validate_upload_id(upload_id)?;
+    let destination = resolve(root, relative)?;
+    validate_upload_destination(&destination, total_size, limits)?;
+    let temporary = upload_temporary(root, destination.relative(), upload_id)?;
+
+    let metadata = require_kind(&temporary, EntryKind::File)?;
+    if metadata.len() != total_size {
+        return Err(FileError::Refused("upload is incomplete; retry the upload"));
+    }
+    if std::fs::symlink_metadata(destination.absolute()).is_ok() {
+        let _ = std::fs::remove_file(temporary.absolute());
+        return Err(FileError::AlreadyExists(destination.relative().to_string()));
+    }
+
+    std::fs::rename(temporary.absolute(), destination.absolute()).map_err(FileError::io)?;
+    entry_from(
+        destination.relative(),
+        &name_of(destination.relative()),
+        destination.absolute(),
+    )
+}
+
+/// Remove the temporary file for an upload that was cancelled or failed.
+pub fn cancel_upload(root: &Path, relative: &str, upload_id: &str) -> Result<(), FileError> {
+    validate_upload_id(upload_id)?;
+    let destination = resolve(root, relative)?;
+    let temporary = upload_temporary(root, destination.relative(), upload_id)?;
+
+    match std::fs::symlink_metadata(temporary.absolute()) {
+        Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => {
+            Err(FileError::Refused("upload temporary path is a directory"))
+        }
+        Ok(_) => std::fs::remove_file(temporary.absolute()).map_err(FileError::io),
+        Err(_) => Ok(()),
+    }
+}
+
+fn validate_upload_id(upload_id: &str) -> Result<(), FileError> {
+    if !upload_id.is_empty()
+        && upload_id.len() <= 80
+        && upload_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Ok(());
+    }
+    Err(FileError::Refused("upload id is invalid"))
+}
+
+fn validate_upload_destination(
+    destination: &SafePath,
+    total_size: u64,
+    limits: &FileLimits,
+) -> Result<(), FileError> {
+    if destination.relative().is_empty() {
+        return Err(FileError::Refused(
+            "the project root cannot be replaced by an upload",
+        ));
+    }
+    if total_size > limits.max_upload_bytes {
+        return Err(FileError::TooLarge {
+            path: destination.relative().to_string(),
+            size: total_size,
+            limit: limits.max_upload_bytes,
+        });
+    }
+    Ok(())
+}
+
+fn upload_temporary(root: &Path, relative: &str, upload_id: &str) -> Result<SafePath, FileError> {
+    let name = format!(".project-host-upload-{upload_id}.tmp");
+    let temporary = match relative.rsplit_once('/') {
+        Some((parent, _)) if !parent.is_empty() => format!("{parent}/{name}"),
+        _ => name,
+    };
+    resolve(root, &temporary)
 }
 
 fn write_atomically(target: &Path, bytes: &[u8]) -> Result<(), FileError> {
@@ -995,6 +1160,93 @@ mod tests {
             write_text_file(&p.root, "src", "x", &limits()),
             Err(FileError::NotAFile(_))
         ));
+    }
+
+    #[test]
+    fn an_upload_lands_in_place_after_ordered_chunks() {
+        let p = project();
+        begin_upload(&p.root, "assets/image.bin", "upload-1", 11, &limits()).expect("begin upload");
+        assert!(!p.root.join("assets/image.bin").exists());
+
+        assert_eq!(
+            append_upload(
+                &p.root,
+                "assets/image.bin",
+                "upload-1",
+                0,
+                b"hello ",
+                &limits()
+            )
+            .expect("append first"),
+            6
+        );
+        assert_eq!(
+            append_upload(
+                &p.root,
+                "assets/image.bin",
+                "upload-1",
+                6,
+                b"world",
+                &limits()
+            )
+            .expect("append second"),
+            11
+        );
+
+        let entry = finish_upload(&p.root, "assets/image.bin", "upload-1", 11, &limits())
+            .expect("finish upload");
+        assert_eq!(entry.path, "assets/image.bin");
+        assert_eq!(
+            std::fs::read(p.root.join("assets/image.bin")).expect("read upload"),
+            b"hello world"
+        );
+        assert!(!p
+            .root
+            .join("assets/.project-host-upload-upload-1.tmp")
+            .exists());
+    }
+
+    #[test]
+    fn an_upload_refuses_to_start_when_the_destination_exists() {
+        let p = project();
+        assert!(matches!(
+            begin_upload(&p.root, "index.js", "upload-2", 3, &limits()),
+            Err(FileError::AlreadyExists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("index.js")).expect("read"),
+            "console.log('hi');\n"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_upload_removes_its_temporary_file() {
+        let p = project();
+        begin_upload(&p.root, "new.txt", "upload_3", 10, &limits()).expect("begin upload");
+        append_upload(&p.root, "new.txt", "upload_3", 0, b"partial", &limits()).expect("append");
+
+        cancel_upload(&p.root, "new.txt", "upload_3").expect("cancel");
+
+        assert!(!p.root.join("new.txt").exists());
+        assert!(!p.root.join(".project-host-upload-upload_3.tmp").exists());
+    }
+
+    #[test]
+    fn finishing_an_upload_refuses_a_late_collision() {
+        let p = project();
+        begin_upload(&p.root, "fresh.txt", "upload-4", 3, &limits()).expect("begin upload");
+        append_upload(&p.root, "fresh.txt", "upload-4", 0, b"new", &limits()).expect("append");
+        std::fs::write(p.root.join("fresh.txt"), "old").expect("race write");
+
+        assert!(matches!(
+            finish_upload(&p.root, "fresh.txt", "upload-4", 3, &limits()),
+            Err(FileError::AlreadyExists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("fresh.txt")).expect("read"),
+            "old"
+        );
+        assert!(!p.root.join(".project-host-upload-upload-4.tmp").exists());
     }
 
     #[test]

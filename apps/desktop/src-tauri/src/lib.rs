@@ -722,6 +722,106 @@ async fn write_project_file(
 }
 
 #[tauri::command]
+async fn begin_project_file_upload(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    upload_id: String,
+    total_size: u64,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::begin_upload(
+        &root,
+        &path,
+        &upload_id,
+        total_size,
+        &file_limits(app),
+    )
+    .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn append_project_file_upload(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    upload_id: String,
+    offset: u64,
+    bytes: Vec<u8>,
+) -> CommandResult<u64> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::append_upload(
+        &root,
+        &path,
+        &upload_id,
+        offset,
+        &bytes,
+        &file_limits(app),
+    )
+    .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn finish_project_file_upload(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    upload_id: String,
+    total_size: u64,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::finish_upload(
+        &root,
+        &path,
+        &upload_id,
+        total_size,
+        &file_limits(app),
+    )
+    .map(FileEntryDto::from)
+    .map_err(CommandError::from)
+}
+
+#[tauri::command]
+async fn cancel_project_file_upload(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+    upload_id: String,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    project_host_file_manager::operations::cancel_upload(&root, &path, &upload_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
 async fn create_project_file(
     state: tauri::State<'_, AppState>,
     project_id: String,
@@ -1155,6 +1255,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_project_files,
             read_project_file,
             write_project_file,
+            begin_project_file_upload,
+            append_project_file_upload,
+            finish_project_file_upload,
+            cancel_project_file_upload,
             create_project_file,
             rename_project_file,
             delete_project_file,

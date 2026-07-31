@@ -268,6 +268,44 @@ export async function writeProjectFile(
   return toCamel<FileEntry>(await invoke('write_project_file', { projectId, path, text }));
 }
 
+export async function beginProjectFileUpload(
+  projectId: string,
+  path: string,
+  uploadId: string,
+  totalSize: number,
+): Promise<void> {
+  return invoke('begin_project_file_upload', { projectId, path, uploadId, totalSize });
+}
+
+export async function appendProjectFileUpload(
+  projectId: string,
+  path: string,
+  uploadId: string,
+  offset: number,
+  bytes: number[],
+): Promise<number> {
+  return invoke('append_project_file_upload', { projectId, path, uploadId, offset, bytes });
+}
+
+export async function finishProjectFileUpload(
+  projectId: string,
+  path: string,
+  uploadId: string,
+  totalSize: number,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(
+    await invoke('finish_project_file_upload', { projectId, path, uploadId, totalSize }),
+  );
+}
+
+export async function cancelProjectFileUpload(
+  projectId: string,
+  path: string,
+  uploadId: string,
+): Promise<void> {
+  return invoke('cancel_project_file_upload', { projectId, path, uploadId });
+}
+
 export async function createProjectFile(
   projectId: string,
   path: string,
