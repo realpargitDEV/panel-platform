@@ -12,7 +12,10 @@
     clippy::indexing_slicing
 )]
 
-use project_host_api_types::ProjectType;
+use project_host_api_types::{
+    ContainerEventType, DeploymentStatus, DeploymentType, DesiredState, HealthState, ProjectStatus,
+    ProjectType,
+};
 use project_host_database::audit::{self, AuditEvent, AuditResult};
 use project_host_database::environment::{self, StoredValue};
 use project_host_database::projects::{self, NewPort, NewProject, ProjectUpdate, RuntimeSpec};
@@ -171,12 +174,17 @@ async fn desired_state_and_observed_status_are_recorded_separately() {
         .await
         .expect("create");
 
-    projects::set_desired_state(&database, &project.id, "RUNNING")
+    projects::set_desired_state(&database, &project.id, DesiredState::Running)
         .await
         .expect("desire");
-    projects::set_status(&database, &project.id, "FAILED", Some("UNHEALTHY"))
-        .await
-        .expect("status");
+    projects::set_status(
+        &database,
+        &project.id,
+        ProjectStatus::Failed,
+        Some(HealthState::Unhealthy),
+    )
+    .await
+    .expect("status");
 
     let reloaded = projects::find_project(&database, &project.id)
         .await
@@ -387,9 +395,15 @@ async fn deleting_a_project_takes_its_children_with_it() {
     )
     .await
     .expect("env");
-    projects::record_container_event(&database, &project.id, "STARTED", None, None)
-        .await
-        .expect("event");
+    projects::record_container_event(
+        &database,
+        &project.id,
+        ContainerEventType::Started,
+        None,
+        None,
+    )
+    .await
+    .expect("event");
 
     projects::finish_delete(&database, &project.id)
         .await
@@ -440,7 +454,7 @@ async fn status_counts_drive_the_dashboard_tiles() {
     projects::create_project(&database, &new_project("creating"))
         .await
         .expect("create");
-    projects::set_status(&database, &running.id, "RUNNING", None)
+    projects::set_status(&database, &running.id, ProjectStatus::Running, None)
         .await
         .expect("status");
 
@@ -479,15 +493,27 @@ async fn a_deployment_records_its_outcome_and_duration() {
         .await
         .expect("create");
 
-    let deployment = projects::begin_deployment(&database, &project.id, "INITIAL", None)
-        .await
-        .expect("begin");
-    projects::advance_deployment(&database, &deployment, "BUILDING", Some("img:1"))
-        .await
-        .expect("advance");
-    projects::finish_deployment(&database, &deployment, "SUCCEEDED", None, None)
-        .await
-        .expect("finish");
+    let deployment =
+        projects::begin_deployment(&database, &project.id, DeploymentType::Initial, None)
+            .await
+            .expect("begin");
+    projects::advance_deployment(
+        &database,
+        &deployment,
+        DeploymentStatus::Building,
+        Some("img:1"),
+    )
+    .await
+    .expect("advance");
+    projects::finish_deployment(
+        &database,
+        &deployment,
+        DeploymentStatus::Succeeded,
+        None,
+        None,
+    )
+    .await
+    .expect("finish");
 
     let history = projects::list_deployments(&database, &project.id, 10)
         .await
@@ -506,13 +532,13 @@ async fn deployments_running_at_a_crash_are_marked_interrupted() {
         .await
         .expect("create");
 
-    let running = projects::begin_deployment(&database, &project.id, "REBUILD", None)
+    let running = projects::begin_deployment(&database, &project.id, DeploymentType::Rebuild, None)
         .await
         .expect("begin");
-    let done = projects::begin_deployment(&database, &project.id, "INITIAL", None)
+    let done = projects::begin_deployment(&database, &project.id, DeploymentType::Initial, None)
         .await
         .expect("begin");
-    projects::finish_deployment(&database, &done, "SUCCEEDED", None, None)
+    projects::finish_deployment(&database, &done, DeploymentStatus::Succeeded, None, None)
         .await
         .expect("finish");
 
@@ -541,7 +567,11 @@ async fn container_events_are_returned_newest_first() {
         .await
         .expect("create");
 
-    for event in ["CREATED", "STARTED", "DIED"] {
+    for event in [
+        ContainerEventType::Created,
+        ContainerEventType::Started,
+        ContainerEventType::Died,
+    ] {
         projects::record_container_event(&database, &project.id, event, Some(1), None)
             .await
             .expect("event");

@@ -22,13 +22,15 @@
 //! unverified.
 
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::images::{dockerfile_for, starter_files, ImageSpec};
+use project_host_api_types::{DesiredState, HealthState, ProjectStatus};
 use project_host_database::{projects, Database};
 use project_host_docker_manager::container_spec::{
     ContainerSpec, NetworkMode, PortBinding, ResourceLimits, RestartPolicy, SpecInputs,
 };
-use project_host_docker_manager::lifecycle::ContainerRunner;
+use project_host_docker_manager::lifecycle::{ContainerRunner, ContainerState};
 use project_host_docker_manager::DockerError;
 
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +45,10 @@ pub enum LifecycleError {
     Scaffold(String),
     #[error("the image build failed: {0}")]
     Build(String),
+    /// Docker reported a container state this build has no status for. Only
+    /// reachable if `docker-manager` gains a word `ProjectStatus` does not have.
+    #[error("`{0}` is not a project status this build knows")]
+    UnknownStatus(String),
 }
 
 /// Connect to Docker, or explain that it is not there.
@@ -157,6 +163,39 @@ pub fn image_tag(slug: &str) -> String {
     format!("projecthost/{slug}:latest")
 }
 
+/// Docker's health word, in this application's vocabulary.
+///
+/// `docker inspect` answers `healthy`, `unhealthy` or `starting`; the column
+/// stores `HEALTHY`, `UNHEALTHY`, `STARTING`, `NONE` or `UNKNOWN`. The two lists
+/// were passed straight through, which meant a container that had a health check
+/// and passed it ended its start with "value rejected by a database constraint" —
+/// after the image was built and the container was already running.
+///
+/// A word Docker has and we do not becomes `UNKNOWN` rather than an error: the
+/// container is up either way, and refusing to record that would be a worse
+/// answer than recording that its health is not known.
+fn health_state(reported: Option<&str>) -> Option<HealthState> {
+    let word = reported?;
+    Some(match word {
+        "healthy" => HealthState::Healthy,
+        "unhealthy" => HealthState::Unhealthy,
+        "starting" => HealthState::Starting,
+        "none" => HealthState::None,
+        _ => HealthState::Unknown,
+    })
+}
+
+/// The status word `docker-manager` derived, as the enum the column takes.
+///
+/// `ContainerState::project_status` already answers in this application's
+/// vocabulary, so this parse succeeds for every value it can return. It exists
+/// so that a word added there without a matching variant here is a reported
+/// error rather than a write the database refuses.
+fn project_status(state: &ContainerState) -> Result<ProjectStatus, LifecycleError> {
+    let word = state.project_status();
+    ProjectStatus::from_str(word).map_err(|_| LifecycleError::UnknownStatus(word.to_string()))
+}
+
 /// Start a project, building its image if there is not one already.
 pub async fn start(
     db: &Database,
@@ -167,8 +206,8 @@ pub async fn start(
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
 
-    projects::set_desired_state(db, project_id, "RUNNING").await?;
-    projects::set_status(db, project_id, "STARTING", None).await?;
+    projects::set_desired_state(db, project_id, DesiredState::Running).await?;
+    projects::set_status(db, project_id, ProjectStatus::Starting, None).await?;
 
     // The runtime row is read inside, where the scaffold needs all of it rather
     // than just its name.
@@ -176,20 +215,21 @@ pub async fn start(
 
     match outcome {
         Ok(state) => {
+            let status = project_status(&state)?;
             projects::set_status(
                 db,
                 project_id,
-                state.project_status(),
-                state.health.as_deref(),
+                status,
+                health_state(state.health.as_deref()),
             )
             .await?;
-            Ok(state.project_status().to_string())
+            Ok(status.as_str().to_string())
         }
         Err(error) => {
             // The observed status is FAILED whatever the intent was. Recording
             // the intent as the status is how a panel ends up claiming a
             // project runs when it does not.
-            projects::set_status(db, project_id, "FAILED", None).await?;
+            projects::set_status(db, project_id, ProjectStatus::Failed, None).await?;
             Err(error)
         }
     }
@@ -270,8 +310,8 @@ pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError>
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
 
-    projects::set_desired_state(db, project_id, "STOPPED").await?;
-    projects::set_status(db, project_id, "STOPPING", None).await?;
+    projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
+    projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
 
     let runner = runner().await?;
     let name = ContainerSpec::container_name(&project.slug);
@@ -305,7 +345,7 @@ pub async fn restart(
         return start(db, project_id, app_version).await;
     }
 
-    projects::set_status(db, project_id, "RESTARTING", None).await?;
+    projects::set_status(db, project_id, ProjectStatus::Restarting, None).await?;
     runner.restart(&name, None).await?;
     projects::increment_restart_count(db, project_id).await?;
 
@@ -315,14 +355,15 @@ pub async fn restart(
         ))
     })?;
 
+    let status = project_status(&state)?;
     projects::set_status(
         db,
         project_id,
-        state.project_status(),
-        state.health.as_deref(),
+        status,
+        health_state(state.health.as_deref()),
     )
     .await?;
-    Ok(state.project_status().to_string())
+    Ok(status.as_str().to_string())
 }
 
 #[cfg(test)]
@@ -394,6 +435,53 @@ mod tests {
                 dockerfile.contains("USER 10001:10001") || dockerfile.contains("USER nonroot"),
                 "{runtime} is missing its unprivileged user"
             );
+        }
+    }
+
+    /// Every word `docker inspect` can put in `State.Health.Status`, as Docker
+    /// spells it. The database column spells them differently, and passing them
+    /// through unchanged was a rejected write at the end of a successful start.
+    #[test]
+    fn dockers_health_words_become_values_the_column_allows() {
+        for (reported, expected) in [
+            ("healthy", HealthState::Healthy),
+            ("unhealthy", HealthState::Unhealthy),
+            ("starting", HealthState::Starting),
+            ("none", HealthState::None),
+        ] {
+            assert_eq!(health_state(Some(reported)), Some(expected), "{reported}");
+        }
+
+        // A word from a future Docker is recorded as unknown, not refused: the
+        // container is running either way.
+        assert_eq!(health_state(Some("delirious")), Some(HealthState::Unknown));
+        // No health check configured means nothing to write, so the column keeps
+        // whatever it held.
+        assert_eq!(health_state(None), None);
+    }
+
+    fn container_state(running: bool, exit_code: Option<i64>) -> ContainerState {
+        ContainerState {
+            id: "abc".to_string(),
+            status: "exited".to_string(),
+            running,
+            exit_code,
+            health: None,
+            started_at: None,
+            finished_at: None,
+            out_of_memory: false,
+        }
+    }
+
+    #[test]
+    fn every_status_docker_manager_derives_parses_into_the_enum() {
+        for (state, expected) in [
+            (container_state(true, None), ProjectStatus::Running),
+            (container_state(false, Some(0)), ProjectStatus::Stopped),
+            (container_state(false, None), ProjectStatus::Stopped),
+            (container_state(false, Some(137)), ProjectStatus::Failed),
+        ] {
+            assert_eq!(project_status(&state).expect("a known status"), expected);
         }
     }
 
