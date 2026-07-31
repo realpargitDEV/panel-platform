@@ -327,6 +327,30 @@ pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError>
     Ok(())
 }
 
+/// Kill a project immediately. Its data volume and files are untouched.
+pub async fn kill(db: &Database, project_id: &str) -> Result<(), LifecycleError> {
+    let project = projects::find_project(db, project_id)
+        .await?
+        .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
+
+    projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
+    projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
+
+    let runner = runner().await?;
+    let name = ContainerSpec::container_name(&project.slug);
+
+    if runner
+        .inspect(&name)
+        .await?
+        .is_some_and(|state| state.running)
+    {
+        runner.kill(&name).await?;
+    }
+
+    projects::record_stopped(db, project_id, None, None).await?;
+    Ok(())
+}
+
 /// Restart a project in place, without rebuilding its image.
 pub async fn restart(
     db: &Database,
