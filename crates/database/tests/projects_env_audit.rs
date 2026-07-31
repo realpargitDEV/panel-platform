@@ -13,7 +13,8 @@
 )]
 
 use project_host_api_types::{
-    ContainerEventType, DesiredState, HealthState, ProjectStatus, ProjectType,
+    ContainerEventType, DeploymentStatus, DeploymentType, DesiredState, HealthState, ProjectStatus,
+    ProjectType,
 };
 use project_host_database::audit::{self, AuditEvent, AuditResult};
 use project_host_database::environment::{self, StoredValue};
@@ -492,15 +493,27 @@ async fn a_deployment_records_its_outcome_and_duration() {
         .await
         .expect("create");
 
-    let deployment = projects::begin_deployment(&database, &project.id, "INITIAL", None)
-        .await
-        .expect("begin");
-    projects::advance_deployment(&database, &deployment, "BUILDING", Some("img:1"))
-        .await
-        .expect("advance");
-    projects::finish_deployment(&database, &deployment, "SUCCEEDED", None, None)
-        .await
-        .expect("finish");
+    let deployment =
+        projects::begin_deployment(&database, &project.id, DeploymentType::Initial, None)
+            .await
+            .expect("begin");
+    projects::advance_deployment(
+        &database,
+        &deployment,
+        DeploymentStatus::Building,
+        Some("img:1"),
+    )
+    .await
+    .expect("advance");
+    projects::finish_deployment(
+        &database,
+        &deployment,
+        DeploymentStatus::Succeeded,
+        None,
+        None,
+    )
+    .await
+    .expect("finish");
 
     let history = projects::list_deployments(&database, &project.id, 10)
         .await
@@ -519,13 +532,13 @@ async fn deployments_running_at_a_crash_are_marked_interrupted() {
         .await
         .expect("create");
 
-    let running = projects::begin_deployment(&database, &project.id, "REBUILD", None)
+    let running = projects::begin_deployment(&database, &project.id, DeploymentType::Rebuild, None)
         .await
         .expect("begin");
-    let done = projects::begin_deployment(&database, &project.id, "INITIAL", None)
+    let done = projects::begin_deployment(&database, &project.id, DeploymentType::Initial, None)
         .await
         .expect("begin");
-    projects::finish_deployment(&database, &done, "SUCCEEDED", None, None)
+    projects::finish_deployment(&database, &done, DeploymentStatus::Succeeded, None, None)
         .await
         .expect("finish");
 

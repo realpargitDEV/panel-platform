@@ -14,7 +14,8 @@
 )]
 
 use project_host_api_types::{
-    ContainerEventType, DesiredState, HealthState, ProjectStatus, ProjectType,
+    ContainerEventType, DeploymentStatus, DeploymentType, DesiredState, HealthState, ProjectStatus,
+    ProjectType,
 };
 use project_host_core::runtime_plan::{plan_named, supported_runtimes};
 use project_host_database::projects::{self, NewPort, NewProject};
@@ -187,11 +188,27 @@ async fn every_enum_value_this_build_can_write_is_accepted() {
             .unwrap_or_else(|error| panic!("event {event} was refused: {error}"));
     }
 
+    for kind in DeploymentType::ALL {
+        let deployment = projects::begin_deployment(&database, &project.id, *kind, None)
+            .await
+            .unwrap_or_else(|error| panic!("deployment type {kind} was refused: {error}"));
+
+        for status in DeploymentStatus::ALL {
+            projects::advance_deployment(&database, &deployment, *status, None)
+                .await
+                .unwrap_or_else(|error| panic!("deployment status {status} was refused: {error}"));
+        }
+    }
+
+    // Every project type must be creatable, not merely spellable: the value the
+    // planner picks goes into a column with its own CHECK list.
     for project_type in ProjectType::ALL {
-        assert!(
-            !project_type.as_str().is_empty(),
-            "a project type with no wire value cannot be stored"
-        );
+        let mut new = new_project("NODEJS", "EMPTY", None, None, None, 22_100);
+        new.project_type = *project_type;
+        new.ports[0].host_port = Some(22_100 + i64::from(*project_type as u8));
+        projects::create_project(&database, &new)
+            .await
+            .unwrap_or_else(|error| panic!("project type {project_type} was refused: {error}"));
     }
 }
 

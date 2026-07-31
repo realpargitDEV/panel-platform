@@ -13,8 +13,8 @@
 //! refuses it rather than trusting that the generator stayed correct.
 
 use project_host_api_types::{
-    ContainerEventType, DeploymentId, DesiredState, EventId, HealthState, PortId, ProjectId,
-    ProjectStatus, ProjectType,
+    ContainerEventType, DeploymentId, DeploymentStatus, DeploymentType, DesiredState, EventId,
+    HealthState, PortId, ProjectId, ProjectStatus, ProjectType,
 };
 use sqlx::Row;
 
@@ -850,7 +850,7 @@ pub struct DeploymentRecord {
 pub async fn begin_deployment(
     database: &Database,
     project_id: &str,
-    deployment_type: &str,
+    deployment_type: DeploymentType,
     operation_id: Option<&str>,
 ) -> Result<String> {
     let id = DeploymentId::generate().to_string();
@@ -860,7 +860,7 @@ pub async fn begin_deployment(
     )
     .bind(&id)
     .bind(project_id)
-    .bind(deployment_type)
+    .bind(deployment_type.as_str())
     .bind(operation_id)
     .bind(time::now())
     .execute(database.pool())
@@ -871,13 +871,13 @@ pub async fn begin_deployment(
 pub async fn advance_deployment(
     database: &Database,
     deployment_id: &str,
-    status: &str,
+    status: DeploymentStatus,
     image_tag: Option<&str>,
 ) -> Result<()> {
     sqlx::query(
         "UPDATE deployments SET status = ?, image_tag = COALESCE(?, image_tag) WHERE id = ?",
     )
-    .bind(status)
+    .bind(status.as_str())
     .bind(image_tag)
     .bind(deployment_id)
     .execute(database.pool())
@@ -889,7 +889,7 @@ pub async fn advance_deployment(
 pub async fn finish_deployment(
     database: &Database,
     deployment_id: &str,
-    status: &str,
+    status: DeploymentStatus,
     error_code: Option<&str>,
     error_message: Option<&str>,
 ) -> Result<()> {
@@ -900,7 +900,7 @@ pub async fn finish_deployment(
              duration_ms = CAST((julianday(?) - julianday(started_at)) * 86400000 AS INTEGER)
          WHERE id = ?",
     )
-    .bind(status)
+    .bind(status.as_str())
     .bind(error_code)
     .bind(error_message)
     .bind(&now)
