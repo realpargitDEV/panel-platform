@@ -12,7 +12,10 @@
 //! but a collision would mean two projects sharing a container, so the database
 //! refuses it rather than trusting that the generator stayed correct.
 
-use project_host_api_types::{DeploymentId, EventId, PortId, ProjectId, ProjectType};
+use project_host_api_types::{
+    ContainerEventType, DeploymentId, DesiredState, EventId, HealthState, PortId, ProjectId,
+    ProjectStatus, ProjectType,
+};
 use sqlx::Row;
 
 use crate::error::{DatabaseError, Result};
@@ -470,11 +473,19 @@ pub async fn allocated_host_ports(database: &Database) -> Result<Vec<u16>> {
 /// Separate from [`set_desired_state`] on purpose: the reconciler exists because
 /// these two disagree, and a single "set state" function is how that distinction
 /// gets lost.
+///
+/// Both parameters are enums rather than `&str` for the reason
+/// [`NewProject::project_type`] is: the caller here translates what Docker
+/// reports, and Docker's vocabulary is not this column's. `health` in particular
+/// arrives from `docker inspect` as `healthy`/`unhealthy`/`starting` — lower
+/// case, which no `CHECK` allows — so a `&str` parameter meant every started
+/// container with a health check ended in "value rejected by a database
+/// constraint". The enum makes that a compile error.
 pub async fn set_status(
     database: &Database,
     project_id: &str,
-    status: &str,
-    health: Option<&str>,
+    status: ProjectStatus,
+    health: Option<HealthState>,
 ) -> Result<()> {
     let now = time::now();
     sqlx::query(
@@ -482,8 +493,8 @@ pub async fn set_status(
          SET status = ?, health = COALESCE(?, health), updated_at = ?
          WHERE id = ?",
     )
-    .bind(status)
-    .bind(health)
+    .bind(status.as_str())
+    .bind(health.as_ref().map(HealthState::as_str))
     .bind(&now)
     .bind(project_id)
     .execute(database.pool())
@@ -493,9 +504,13 @@ pub async fn set_status(
 
 /// Record what the user wants. Survives reboots; this is what makes a project
 /// come back up.
-pub async fn set_desired_state(database: &Database, project_id: &str, desired: &str) -> Result<()> {
+pub async fn set_desired_state(
+    database: &Database,
+    project_id: &str,
+    desired: DesiredState,
+) -> Result<()> {
     let result = sqlx::query("UPDATE projects SET desired_state = ?, updated_at = ? WHERE id = ?")
-        .bind(desired)
+        .bind(desired.as_str())
         .bind(time::now())
         .bind(project_id)
         .execute(database.pool())
@@ -758,7 +773,7 @@ pub async fn status_counts(database: &Database) -> Result<Vec<(String, i64)>> {
 pub async fn record_container_event(
     database: &Database,
     project_id: &str,
-    event_type: &str,
+    event_type: ContainerEventType,
     exit_code: Option<i64>,
     detail: Option<&str>,
 ) -> Result<()> {
@@ -768,7 +783,7 @@ pub async fn record_container_event(
     )
     .bind(EventId::generate().to_string())
     .bind(project_id)
-    .bind(event_type)
+    .bind(event_type.as_str())
     .bind(exit_code)
     .bind(detail)
     .bind(time::now())
