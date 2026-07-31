@@ -202,6 +202,17 @@ impl ContainerRunner {
             .map_err(|error| DockerError::Daemon(error.to_string()))
     }
 
+    /// Kill a running container immediately.
+    pub async fn kill(&self, name: &str) -> Result<(), DockerError> {
+        self.client
+            .kill_container(
+                name,
+                None::<bollard::query_parameters::KillContainerOptions>,
+            )
+            .await
+            .map_err(|error| DockerError::Daemon(error.to_string()))
+    }
+
     /// Remove a container. `force` kills it first if it is still running.
     ///
     /// Volumes are never removed with it: a project's data outliving its

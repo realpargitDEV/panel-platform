@@ -218,6 +218,10 @@ export async function restartProject(projectId: string): Promise<string> {
   return invoke('restart_project', { projectId });
 }
 
+export async function killProject(projectId: string): Promise<void> {
+  return invoke('kill_project', { projectId });
+}
+
 // ------------------------------------------------------------- project files
 
 export interface FileEntry {

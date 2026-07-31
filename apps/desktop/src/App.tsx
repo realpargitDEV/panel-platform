@@ -99,6 +99,8 @@ export default function App() {
               ) : (
                 <ProjectConsole
                   project={project}
+                  dockerAvailable={status?.dockerAvailable ?? false}
+                  onRefresh={refresh}
                   onBack={() => setOpenProject(null)}
                   onOpenFiles={() => setProjectTab('files')}
                 />

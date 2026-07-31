@@ -564,6 +564,14 @@ async fn restart_project(
         .map_err(CommandError::from)
 }
 
+#[tauri::command]
+async fn kill_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
+    let app: &AppState = &state;
+    project_host_core::lifecycle::kill(app.database(), &project_id)
+        .await
+        .map_err(CommandError::from)
+}
+
 // -------------------------------------------------------------- project files
 
 /// One row in a directory listing, as the window reads it.
@@ -1247,6 +1255,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             start_project,
             stop_project,
             restart_project,
+            kill_project,
             app_settings,
             check_for_update,
             install_update,

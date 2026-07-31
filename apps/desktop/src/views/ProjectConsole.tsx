@@ -1,4 +1,15 @@
-import type { ProjectSummary } from '../api';
+import { useState } from 'react';
+
+import {
+  errorMessage,
+  killProject,
+  restartProject,
+  startProject,
+  stopProject,
+  type ProjectSummary,
+} from '../api';
+
+type ConsoleAction = 'start' | 'restart' | 'stop' | 'kill';
 
 /**
  * The console screen for one project.
@@ -14,13 +25,45 @@ import type { ProjectSummary } from '../api';
  */
 export default function ProjectConsole({
   project,
+  dockerAvailable,
+  onRefresh,
   onBack,
   onOpenFiles,
 }: {
   project: ProjectSummary;
+  dockerAvailable: boolean;
+  onRefresh: () => Promise<void>;
   onBack: () => void;
   onOpenFiles: () => void;
 }) {
+  const [busyAction, setBusyAction] = useState<ConsoleAction | null>(null);
+  const [actionMessage, setActionMessage] = useState<{
+    tone: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const isRunning = project.status === 'RUNNING';
+  const isTransitioning = ['STARTING', 'STOPPING', 'RESTARTING'].includes(project.status);
+  const isBusy = busyAction !== null;
+  const controlsDisabled = isBusy || isTransitioning || !dockerAvailable;
+
+  async function act(
+    actionName: ConsoleAction,
+    successMessage: string,
+    action: (projectId: string) => Promise<unknown>,
+  ) {
+    setBusyAction(actionName);
+    setActionMessage(null);
+    try {
+      await action(project.id);
+      await onRefresh();
+      setActionMessage({ tone: 'success', text: successMessage });
+    } catch (error) {
+      setActionMessage({ tone: 'error', text: errorMessage(error) });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
     <div className="px-8 py-7">
       <button
@@ -31,19 +74,65 @@ export default function ProjectConsole({
         ← Projects
       </button>
 
-      <div className="mt-4 flex items-end justify-between">
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold tracking-wider text-accent uppercase">Console</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">{project.displayName}</h1>
         </div>
-        <button
-          type="button"
-          onClick={onOpenFiles}
-          className="rounded-lg border border-edge bg-raised px-3.5 py-2 text-sm hover:border-white/25"
-        >
-          Edit files
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ConsoleActionButton
+            label={busyAction === 'start' ? 'Starting...' : 'Start'}
+            icon="▶"
+            tone="start"
+            disabled={controlsDisabled || isRunning}
+            title={controlTitle(dockerAvailable, isTransitioning, 'Start this project')}
+            onClick={() => void act('start', 'Project started.', startProject)}
+          />
+          <ConsoleActionButton
+            label={busyAction === 'restart' ? 'Restarting...' : 'Restart'}
+            icon="↻"
+            tone="restart"
+            disabled={controlsDisabled || !isRunning}
+            title={controlTitle(dockerAvailable, isTransitioning, 'Restart this project')}
+            onClick={() => void act('restart', 'Project restarted.', restartProject)}
+          />
+          <ConsoleActionButton
+            label={busyAction === 'stop' ? 'Stopping...' : 'Stop'}
+            icon="■"
+            tone="stop"
+            disabled={controlsDisabled || !isRunning}
+            title={controlTitle(dockerAvailable, isTransitioning, 'Stop this project gracefully')}
+            onClick={() => void act('stop', 'Project stopped.', stopProject)}
+          />
+          <ConsoleActionButton
+            label={busyAction === 'kill' ? 'Killing...' : 'Kill'}
+            icon="⏻"
+            tone="kill"
+            disabled={controlsDisabled || !isRunning}
+            title={controlTitle(dockerAvailable, isTransitioning, 'Kill this project immediately')}
+            onClick={() => void act('kill', 'Project killed.', killProject)}
+          />
+          <button
+            type="button"
+            onClick={onOpenFiles}
+            className="rounded-lg border border-edge bg-raised px-3.5 py-2 text-sm hover:border-white/25"
+          >
+            Edit files
+          </button>
+        </div>
       </div>
+
+      {actionMessage && (
+        <p
+          className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
+            actionMessage.tone === 'success'
+              ? 'border-emerald-900 bg-emerald-950/50 text-emerald-200'
+              : 'border-red-900 bg-red-950/60 text-red-200'
+          }`}
+        >
+          {actionMessage.text}
+        </p>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
         <section className="overflow-hidden rounded-xl border border-edge bg-surface">
@@ -105,6 +194,50 @@ export default function ProjectConsole({
         <ResourceCard icon="▤" tint="bg-orange-500" title="Disk" caption="Storage space" />
       </div>
     </div>
+  );
+}
+
+function controlTitle(dockerAvailable: boolean, isTransitioning: boolean, action: string): string {
+  if (!dockerAvailable) return 'Docker is not available';
+  if (isTransitioning) return 'Project is already changing state';
+  return action;
+}
+
+function ConsoleActionButton({
+  label,
+  icon,
+  tone,
+  disabled,
+  title,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  tone: 'start' | 'restart' | 'stop' | 'kill';
+  disabled: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  const tones = {
+    start: 'text-emerald-300 shadow-emerald-950/40',
+    restart: 'text-sky-300 shadow-sky-950/40',
+    stop: 'text-neutral-300 shadow-neutral-950/40',
+    kill: 'text-red-300 shadow-red-950/40',
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-md border border-white/10 bg-[#242935] px-3 py-2 text-sm font-medium text-neutral-100 shadow-lg transition hover:border-white/25 hover:bg-[#2d3341] disabled:cursor-not-allowed disabled:opacity-40 ${tones[tone]}`}
+    >
+      <span aria-hidden className="text-base leading-none">
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
   );
 }
 
