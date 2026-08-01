@@ -1056,6 +1056,492 @@ async fn rename_project_file(
         .map_err(CommandError::from)
 }
 
+// ----------------------------------------------------------- machine metrics
+
+/// What this machine is doing right now.
+///
+/// Host-wide, not per project: measuring a container's own CPU and memory means
+/// reading Docker's stats stream, which the manager does not do yet. These are
+/// the real numbers for the machine the projects run on, which is the question
+/// "is this box healthy?" actually asks.
+#[derive(Debug, Serialize)]
+pub struct SystemMetrics {
+    /// Percent across all cores, 0–100.
+    pub cpu_percent: f32,
+    pub cpu_count: usize,
+    pub memory_used_bytes: u64,
+    pub memory_total_bytes: u64,
+    /// The disk holding the projects directory, not every disk on the machine.
+    pub disk_used_bytes: u64,
+    pub disk_total_bytes: u64,
+    pub disk_mount: String,
+}
+
+/// The sampler, kept between calls.
+///
+/// CPU percentage is a difference between two samples, so a fresh `System` per
+/// call reports zero every time. Holding it as managed state is what makes the
+/// number real.
+#[derive(Default)]
+struct Metrics(Arc<Mutex<Option<sysinfo::System>>>);
+
+#[tauri::command]
+async fn system_metrics(
+    state: tauri::State<'_, AppState>,
+    metrics: tauri::State<'_, Metrics>,
+) -> CommandResult<SystemMetrics> {
+    use project_host_platform::PathProvider;
+    use sysinfo::{Disks, System};
+
+    let app: &AppState = &state;
+    let paths = project_host_core::resolve_paths(app.config()).map_err(CommandError::from)?;
+    let projects_dir = paths.projects_dir().to_path_buf();
+
+    let (cpu_percent, cpu_count, memory_used_bytes, memory_total_bytes) = {
+        let mut guard = metrics.0.lock().map_err(|_| CommandError {
+            message: "The metrics sampler is unavailable.".to_string(),
+        })?;
+        let system = guard.get_or_insert_with(System::new);
+        // Twice, because a percentage needs a previous sample to compare
+        // against. The first call after startup would otherwise read zero.
+        system.refresh_cpu_usage();
+        system.refresh_memory();
+        (
+            system.global_cpu_usage(),
+            system.cpus().len(),
+            system.used_memory(),
+            system.total_memory(),
+        )
+    };
+
+    // The disk the projects actually live on: the one whose mount point is the
+    // longest prefix of the projects directory.
+    let disks = Disks::new_with_refreshed_list();
+    let best = disks
+        .list()
+        .iter()
+        .filter(|disk| projects_dir.starts_with(disk.mount_point()))
+        .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        .or_else(|| disks.list().first());
+
+    let (disk_used_bytes, disk_total_bytes, disk_mount) = match best {
+        Some(disk) => (
+            disk.total_space().saturating_sub(disk.available_space()),
+            disk.total_space(),
+            disk.mount_point().to_string_lossy().into_owned(),
+        ),
+        None => (0, 0, String::new()),
+    };
+
+    Ok(SystemMetrics {
+        cpu_percent,
+        cpu_count,
+        memory_used_bytes,
+        memory_total_bytes,
+        disk_used_bytes,
+        disk_total_bytes,
+        disk_mount,
+    })
+}
+
+// -------------------------------------------------------------- activity log
+
+/// One entry of the audit log, as the activity feed shows it.
+#[derive(Debug, Serialize)]
+pub struct ActivityEntry {
+    pub id: String,
+    pub occurred_at: String,
+    pub action: String,
+    pub result: String,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub target_label: Option<String>,
+    pub error_code: Option<String>,
+}
+
+/// What has happened, newest first.
+///
+/// Read straight from the audit log the core already writes for every state
+/// change. Nothing here is generated for the sake of having a feed — an empty
+/// list means nothing has happened yet.
+#[tauri::command]
+async fn recent_activity(
+    state: tauri::State<'_, AppState>,
+    project_id: Option<String>,
+    limit: u32,
+) -> CommandResult<Vec<ActivityEntry>> {
+    let app: &AppState = &state;
+    let records = project_host_database::audit::list(
+        app.database(),
+        None,
+        project_id.as_deref(),
+        None,
+        limit.clamp(1, 200),
+    )
+    .await?;
+
+    Ok(records
+        .into_iter()
+        .map(|record| ActivityEntry {
+            id: record.id,
+            occurred_at: record.occurred_at,
+            action: record.action,
+            result: record.result,
+            target_type: record.target_type,
+            target_id: record.target_id,
+            target_label: record.target_label,
+            error_code: record.error_code,
+        })
+        .collect())
+}
+
+// ------------------------------------------------------------ project detail
+
+#[derive(Debug, Serialize)]
+pub struct RuntimeDetail {
+    pub runtime: String,
+    pub runtime_version: String,
+    pub package_manager: String,
+    pub install_command: Option<String>,
+    pub build_command: Option<String>,
+    pub start_command: String,
+    pub working_dir: String,
+    pub entry_file: Option<String>,
+    pub health_check_type: String,
+    pub health_check_target: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortMapping {
+    pub container_port: i64,
+    pub host_port: Option<i64>,
+    pub protocol: String,
+}
+
+/// An environment variable, never its secret value.
+///
+/// Secrets are stored encrypted and there is no reason for the window to hold
+/// the plaintext: the list shows which keys exist and whether each is a secret,
+/// which is what the screen displays.
+#[derive(Debug, Serialize)]
+pub struct EnvVarSummary {
+    pub key: String,
+    pub is_secret: bool,
+    pub restart_required: bool,
+    /// Present only for a plain value.
+    pub value: Option<String>,
+}
+
+/// Everything one project knows about itself.
+#[derive(Debug, Serialize)]
+pub struct ProjectDetail {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub project_type: String,
+    pub status: String,
+    pub desired_state: String,
+    pub health: String,
+    pub run_mode: String,
+    pub restart_policy: String,
+    pub network_mode: String,
+    pub autostart: bool,
+    pub directory: String,
+    pub source_type: String,
+    pub source_url: Option<String>,
+    pub source_ref: Option<String>,
+    pub source_commit: Option<String>,
+    pub image_tag: Option<String>,
+    pub container_name: Option<String>,
+    pub memory_limit_mb: i64,
+    pub cpu_limit_cores: f64,
+    pub storage_limit_mb: i64,
+    pub started_at: Option<String>,
+    pub stopped_at: Option<String>,
+    pub last_exit_code: Option<i64>,
+    pub last_failure_at: Option<String>,
+    pub last_failure_reason: Option<String>,
+    pub restart_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub runtime: Option<RuntimeDetail>,
+    pub ports: Vec<PortMapping>,
+    pub env_vars: Vec<EnvVarSummary>,
+}
+
+#[tauri::command]
+async fn project_details(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+) -> CommandResult<ProjectDetail> {
+    let app: &AppState = &state;
+    let record = projects::find_project(app.database(), &project_id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "That project no longer exists.".to_string(),
+        })?;
+
+    let runtime = projects::find_runtime(app.database(), &project_id).await?;
+    let ports = projects::list_ports(app.database(), &project_id).await?;
+    let variables =
+        project_host_database::environment::list_variables(app.database(), &project_id).await?;
+
+    Ok(ProjectDetail {
+        id: record.id,
+        slug: record.slug,
+        display_name: record.display_name,
+        description: record.description,
+        project_type: record.project_type,
+        status: record.status,
+        desired_state: record.desired_state,
+        health: record.health,
+        run_mode: record.run_mode,
+        restart_policy: record.restart_policy,
+        network_mode: record.network_mode,
+        autostart: record.autostart,
+        directory: record.directory,
+        source_type: record.source_type,
+        source_url: record.source_url,
+        source_ref: record.source_ref,
+        source_commit: record.source_commit,
+        image_tag: record.image_tag,
+        container_name: record.container_name,
+        memory_limit_mb: record.memory_limit_mb,
+        cpu_limit_cores: record.cpu_limit_cores,
+        storage_limit_mb: record.storage_limit_mb,
+        started_at: record.started_at,
+        stopped_at: record.stopped_at,
+        last_exit_code: record.last_exit_code,
+        last_failure_at: record.last_failure_at,
+        last_failure_reason: record.last_failure_reason,
+        restart_count: record.restart_count,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
+        runtime: runtime.map(|runtime| RuntimeDetail {
+            runtime: runtime.runtime,
+            runtime_version: runtime.runtime_version,
+            package_manager: runtime.package_manager,
+            install_command: runtime.install_command,
+            build_command: runtime.build_command,
+            start_command: runtime.start_command,
+            working_dir: runtime.working_dir,
+            entry_file: runtime.entry_file,
+            health_check_type: runtime.health_check_type,
+            health_check_target: runtime.health_check_target,
+        }),
+        ports: ports
+            .into_iter()
+            .map(|port| PortMapping {
+                container_port: port.container_port,
+                host_port: port.host_port,
+                protocol: port.protocol,
+            })
+            .collect(),
+        env_vars: variables
+            .into_iter()
+            .map(|variable| {
+                let is_secret = !matches!(
+                    variable.value,
+                    project_host_database::environment::StoredValue::Plain(_)
+                );
+                EnvVarSummary {
+                    key: variable.key,
+                    is_secret,
+                    restart_required: variable.restart_required,
+                    value: match variable.value {
+                        project_host_database::environment::StoredValue::Plain(value) => {
+                            Some(value)
+                        }
+                        // Deliberately not decrypted. The screen shows that a
+                        // secret exists, never what it is.
+                        _ => None,
+                    },
+                }
+            })
+            .collect(),
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeploymentSummary {
+    pub id: String,
+    pub deployment_type: String,
+    pub status: String,
+    pub image_tag: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub duration_ms: Option<i64>,
+}
+
+#[tauri::command]
+async fn project_deployments(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    limit: u32,
+) -> CommandResult<Vec<DeploymentSummary>> {
+    let app: &AppState = &state;
+    let records = projects::list_deployments(app.database(), &project_id, limit).await?;
+    Ok(records
+        .into_iter()
+        .map(|record| DeploymentSummary {
+            id: record.id,
+            deployment_type: record.deployment_type,
+            status: record.status,
+            image_tag: record.image_tag,
+            error_code: record.error_code,
+            error_message: record.error_message,
+            started_at: record.started_at,
+            finished_at: record.finished_at,
+            duration_ms: record.duration_ms,
+        })
+        .collect())
+}
+
+/// Starts, stops and crashes — the restart history the overview shows.
+#[derive(Debug, Serialize)]
+pub struct ContainerEvent {
+    pub id: String,
+    pub event_type: String,
+    pub exit_code: Option<i64>,
+    pub detail: Option<String>,
+    pub occurred_at: String,
+}
+
+#[tauri::command]
+async fn project_events(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    limit: u32,
+) -> CommandResult<Vec<ContainerEvent>> {
+    let app: &AppState = &state;
+    let records = projects::list_container_events(app.database(), &project_id, limit).await?;
+    Ok(records
+        .into_iter()
+        .map(|record| ContainerEvent {
+            id: record.id,
+            event_type: record.event_type,
+            exit_code: record.exit_code,
+            detail: record.detail,
+            occurred_at: record.occurred_at,
+        })
+        .collect())
+}
+
+/// Move a file or folder to another place in the same project.
+///
+/// What the explorer's drag-and-drop needs, and what `rename_project_file`
+/// deliberately refuses to do: that one takes a single path component so a
+/// rename cannot quietly relocate a file. This one takes a whole destination
+/// path, and the core still resolves it inside the project root.
+#[tauri::command]
+async fn move_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    from: String,
+    to: String,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::move_entry(&root, &from, &to)
+        .map(FileEntryDto::from)
+        .map_err(CommandError::from)
+}
+
+/// Copy a file or folder within the project — the explorer's "Duplicate".
+#[tauri::command]
+async fn copy_project_file(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    from: String,
+    to: String,
+) -> CommandResult<FileEntryDto> {
+    let app: &AppState = &state;
+    let (root, read_only) = project_root(app, &project_id).await?;
+    if read_only {
+        return Err(CommandError {
+            message:
+                "This project is being built or removed; its files cannot be changed right now."
+                    .to_string(),
+        });
+    }
+
+    project_host_file_manager::operations::copy(&root, &from, &to, &file_limits(app))
+        .map(FileEntryDto::from)
+        .map_err(CommandError::from)
+}
+
+/// The project's directory on this machine.
+///
+/// The window has no other way to learn it: every file command takes a path
+/// relative to the root and builds the absolute one itself. "Copy path" in the
+/// explorer is the first thing that genuinely needs the absolute form, and it
+/// only ever displays it.
+#[tauri::command]
+async fn project_root_path(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+) -> CommandResult<String> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    Ok(root.to_string_lossy().into_owned())
+}
+
+/// Show a project file in the system's file manager.
+///
+/// The path is resolved through the same guard every other file command uses,
+/// so a relative path that climbs out of the project is refused here too rather
+/// than handed to a shell.
+#[tauri::command]
+async fn reveal_project_path(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    path: String,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    let target = project_host_file_manager::operations::stat(&root, &path)
+        .map(|entry| root.join(entry.path.replace('/', std::path::MAIN_SEPARATOR_STR)))
+        .map_err(CommandError::from)?;
+
+    // Arguments are passed as a list, never through a shell, so a file name
+    // containing shell metacharacters is a file name and nothing else.
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("explorer.exe");
+        // One argument, not two: Explorer only understands the selection flag
+        // when the path is glued to it.
+        let mut select = std::ffi::OsString::from("/select,");
+        select.push(&target);
+        command.arg(select);
+        command
+    } else if cfg!(target_os = "macos") {
+        let mut command = std::process::Command::new("open");
+        command.arg("-R");
+        command.arg(&target);
+        command
+    } else {
+        // No portable "select this file" on Linux; the containing directory is
+        // what every desktop environment agrees on.
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(target.parent().unwrap_or(&root));
+        command
+    };
+
+    command.spawn().map(|_| ()).map_err(|error| CommandError {
+        message: format!("Could not open the system file manager: {error}"),
+    })
+}
+
 #[tauri::command]
 async fn delete_project_file(
     state: tauri::State<'_, AppState>,
@@ -1429,6 +1915,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .manage(state)
         .manage(FileImportCancels::default())
         .manage(UpdateActivity::default())
+        .manage(Metrics::default())
         .invoke_handler(tauri::generate_handler![
             system_status,
             list_projects,
@@ -1453,8 +1940,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             cancel_project_file_import,
             create_project_file,
             rename_project_file,
+            move_project_file,
+            copy_project_file,
             delete_project_file,
-            search_project_files
+            search_project_files,
+            project_root_path,
+            reveal_project_path,
+            system_metrics,
+            recent_activity,
+            project_details,
+            project_deployments,
+            project_events
         ])
         .build(tauri::generate_context!())?
         .run(move |app, event| {

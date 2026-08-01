@@ -37,6 +37,13 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Host CPU, memory and disk. The dashboard reports what this machine is
+# actually doing; without this it would have to either invent the numbers or
+# leave the panel empty.
+sysinfo = { version = "0.33", default-features = false, features = [
+    "system",
+    "disk",
+] }
 tauri = { version = "2", features = [] }
 # The install half of the update flow. `crates/updater` decides *whether* to
 # offer a release; this replaces the running application, which is the one step
