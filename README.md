@@ -32,8 +32,9 @@ project gets a log channel and a control panel, with role-based permissions.
 
 ### ➡ [**Download the latest release**](https://github.com/realpargitDEV/panel-platform/releases/latest)
 
-or use the [**download page**](https://realpargitdev.github.io/panel-platform/),
-which picks the right file for your system.
+Or download the setup program for your system from that page — it works out
+which file you need, checks it against the project's signature, and starts the
+installer.
 
 **You do not need to clone this repository, download the source code, or
 install any development tools.** No Node.js, no Rust, no pnpm, no toolchain —
