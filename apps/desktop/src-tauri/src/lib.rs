@@ -32,29 +32,75 @@ use project_host_project_manager::ports::PortPool;
 use project_host_security::Secret;
 use project_host_updater::{evaluate, ReleaseManifest, UpdateCheck, UpdatePreferences};
 
+/// Which file imports are running, and which the user has asked to stop.
+///
+/// `running` exists so the sweep for staging directories left by a crashed
+/// import can tell wreckage from an import that is still copying into one.
 #[derive(Debug, Clone, Default)]
 struct FileImportCancels {
     import_ids: Arc<Mutex<HashSet<String>>>,
+    running: Arc<Mutex<HashSet<String>>>,
+}
+
+/// Marks one import as running for as long as it is held.
+///
+/// A guard rather than two calls so that every exit path releases it, including
+/// `?` returning early and the blocking task panicking — the same reason
+/// [`UpdateActivity`] uses one.
+struct RunningImport {
+    imports: FileImportCancels,
+    import_id: String,
+}
+
+impl Drop for RunningImport {
+    fn drop(&mut self) {
+        self.imports.running().remove(&self.import_id);
+        // A cancellation is only ever about the import it named, and that
+        // import is over.
+        self.imports.clear(&self.import_id);
+    }
 }
 
 impl FileImportCancels {
+    /// A panic elsewhere poisons the mutex for the rest of the process. The set
+    /// behind it is a plain `HashSet<String>` with no invariant a panic could
+    /// have left half-applied, so the poison is recovered from rather than
+    /// propagated: the alternative is that one unrelated panic silently
+    /// cancels, or refuses to cancel, every import until the app is restarted.
+    fn ids(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.import_ids
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn clear(&self, import_id: &str) {
-        if let Ok(mut import_ids) = self.import_ids.lock() {
-            import_ids.remove(import_id);
-        }
+        self.ids().remove(import_id);
     }
 
     fn cancel(&self, import_id: String) {
-        if let Ok(mut import_ids) = self.import_ids.lock() {
-            import_ids.insert(import_id);
-        }
+        self.ids().insert(import_id);
     }
 
     fn is_cancelled(&self, import_id: &str) -> bool {
-        self.import_ids
+        self.ids().contains(import_id)
+    }
+
+    fn running(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.running
             .lock()
-            .map(|import_ids| import_ids.contains(import_id))
-            .unwrap_or(true)
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn start(&self, import_id: String) -> RunningImport {
+        self.running().insert(import_id.clone());
+        RunningImport {
+            imports: self.clone(),
+            import_id,
+        }
+    }
+
+    fn is_running(&self, import_id: &str) -> bool {
+        self.running().contains(import_id)
     }
 }
 
@@ -895,13 +941,34 @@ async fn import_project_files(
     let limits = file_limits(app);
     let sources: Vec<std::path::PathBuf> = source_paths.into_iter().map(Into::into).collect();
     let cancels_for_work = cancels.inner().clone();
-    let cancels_for_cleanup = cancels_for_work.clone();
-    cancels_for_work.clear(&import_id);
+    // The guard releases both the running mark and any cancellation when it
+    // drops. Nothing is cleared on the way *in*: an import id is generated per
+    // attempt and never reused, so there is nothing stale to clear — and
+    // clearing would throw away a cancellation that arrived between the window
+    // queueing this import and the blocking copy asking whether it was
+    // cancelled.
+    let _running = cancels.inner().start(import_id.clone());
+    let cancels_for_sweep = cancels_for_work.clone();
     let import_id_for_work = import_id.clone();
     let project_id_for_work = project_id.clone();
     let app_handle_for_work = app_handle.clone();
+    let sweep_root = root.clone();
 
     let report = tokio::task::spawn_blocking(move || {
+        // Clear up after any import this project never got to finish, now that
+        // there is a blocking thread to do it on. Best effort: wreckage from a
+        // previous run must not fail the import the user just asked for.
+        match project_host_file_manager::operations::remove_abandoned_import_staging(
+            &sweep_root,
+            |id| cancels_for_sweep.is_running(id),
+        ) {
+            Ok(removed) if !removed.is_empty() => {
+                tracing::info!(?removed, "removed staging left by an unfinished import");
+            }
+            Err(error) => tracing::warn!(%error, "could not sweep abandoned import staging"),
+            Ok(_) => {}
+        }
+
         project_host_file_manager::operations::import_local_paths(
             &root,
             &target_directory,
@@ -928,10 +995,8 @@ async fn import_project_files(
     })
     .await
     .map_err(CommandError::from)
-    .and_then(|result| result.map_err(CommandError::from));
+    .and_then(|result| result.map_err(CommandError::from))?;
 
-    cancels_for_cleanup.clear(&import_id);
-    let report = report?;
     Ok(report.entries.into_iter().map(FileEntryDto::from).collect())
 }
 
@@ -1449,6 +1514,112 @@ mod tests {
         assert_eq!(fails(&activity), Err("the download failed"));
         assert!(!activity.is_installing());
         assert_eq!(fails(&activity), Err("the download failed"));
+    }
+
+    /// The user can press Cancel while the import row is still `queued`, which
+    /// is before the blocking copy has asked whether it was cancelled. That
+    /// request has to survive until the copy starts, or the import runs on
+    /// after the user stopped it.
+    #[test]
+    fn a_cancel_that_arrives_before_the_import_starts_is_still_honoured() {
+        let cancels = FileImportCancels::default();
+
+        cancels.cancel("import-1".to_string());
+
+        assert!(
+            cancels.is_cancelled("import-1"),
+            "the import started anyway after the user cancelled it"
+        );
+    }
+
+    /// Import ids are generated per attempt and never reused, so one import's
+    /// cancellation must not reach the next one.
+    #[test]
+    fn cancelling_one_import_does_not_cancel_another() {
+        let cancels = FileImportCancels::default();
+
+        cancels.cancel("import-1".to_string());
+
+        assert!(!cancels.is_cancelled("import-2"));
+        cancels.clear("import-1");
+        assert!(!cancels.is_cancelled("import-1"));
+    }
+
+    /// A panic anywhere while the set is locked poisons the mutex for the rest
+    /// of the process. Treating that as "cancelled" would mean every later
+    /// import in the session fails with a cancellation the user never asked
+    /// for, and only a restart would fix it.
+    #[test]
+    fn a_poisoned_lock_does_not_cancel_every_later_import() {
+        let cancels = FileImportCancels::default();
+        let poisoner = cancels.clone();
+
+        let panicked = std::thread::spawn(move || {
+            let _held = poisoner.import_ids.lock().expect("lock");
+            panic!("a thread panicked while holding the lock");
+        })
+        .join();
+        assert!(panicked.is_err(), "the test needs the lock to be poisoned");
+
+        assert!(
+            !cancels.is_cancelled("import-1"),
+            "a poisoned lock cancelled an import nobody cancelled"
+        );
+        cancels.cancel("import-1".to_string());
+        assert!(
+            cancels.is_cancelled("import-1"),
+            "a poisoned lock made cancellation stop working"
+        );
+    }
+
+    /// The sweep for staging directories left by a crashed import asks this
+    /// which imports are still copying. Getting it wrong in this direction
+    /// deletes files out from under a running import.
+    #[test]
+    fn an_import_is_marked_as_running_for_exactly_as_long_as_it_runs() {
+        let imports = FileImportCancels::default();
+        assert!(!imports.is_running("import-1"));
+
+        let running = imports.start("import-1".to_string());
+        assert!(imports.is_running("import-1"));
+        assert!(!imports.is_running("import-2"));
+
+        drop(running);
+        assert!(
+            !imports.is_running("import-1"),
+            "a finished import stayed marked as running, so its staging is never swept"
+        );
+    }
+
+    /// Every exit path has to release the mark, including a panic on the
+    /// blocking thread that copies the files.
+    #[test]
+    fn an_import_that_panics_is_no_longer_marked_as_running() {
+        let imports = FileImportCancels::default();
+        let for_thread = imports.clone();
+
+        let panicked = std::thread::spawn(move || {
+            let _running = for_thread.start("import-1".to_string());
+            panic!("the copy thread panicked");
+        })
+        .join();
+
+        assert!(panicked.is_err(), "the test needs the thread to panic");
+        assert!(!imports.is_running("import-1"));
+    }
+
+    /// A cancellation names one import. Once that import is over the request
+    /// has been served and must not linger.
+    #[test]
+    fn finishing_an_import_releases_its_cancellation() {
+        let imports = FileImportCancels::default();
+        let running = imports.start("import-1".to_string());
+
+        imports.cancel("import-1".to_string());
+        assert!(imports.is_cancelled("import-1"));
+
+        drop(running);
+        assert!(!imports.is_cancelled("import-1"));
     }
 
     #[test]
