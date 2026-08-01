@@ -14,7 +14,7 @@
 
 use project_host_api_types::{
     ContainerEventType, DeploymentId, DeploymentStatus, DeploymentType, DesiredState, EventId,
-    HealthState, PortId, ProjectId, ProjectStatus, ProjectType,
+    HealthState, PortId, ProjectId, ProjectStatus, ProjectType, RunMode,
 };
 use sqlx::Row;
 
@@ -56,6 +56,12 @@ pub struct ProjectRecord {
     pub autostart: bool,
     pub restart_policy: String,
     pub network_mode: String,
+
+    /// `DOCKER` or `HOST`. Not an enum here for the same reason `status` is
+    /// not: this layer stores what the schema allows, and the schema's `CHECK`
+    /// is the authority. A project written before host mode existed reads back
+    /// as `DOCKER` from the column default.
+    pub run_mode: String,
 
     pub memory_limit_mb: i64,
     pub cpu_limit_cores: f64,
@@ -199,6 +205,7 @@ fn project_from_row(row: &sqlx::sqlite::SqliteRow) -> ProjectRecord {
         autostart: row.get::<i64, _>("autostart") == 1,
         restart_policy: row.get("restart_policy"),
         network_mode: row.get("network_mode"),
+        run_mode: row.get("run_mode"),
         memory_limit_mb: row.get("memory_limit_mb"),
         cpu_limit_cores: row.get("cpu_limit_cores"),
         storage_limit_mb: row.get("storage_limit_mb"),
@@ -219,7 +226,8 @@ const PROJECT_COLUMNS: &str = "id, slug, display_name, description, project_type
      status, desired_state, health, container_id, container_name, image_tag,
      network_name, volume_name, source_type, directory,
      source_url, source_ref, source_commit, autostart, restart_policy,
-     network_mode, memory_limit_mb, cpu_limit_cores, storage_limit_mb, process_limit,
+     network_mode, run_mode,
+     memory_limit_mb, cpu_limit_cores, storage_limit_mb, process_limit,
      started_at, stopped_at, last_exit_code, last_failure_at, last_failure_reason,
      restart_count, archived_at, created_at, updated_at";
 
@@ -504,6 +512,24 @@ pub async fn set_status(
 
 /// Record what the user wants. Survives reboots; this is what makes a project
 /// come back up.
+/// Change how a project runs.
+///
+/// Separate from [`ProjectUpdate`] because it is not a preference the way a
+/// colour or a description is: it decides which substrate the next start uses,
+/// and a project should be stopped before it moves between them.
+pub async fn set_run_mode(database: &Database, project_id: &str, mode: RunMode) -> Result<()> {
+    let result = sqlx::query("UPDATE projects SET run_mode = ?, updated_at = ? WHERE id = ?")
+        .bind(mode.as_str())
+        .bind(time::now())
+        .bind(project_id)
+        .execute(database.pool())
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(DatabaseError::NotFound { entity: "project" });
+    }
+    Ok(())
+}
+
 pub async fn set_desired_state(
     database: &Database,
     project_id: &str,

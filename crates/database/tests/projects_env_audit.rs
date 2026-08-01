@@ -14,7 +14,7 @@
 
 use project_host_api_types::{
     ContainerEventType, DeploymentStatus, DeploymentType, DesiredState, HealthState, ProjectStatus,
-    ProjectType,
+    ProjectType, RunMode,
 };
 use project_host_database::audit::{self, AuditEvent, AuditResult};
 use project_host_database::environment::{self, StoredValue};
@@ -90,6 +90,65 @@ fn new_project(slug: &str) -> NewProject {
 }
 
 // ---------------------------------------------------------------- projects
+
+/// Every project that existed before host mode did is a Docker project, and
+/// the column default is the only thing standing between them and a silent
+/// change of behaviour.
+#[tokio::test]
+async fn a_project_runs_under_docker_unless_it_is_told_otherwise() {
+    let database = db().await;
+    let project = projects::create_project(&database, &new_project("bot"))
+        .await
+        .expect("create");
+
+    assert_eq!(project.run_mode, "DOCKER");
+
+    projects::set_run_mode(&database, &project.id, RunMode::Host)
+        .await
+        .expect("set host");
+    let reloaded = projects::find_project(&database, &project.id)
+        .await
+        .expect("find")
+        .expect("row");
+    assert_eq!(reloaded.run_mode, "HOST");
+
+    projects::set_run_mode(&database, &project.id, RunMode::Docker)
+        .await
+        .expect("set docker");
+    let reloaded = projects::find_project(&database, &project.id)
+        .await
+        .expect("find")
+        .expect("row");
+    assert_eq!(reloaded.run_mode, "DOCKER");
+}
+
+/// The `CHECK` is the real guard. A third substrate arriving in the enum
+/// without a migration must fail here rather than when someone saves it.
+#[tokio::test]
+async fn a_run_mode_the_schema_does_not_know_is_refused() {
+    let database = db().await;
+    let project = projects::create_project(&database, &new_project("bot"))
+        .await
+        .expect("create");
+
+    let refused = sqlx::query("UPDATE projects SET run_mode = ? WHERE id = ?")
+        .bind("PODMAN")
+        .bind(&project.id)
+        .execute(database.pool())
+        .await;
+
+    assert!(refused.is_err(), "the CHECK constraint let PODMAN through");
+}
+
+#[tokio::test]
+async fn setting_the_run_mode_of_a_project_that_is_gone_is_an_error() {
+    let database = db().await;
+
+    assert!(matches!(
+        projects::set_run_mode(&database, "no-such-project", RunMode::Host).await,
+        Err(project_host_database::DatabaseError::NotFound { entity: "project" })
+    ));
+}
 
 #[tokio::test]
 async fn a_created_project_has_its_runtime_and_ports() {

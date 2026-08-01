@@ -211,6 +211,11 @@ async fn rust_enums_match_the_check_constraints() {
             .collect::<Vec<_>>(),
     );
     assert_parity(
+        "projects",
+        "run_mode",
+        &RunMode::ALL.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
+    );
+    assert_parity(
         "project_runtimes",
         "runtime",
         &Runtime::ALL.iter().map(|v| v.as_str()).collect::<Vec<_>>(),
