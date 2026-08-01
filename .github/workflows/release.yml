@@ -105,6 +105,22 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.7
+
+            **Dragging files and folders from your computer now imports them
+            reliably.** The file manager handles individual files, multiple
+            files, folders and complete project directories dropped from the
+            operating system, preserving nested subfolders and refreshing the
+            Explorer as soon as the import completes.
+
+            Imports are staged before they appear in the project, so cancelled
+            or failed transfers do not leave partially copied files behind. The
+            app now shows progress, supports cancel and retry, refuses accidental
+            overwrites or duplicate destinations, and reports clear errors for
+            paths it cannot safely copy.
+
+            This release also carries everything in 0.1.6, below.
+
             ## What changed in 0.1.6
 
             **Project consoles now have direct runtime controls.** Every
