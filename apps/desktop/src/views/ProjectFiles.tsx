@@ -1,13 +1,17 @@
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   appendProjectFileUpload,
   beginProjectFileUpload,
+  cancelProjectFileImport,
   cancelProjectFileUpload,
   createProjectFile,
   deleteProjectFile,
   errorMessage,
   finishProjectFileUpload,
+  importProjectFiles,
   listProjectFiles,
+  onFileImportProgress,
   readProjectFile,
   renameProjectFile,
   writeProjectFile,
@@ -31,52 +35,44 @@ import {
   toggleExpanded,
   type EditorState,
 } from './editor/tabs';
+import {
+  cleanDropPath,
+  collectDroppedItems,
+  directoryPathsForDrop,
+  duplicateDroppedFilePath,
+  type DroppedItems,
+} from './dropImport';
 
 const UPLOAD_CHUNK_BYTES = 512 * 1024;
 const UPLOAD_CANCELLED = 'upload-cancelled';
 
 type UploadStatus = 'queued' | 'uploading' | 'success' | 'failed' | 'cancelled';
 
-interface UploadItem {
+interface BaseUploadItem {
   id: string;
   uploadId: string;
-  file: File;
   path: string;
   uploadedBytes: number;
   sizeBytes: number;
   status: UploadStatus;
   message: string;
+  copiedFiles?: number;
+  totalFiles?: number;
 }
 
-interface DroppedFile {
+interface BrowserUploadItem extends BaseUploadItem {
+  kind: 'browser';
   file: File;
-  relativePath: string;
 }
 
-interface BrowserFileSystemEntry {
-  isFile: boolean;
-  isDirectory: boolean;
-  name: string;
+interface NativeImportItem extends BaseUploadItem {
+  kind: 'native';
+  sourcePaths: string[];
+  targetDirectory: string;
 }
 
-interface BrowserFileSystemFileEntry extends BrowserFileSystemEntry {
-  file(success: (file: File) => void, failure: (error: DOMException) => void): void;
-}
-
-interface BrowserFileSystemDirectoryEntry extends BrowserFileSystemEntry {
-  createReader(): BrowserFileSystemDirectoryReader;
-}
-
-interface BrowserFileSystemDirectoryReader {
-  readEntries(
-    success: (entries: BrowserFileSystemEntry[]) => void,
-    failure: (error: DOMException) => void,
-  ): void;
-}
-
-type DataTransferItemWithEntries = DataTransferItem & {
-  webkitGetAsEntry?: () => BrowserFileSystemEntry | null;
-};
+type UploadItem = BrowserUploadItem | NativeImportItem;
+type UploadPatch = Partial<BaseUploadItem>;
 
 /**
  * Editing a project's files.
@@ -116,6 +112,8 @@ export default function ProjectFiles({
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const cancelledUploads = useRef(new Set<string>());
   const dragDepth = useRef(0);
+  const nativeDragActive = useRef(false);
+  const lastNativeDropAt = useRef(0);
 
   const buffer = activeBuffer(editor);
   const dirty = editor.buffers.filter(isDirty).length;
@@ -139,7 +137,7 @@ export default function ProjectFiles({
     void loadDirectory('');
   }, [loadDirectory]);
 
-  const updateUpload = useCallback((id: string, patch: Partial<UploadItem>) => {
+  const updateUpload = useCallback((id: string, patch: UploadPatch) => {
     setUploads((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }, []);
 
@@ -157,8 +155,16 @@ export default function ProjectFiles({
     [loadDirectory],
   );
 
+  const refreshImportedEntries = useCallback(
+    async (entries: FileEntry[], directory: string) => {
+      await Promise.all(entries.map((entry) => refreshUploadedPath(entry.path)));
+      await loadDirectory(directory);
+    },
+    [loadDirectory, refreshUploadedPath],
+  );
+
   const runUpload = useCallback(
-    async (item: UploadItem) => {
+    async (item: BrowserUploadItem) => {
       const throwIfCancelled = () => {
         if (cancelledUploads.current.has(item.id)) {
           throw new Error(UPLOAD_CANCELLED);
@@ -226,14 +232,91 @@ export default function ProjectFiles({
     [project.id, refreshUploadedPath, updateUpload],
   );
 
-  const queueUploads = useCallback(
-    (files: DroppedFile[]) => {
-      const queued = files
+  const runNativeImport = useCallback(
+    async (item: NativeImportItem) => {
+      updateUpload(item.id, {
+        status: 'uploading',
+        uploadedBytes: 0,
+        sizeBytes: 0,
+        copiedFiles: 0,
+        totalFiles: 0,
+        message: 'Preparing import...',
+      });
+
+      try {
+        const imported = await importProjectFiles(
+          project.id,
+          item.targetDirectory,
+          item.sourcePaths,
+          item.uploadId,
+        );
+        updateUpload(item.id, {
+          status: 'success',
+          message: 'Imported successfully.',
+        });
+        setNotice(
+          `Imported ${imported.length} item${imported.length === 1 ? '' : 's'} into ${displayDirectory(item.targetDirectory)}.`,
+        );
+        await refreshImportedEntries(imported, item.targetDirectory);
+      } catch (error) {
+        const message = errorMessage(error);
+        if (cancelledUploads.current.has(item.id) || message.toLowerCase().includes('cancelled')) {
+          updateUpload(item.id, { status: 'cancelled', message: 'Import cancelled.' });
+          return;
+        }
+        updateUpload(item.id, { status: 'failed', message });
+      }
+    },
+    [project.id, refreshImportedEntries, updateUpload],
+  );
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let active = true;
+
+    void onFileImportProgress((progress) => {
+      if (progress.projectId !== project.id) return;
+      updateUpload(progress.importId, {
+        uploadedBytes: progress.copiedBytes,
+        sizeBytes: progress.totalBytes,
+        copiedFiles: progress.copiedFiles,
+        totalFiles: progress.totalFiles,
+        message: progress.currentPath
+          ? `Importing ${progress.currentPath}...`
+          : 'Preparing import...',
+      });
+    })
+      .then((nextUnlisten) => {
+        if (active) {
+          unlisten = nextUnlisten;
+        } else {
+          nextUnlisten();
+        }
+      })
+      .catch((error) => setFailure(errorMessage(error)));
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [project.id, updateUpload]);
+
+  const queueBrowserDrop = useCallback(
+    (dropped: DroppedItems) => {
+      const duplicate = duplicateDroppedFilePath(dropped.files);
+      if (duplicate) {
+        setFailure(`Drop contains duplicate file path "${duplicate}". Rename one and try again.`);
+        return;
+      }
+
+      const directories = directoryPathsForDrop(dropped.files, dropped.directories);
+      const queued = dropped.files
         .map((dropped) => {
           const relativePath = cleanDropPath(dropped.relativePath);
           if (!relativePath) return null;
           const id = createUploadId();
-          const item: UploadItem = {
+          const item: BrowserUploadItem = {
+            kind: 'browser',
             id,
             uploadId: id,
             file: dropped.file,
@@ -245,21 +328,73 @@ export default function ProjectFiles({
           };
           return item;
         })
-        .filter((item): item is UploadItem => item !== null);
+        .filter((item): item is BrowserUploadItem => item !== null);
 
-      if (queued.length === 0) {
+      if (queued.length === 0 && directories.length === 0) {
         setNotice('No files were found in that drop.');
         return;
       }
 
       setFailure(null);
       setNotice(
-        `Uploading ${queued.length} file${queued.length === 1 ? '' : 's'} to ${displayDirectory(selectedDirectory)}.`,
+        `Importing ${queued.length + directories.length} item${queued.length + directories.length === 1 ? '' : 's'} into ${displayDirectory(selectedDirectory)}.`,
       );
-      setUploads((current) => [...current, ...queued]);
-      for (const item of queued) void runUpload(item);
+
+      void (async () => {
+        try {
+          for (const directory of directories) {
+            await createProjectFile(project.id, childPath(selectedDirectory, directory), true);
+          }
+
+          if (queued.length > 0) {
+            setUploads((current) => [...current, ...queued]);
+            for (const item of queued) void runUpload(item);
+          } else {
+            setNotice(
+              `Created ${directories.length} folder${directories.length === 1 ? '' : 's'} in ${displayDirectory(selectedDirectory)}.`,
+            );
+          }
+          await loadDirectory(selectedDirectory);
+        } catch (error) {
+          setFailure(errorMessage(error));
+        }
+      })();
     },
-    [runUpload, selectedDirectory],
+    [loadDirectory, project.id, runUpload, selectedDirectory],
+  );
+
+  const queueNativeImport = useCallback(
+    (paths: string[]) => {
+      const sourcePaths = [...new Set(paths.filter((path) => path.trim().length > 0))];
+      if (sourcePaths.length === 0) {
+        setNotice('No files or folders were found in that drop.');
+        return;
+      }
+
+      const id = createUploadId();
+      const item: NativeImportItem = {
+        kind: 'native',
+        id,
+        uploadId: id,
+        sourcePaths,
+        targetDirectory: selectedDirectory,
+        path: nativeImportLabel(sourcePaths, selectedDirectory),
+        uploadedBytes: 0,
+        sizeBytes: 0,
+        copiedFiles: 0,
+        totalFiles: 0,
+        status: 'queued',
+        message: 'Waiting to import...',
+      };
+
+      setFailure(null);
+      setNotice(
+        `Importing ${sourcePaths.length} item${sourcePaths.length === 1 ? '' : 's'} into ${displayDirectory(selectedDirectory)}.`,
+      );
+      setUploads((current) => [...current, item]);
+      void runNativeImport(item);
+    },
+    [runNativeImport, selectedDirectory],
   );
 
   const handleDrop = useCallback(
@@ -268,14 +403,60 @@ export default function ProjectFiles({
       dragDepth.current = 0;
       setDraggingOver(false);
 
+      if (nativeDragActive.current || Date.now() - lastNativeDropAt.current < 1000) {
+        return;
+      }
+
       try {
-        queueUploads(await collectDroppedFiles(event.dataTransfer));
+        queueBrowserDrop(await collectDroppedItems(event.dataTransfer));
       } catch (error) {
         setFailure(errorMessage(error));
       }
     },
-    [queueUploads],
+    [queueBrowserDrop],
   );
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let active = true;
+
+    void getCurrentWebviewWindow()
+      .onDragDropEvent((event) => {
+        switch (event.payload.type) {
+          case 'enter':
+          case 'over':
+            nativeDragActive.current = true;
+            dragDepth.current = 1;
+            setDraggingOver(true);
+            break;
+          case 'drop':
+            nativeDragActive.current = false;
+            lastNativeDropAt.current = Date.now();
+            dragDepth.current = 0;
+            setDraggingOver(false);
+            queueNativeImport(event.payload.paths);
+            break;
+          case 'leave':
+            nativeDragActive.current = false;
+            dragDepth.current = 0;
+            setDraggingOver(false);
+            break;
+        }
+      })
+      .then((nextUnlisten) => {
+        if (active) {
+          unlisten = nextUnlisten;
+        } else {
+          nextUnlisten();
+        }
+      })
+      .catch((error) => setFailure(errorMessage(error)));
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [queueNativeImport]);
 
   function handleDragEnter(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
@@ -297,8 +478,12 @@ export default function ProjectFiles({
   const cancelUpload = useCallback(
     (item: UploadItem) => {
       cancelledUploads.current.add(item.id);
-      updateUpload(item.id, { status: 'cancelled', message: 'Cancelling upload...' });
-      void cancelProjectFileUpload(project.id, item.path, item.uploadId).catch((error) => {
+      updateUpload(item.id, { status: 'cancelled', message: 'Cancelling transfer...' });
+      const cancel =
+        item.kind === 'native'
+          ? cancelProjectFileImport(item.uploadId)
+          : cancelProjectFileUpload(project.id, item.path, item.uploadId);
+      void cancel.catch((error) => {
         updateUpload(item.id, { status: 'failed', message: errorMessage(error) });
       });
     },
@@ -307,18 +492,28 @@ export default function ProjectFiles({
 
   const retryUpload = useCallback(
     (item: UploadItem) => {
-      const next = {
+      const uploadId = createUploadId();
+      const next: UploadItem = {
         ...item,
-        uploadId: createUploadId(),
+        id: uploadId,
+        uploadId,
         uploadedBytes: 0,
+        sizeBytes: item.kind === 'native' ? 0 : item.sizeBytes,
+        copiedFiles: item.kind === 'native' ? 0 : item.copiedFiles,
+        totalFiles: item.kind === 'native' ? 0 : item.totalFiles,
         status: 'queued' as const,
-        message: 'Waiting to upload...',
+        message: item.kind === 'native' ? 'Waiting to import...' : 'Waiting to upload...',
       };
       cancelledUploads.current.delete(item.id);
+      cancelledUploads.current.delete(item.uploadId);
       setUploads((current) => current.map((upload) => (upload.id === item.id ? next : upload)));
-      void runUpload(next);
+      if (next.kind === 'native') {
+        void runNativeImport(next);
+      } else {
+        void runUpload(next);
+      }
     },
-    [runUpload],
+    [runNativeImport, runUpload],
   );
 
   async function open(entry: FileEntry) {
@@ -856,8 +1051,11 @@ function UploadList({
             <div key={item.id} className="rounded-lg border border-edge bg-surface/80 p-2">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-[11px] text-neutral-200" title={item.path}>
-                    {item.path}
+                  <p
+                    className="truncate font-mono text-[11px] text-neutral-200"
+                    title={uploadPathTitle(item)}
+                  >
+                    {uploadPathLabel(item)}
                   </p>
                   <p className={`mt-0.5 ${uploadTextClass(item.status)}`}>{item.message}</p>
                 </div>
@@ -889,9 +1087,7 @@ function UploadList({
               <div className="mt-1 flex items-center gap-2 text-[11px] text-neutral-500">
                 <span>{uploadStatusLabel(item.status)}</span>
                 <span className="flex-1" />
-                <span>
-                  {formatUploadBytes(item.uploadedBytes)} / {formatUploadBytes(item.sizeBytes)}
-                </span>
+                <span>{uploadProgressLabel(item)}</span>
               </div>
             </div>
           );
@@ -901,75 +1097,17 @@ function UploadList({
   );
 }
 
-async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<DroppedFile[]> {
-  const dropped: DroppedFile[] = [];
-  const items = Array.from(dataTransfer.items);
-
-  if (items.length > 0) {
-    for (const item of items) {
-      if (item.kind !== 'file') continue;
-      const entry = (item as DataTransferItemWithEntries).webkitGetAsEntry?.();
-      if (entry) {
-        dropped.push(...(await collectEntryFiles(entry, '')));
-        continue;
-      }
-
-      const file = item.getAsFile();
-      if (file) dropped.push({ file, relativePath: file.webkitRelativePath || file.name });
-    }
-    if (dropped.length > 0) return dropped;
+function nativeImportLabel(paths: string[], targetDirectory: string): string {
+  const [firstPath] = paths;
+  if (paths.length === 1 && firstPath) {
+    return childPath(targetDirectory, fileNameFromNativePath(firstPath));
   }
-
-  return Array.from(dataTransfer.files).map((file) => ({
-    file,
-    relativePath: file.webkitRelativePath || file.name,
-  }));
+  return `${paths.length} items -> ${displayDirectory(targetDirectory)}`;
 }
 
-async function collectEntryFiles(
-  entry: BrowserFileSystemEntry,
-  prefix: string,
-): Promise<DroppedFile[]> {
-  const relativePath = childPath(prefix, entry.name);
-  if (entry.isFile) {
-    const file = await fileFromEntry(entry as BrowserFileSystemFileEntry);
-    return [{ file, relativePath }];
-  }
-  if (!entry.isDirectory) return [];
-
-  const childEntries = await readAllEntries(entry as BrowserFileSystemDirectoryEntry);
-  const nested = await Promise.all(
-    childEntries.map((child) => collectEntryFiles(child, relativePath)),
-  );
-  return nested.flat();
-}
-
-function fileFromEntry(entry: BrowserFileSystemFileEntry): Promise<File> {
-  return new Promise((resolve, reject) => entry.file(resolve, reject));
-}
-
-async function readAllEntries(
-  entry: BrowserFileSystemDirectoryEntry,
-): Promise<BrowserFileSystemEntry[]> {
-  const reader = entry.createReader();
-  const entries: BrowserFileSystemEntry[] = [];
-
-  while (true) {
-    const batch = await new Promise<BrowserFileSystemEntry[]>((resolve, reject) =>
-      reader.readEntries(resolve, reject),
-    );
-    if (batch.length === 0) return entries;
-    entries.push(...batch);
-  }
-}
-
-function cleanDropPath(path: string): string {
-  return path
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0 && part !== '.')
-    .join('/');
+function fileNameFromNativePath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized.split('/').pop() || path;
 }
 
 function createUploadId(): string {
@@ -979,6 +1117,23 @@ function createUploadId(): string {
 
 function displayDirectory(path: string): string {
   return path ? `/${path}` : '/ (project root)';
+}
+
+function uploadPathLabel(item: UploadItem): string {
+  return item.path;
+}
+
+function uploadPathTitle(item: UploadItem): string {
+  if (item.kind === 'native') return item.sourcePaths.join('\n');
+  return item.path;
+}
+
+function uploadProgressLabel(item: UploadItem): string {
+  const byteProgress = `${formatUploadBytes(item.uploadedBytes)} / ${formatUploadBytes(item.sizeBytes)}`;
+  if (item.kind !== 'native') return byteProgress;
+  const copiedFiles = item.copiedFiles ?? 0;
+  const totalFiles = item.totalFiles ?? 0;
+  return `${copiedFiles} / ${totalFiles} files · ${byteProgress}`;
 }
 
 function uploadPercent(item: UploadItem): number {

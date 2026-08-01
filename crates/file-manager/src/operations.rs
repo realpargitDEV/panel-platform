@@ -9,13 +9,13 @@
 //!
 //! Symbolic links are never followed. On Windows that also covers junctions and
 //! mount points, which `symlink_metadata` reports as reparse points. A link
-//! inside a project is listed, and is refused as the target of anything else —
+//! inside a project is listed, and is refused as the target of anything else â€”
 //! following one is the cheapest way out of a sandbox and there is no legitimate
 //! use for it in a project directory the product itself manages.
 
-use std::collections::VecDeque;
-use std::io::{Seek, SeekFrom, Write};
-use std::path::Path;
+use std::collections::{HashSet, VecDeque};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::safe_path::{PathError, SafePath};
@@ -123,6 +123,24 @@ pub struct Listing {
     pub truncated: bool,
 }
 
+/// Progress for a local filesystem import.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalImportProgress {
+    pub copied_bytes: u64,
+    pub total_bytes: u64,
+    pub copied_files: u64,
+    pub total_files: u64,
+    pub current_path: String,
+}
+
+/// What a completed local filesystem import placed into the project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalImportReport {
+    pub entries: Vec<FileEntry>,
+    pub total_files: u64,
+    pub total_bytes: u64,
+}
+
 /// The content of a text file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextFile {
@@ -208,7 +226,7 @@ fn require_kind(safe: &SafePath, expected: EntryKind) -> Result<std::fs::Metadat
     }
 }
 
-/// List one directory. Directories first, then files, each alphabetically —
+/// List one directory. Directories first, then files, each alphabetically â€”
 /// stable ordering matters because the client renders this without re-sorting.
 pub fn list_directory(
     root: &Path,
@@ -635,7 +653,7 @@ fn unique_suffix() -> String {
         .replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "")
 }
 
-/// Create an empty file. Fails if anything is already there — an explorer's
+/// Create an empty file. Fails if anything is already there â€” an explorer's
 /// "new file" must never silently truncate.
 pub fn create_file(root: &Path, relative: &str) -> Result<FileEntry, FileError> {
     let safe = resolve(root, relative)?;
@@ -670,7 +688,7 @@ pub fn delete(root: &Path, relative: &str, recursive: bool) -> Result<(), FileEr
     let safe = match resolve(root, relative) {
         Ok(safe) => safe,
         // A link out of the project fails the containment check, but removing
-        // the link never touches what it points at — and the listing shows it,
+        // the link never touches what it points at â€” and the listing shows it,
         // so refusing would leave an entry that cannot be got rid of. The
         // fallback is deliberately narrow: only a symlink takes it, and
         // anything else still escapes.
@@ -733,7 +751,7 @@ pub fn delete(root: &Path, relative: &str, recursive: bool) -> Result<(), FileEr
 /// Rename within the same parent directory.
 ///
 /// `new_name` is a single component, validated by joining it to the parent
-/// through [`SafePath`] — so `../elsewhere` is refused by the same rule that
+/// through [`SafePath`] â€” so `../elsewhere` is refused by the same rule that
 /// refuses it everywhere else, rather than by an ad-hoc check here.
 pub fn rename(root: &Path, relative: &str, new_name: &str) -> Result<FileEntry, FileError> {
     if new_name.contains('/') || new_name.contains('\\') {
@@ -880,6 +898,409 @@ fn copy_tree(source: &Path, destination: &Path, limits: &FileLimits) -> Result<(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PlannedImportKind {
+    Directory,
+    File { size: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlannedImport {
+    source: PathBuf,
+    relative: String,
+    kind: PlannedImportKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ImportPlan {
+    entries: Vec<PlannedImport>,
+    top_level_destinations: Vec<String>,
+    total_files: u64,
+    total_bytes: u64,
+}
+
+/// Import files or directories from the host filesystem into a project.
+///
+/// The import is staged inside the project first, then renamed into place only
+/// after every source path has been copied. Existing destinations are refused
+/// before staging begins, duplicate destination paths are refused before any
+/// bytes are written, and a cancelled or failed import removes its staging
+/// directory so half-copied files do not appear in the explorer.
+pub fn import_local_paths<P, F, C>(
+    root: &Path,
+    destination_directory: &str,
+    source_paths: &[P],
+    import_id: &str,
+    limits: &FileLimits,
+    mut progress: F,
+    cancelled: C,
+) -> Result<LocalImportReport, FileError>
+where
+    P: AsRef<Path>,
+    F: FnMut(LocalImportProgress),
+    C: Fn() -> bool,
+{
+    validate_upload_id(import_id)?;
+    let plan = plan_local_import(root, destination_directory, source_paths, limits)?;
+    let stage = resolve(root, &format!(".project-host-import-{import_id}"))?;
+
+    if std::fs::symlink_metadata(stage.absolute()).is_ok() {
+        return Err(FileError::AlreadyExists(stage.relative().to_string()));
+    }
+    std::fs::create_dir(stage.absolute()).map_err(FileError::io)?;
+
+    progress(LocalImportProgress {
+        copied_bytes: 0,
+        total_bytes: plan.total_bytes,
+        copied_files: 0,
+        total_files: plan.total_files,
+        current_path: String::new(),
+    });
+
+    let result = copy_and_commit_import(root, stage.absolute(), &plan, &mut progress, &cancelled);
+    let cleanup = std::fs::remove_dir_all(stage.absolute());
+
+    match (result, cleanup) {
+        (Ok(entries), Ok(())) => Ok(LocalImportReport {
+            entries,
+            total_files: plan.total_files,
+            total_bytes: plan.total_bytes,
+        }),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(FileError::io(error)),
+    }
+}
+
+fn plan_local_import<P: AsRef<Path>>(
+    root: &Path,
+    destination_directory: &str,
+    source_paths: &[P],
+    limits: &FileLimits,
+) -> Result<ImportPlan, FileError> {
+    if source_paths.is_empty() {
+        return Err(FileError::Refused("no files or folders were provided"));
+    }
+
+    let destination = if destination_directory.is_empty() {
+        SafePath::root(root)?
+    } else {
+        let destination = resolve(root, destination_directory)?;
+        require_kind(&destination, EntryKind::Directory)?;
+        destination
+    };
+
+    let mut entries = Vec::new();
+    let mut top_level_destinations = Vec::new();
+    let mut visited = 0usize;
+    let mut total_files = 0u64;
+    let mut total_bytes = 0u64;
+
+    for source in source_paths {
+        let source = source.as_ref();
+        if !source.is_absolute() {
+            return Err(FileError::Refused("import sources must be absolute paths"));
+        }
+        let metadata = std::fs::symlink_metadata(source).map_err(FileError::io)?;
+        if metadata.is_symlink() {
+            return Err(FileError::Refused("symbolic links cannot be imported"));
+        }
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or(FileError::Refused("source path contains invalid Unicode"))?;
+        let relative = join_relative(destination.relative(), name);
+        top_level_destinations.push(resolve(root, &relative)?.relative().to_string());
+        plan_import_entry(
+            root,
+            source,
+            &relative,
+            metadata,
+            limits,
+            &mut visited,
+            &mut total_files,
+            &mut total_bytes,
+            &mut entries,
+        )?;
+    }
+
+    let mut seen = HashSet::new();
+    for entry in &entries {
+        if !seen.insert(destination_key(&entry.relative)) {
+            return Err(FileError::AlreadyExists(entry.relative.clone()));
+        }
+        let destination = resolve(root, &entry.relative)?;
+        if std::fs::symlink_metadata(destination.absolute()).is_ok() {
+            return Err(FileError::AlreadyExists(destination.relative().to_string()));
+        }
+    }
+
+    Ok(ImportPlan {
+        entries,
+        top_level_destinations,
+        total_files,
+        total_bytes,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_import_entry(
+    root: &Path,
+    source: &Path,
+    relative: &str,
+    metadata: std::fs::Metadata,
+    limits: &FileLimits,
+    visited: &mut usize,
+    total_files: &mut u64,
+    total_bytes: &mut u64,
+    entries: &mut Vec<PlannedImport>,
+) -> Result<(), FileError> {
+    *visited += 1;
+    if *visited > limits.max_walk_entries {
+        return Err(FileError::Refused(
+            "the import contains too many entries to copy",
+        ));
+    }
+
+    if metadata.is_symlink() {
+        return Err(FileError::Refused("symbolic links cannot be imported"));
+    }
+
+    let destination = resolve(root, relative)?;
+    if metadata.is_dir() {
+        entries.push(PlannedImport {
+            source: source.to_path_buf(),
+            relative: destination.relative().to_string(),
+            kind: PlannedImportKind::Directory,
+        });
+
+        for item in std::fs::read_dir(source).map_err(FileError::io)? {
+            let item = item.map_err(FileError::io)?;
+            let child_name = item
+                .file_name()
+                .to_str()
+                .ok_or(FileError::Refused("source path contains invalid Unicode"))?
+                .to_string();
+            let child_relative = join_relative(destination.relative(), &child_name);
+            let child_metadata = std::fs::symlink_metadata(item.path()).map_err(FileError::io)?;
+            plan_import_entry(
+                root,
+                &item.path(),
+                &child_relative,
+                child_metadata,
+                limits,
+                visited,
+                total_files,
+                total_bytes,
+                entries,
+            )?;
+        }
+    } else if metadata.is_file() {
+        if metadata.len() > limits.max_upload_bytes {
+            return Err(FileError::TooLarge {
+                path: destination.relative().to_string(),
+                size: metadata.len(),
+                limit: limits.max_upload_bytes,
+            });
+        }
+        *total_files = total_files.saturating_add(1);
+        *total_bytes = total_bytes
+            .checked_add(metadata.len())
+            .ok_or(FileError::Refused("the import is too large"))?;
+        entries.push(PlannedImport {
+            source: source.to_path_buf(),
+            relative: destination.relative().to_string(),
+            kind: PlannedImportKind::File {
+                size: metadata.len(),
+            },
+        });
+    } else {
+        return Err(FileError::Refused(
+            "only regular files and directories can be imported",
+        ));
+    }
+
+    Ok(())
+}
+
+fn copy_and_commit_import<F, C>(
+    root: &Path,
+    stage_root: &Path,
+    plan: &ImportPlan,
+    progress: &mut F,
+    cancelled: &C,
+) -> Result<Vec<FileEntry>, FileError>
+where
+    F: FnMut(LocalImportProgress),
+    C: Fn() -> bool,
+{
+    let mut copied_bytes = 0u64;
+    let mut copied_files = 0u64;
+
+    for entry in &plan.entries {
+        refuse_if_cancelled(cancelled)?;
+        let stage_destination = stage_root.join(Path::new(&entry.relative));
+        match entry.kind {
+            PlannedImportKind::Directory => {
+                std::fs::create_dir_all(&stage_destination).map_err(FileError::io)?;
+            }
+            PlannedImportKind::File { size } => {
+                if let Some(parent) = stage_destination.parent() {
+                    std::fs::create_dir_all(parent).map_err(FileError::io)?;
+                }
+                copy_file_with_progress(
+                    &entry.source,
+                    &stage_destination,
+                    &entry.relative,
+                    size,
+                    &mut copied_bytes,
+                    &mut copied_files,
+                    plan,
+                    progress,
+                    cancelled,
+                )?;
+            }
+        }
+    }
+
+    refuse_if_cancelled(cancelled)?;
+    commit_staged_import(root, stage_root, plan)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn copy_file_with_progress<F, C>(
+    source: &Path,
+    destination: &Path,
+    relative: &str,
+    size: u64,
+    copied_bytes: &mut u64,
+    copied_files: &mut u64,
+    plan: &ImportPlan,
+    progress: &mut F,
+    cancelled: &C,
+) -> Result<(), FileError>
+where
+    F: FnMut(LocalImportProgress),
+    C: Fn() -> bool,
+{
+    const COPY_BUFFER_BYTES: usize = 1024 * 1024;
+
+    let mut from = std::fs::File::open(source).map_err(FileError::io)?;
+    let mut to = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(FileError::io)?;
+    let mut buffer = vec![0; COPY_BUFFER_BYTES];
+
+    loop {
+        refuse_if_cancelled(cancelled)?;
+        let read = from.read(&mut buffer).map_err(FileError::io)?;
+        if read == 0 {
+            break;
+        }
+        let chunk = buffer
+            .get(..read)
+            .ok_or(FileError::Refused("the import chunk was invalid"))?;
+        to.write_all(chunk).map_err(FileError::io)?;
+        *copied_bytes = copied_bytes.saturating_add(read as u64);
+        progress(LocalImportProgress {
+            copied_bytes: *copied_bytes,
+            total_bytes: plan.total_bytes,
+            copied_files: *copied_files,
+            total_files: plan.total_files,
+            current_path: relative.to_string(),
+        });
+    }
+
+    if size == 0 {
+        progress(LocalImportProgress {
+            copied_bytes: *copied_bytes,
+            total_bytes: plan.total_bytes,
+            copied_files: *copied_files,
+            total_files: plan.total_files,
+            current_path: relative.to_string(),
+        });
+    }
+
+    *copied_files = copied_files.saturating_add(1);
+    progress(LocalImportProgress {
+        copied_bytes: *copied_bytes,
+        total_bytes: plan.total_bytes,
+        copied_files: *copied_files,
+        total_files: plan.total_files,
+        current_path: relative.to_string(),
+    });
+    Ok(())
+}
+
+fn commit_staged_import(
+    root: &Path,
+    stage_root: &Path,
+    plan: &ImportPlan,
+) -> Result<Vec<FileEntry>, FileError> {
+    let mut moved = Vec::new();
+
+    for relative in &plan.top_level_destinations {
+        let source = stage_root.join(Path::new(relative));
+        let destination = resolve(root, relative)?;
+        if let Some(parent) = destination.absolute().parent() {
+            std::fs::create_dir_all(parent).map_err(FileError::io)?;
+        }
+        if let Err(error) = std::fs::rename(&source, destination.absolute()) {
+            rollback_import(&moved);
+            return Err(FileError::io(error));
+        }
+        moved.push(destination.absolute().to_path_buf());
+    }
+
+    plan.top_level_destinations
+        .iter()
+        .map(|relative| {
+            let destination = resolve(root, relative)?;
+            entry_from(
+                destination.relative(),
+                &name_of(destination.relative()),
+                destination.absolute(),
+            )
+        })
+        .collect()
+}
+
+fn rollback_import(paths: &[PathBuf]) {
+    for path in paths.iter().rev() {
+        let removal = std::fs::symlink_metadata(path)
+            .map(|metadata| {
+                if metadata.is_dir() && !metadata.is_symlink() {
+                    std::fs::remove_dir_all(path)
+                } else {
+                    std::fs::remove_file(path)
+                }
+            })
+            .unwrap_or(Ok(()));
+        let _ = removal;
+    }
+}
+
+fn refuse_if_cancelled<C: Fn() -> bool>(cancelled: &C) -> Result<(), FileError> {
+    if cancelled() {
+        Err(FileError::Refused("import cancelled"))
+    } else {
+        Ok(())
+    }
+}
+
+fn join_relative(parent: &str, child: &str) -> String {
+    if parent.is_empty() {
+        child.to_string()
+    } else {
+        format!("{parent}/{child}")
+    }
+}
+
+fn destination_key(relative: &str) -> String {
+    relative.to_ascii_lowercase()
 }
 
 /// Search filenames beneath a directory.
@@ -1121,9 +1542,9 @@ mod tests {
     #[test]
     fn utf8_text_with_accents_is_not_mistaken_for_binary() {
         let p = project();
-        std::fs::write(p.root.join("notes.md"), "café — naïve ✅\n").expect("write");
+        std::fs::write(p.root.join("notes.md"), "cafÃ© â€” naÃ¯ve âœ…\n").expect("write");
         let file = read_text_file(&p.root, "notes.md", &limits()).expect("read");
-        assert!(file.text.contains("café"));
+        assert!(file.text.contains("cafÃ©"));
     }
 
     #[test]
@@ -1344,6 +1765,97 @@ mod tests {
         assert!(p.root.join("copy/app.ts").is_file());
         assert!(p.root.join("copy/deep/x.js").is_file());
         assert!(p.root.join("src/app.ts").is_file(), "source must remain");
+    }
+
+    #[test]
+    fn importing_a_local_directory_preserves_nested_files_and_empty_folders() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("My Build");
+        std::fs::create_dir_all(source_root.join("dist/assets/empty folder")).expect("dirs");
+        std::fs::write(source_root.join("dist/assets/café file.txt"), "hello").expect("write");
+        std::fs::write(source_root.join("package.json"), "{}").expect("write");
+
+        let mut progress = Vec::new();
+        let report = import_local_paths(
+            &p.root,
+            "",
+            std::slice::from_ref(&source_root),
+            "import-1",
+            &limits(),
+            |event| progress.push(event),
+            || false,
+        )
+        .expect("import");
+
+        assert_eq!(report.entries.len(), 1);
+        assert_eq!(report.entries[0].path, "My Build");
+        assert_eq!(report.total_files, 2);
+        assert_eq!(report.total_bytes, 7);
+        assert!(p.root.join("My Build/dist/assets/empty folder").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("My Build/dist/assets/café file.txt"))
+                .expect("read"),
+            "hello",
+        );
+        assert_eq!(progress.last().expect("progress").copied_files, 2);
+        assert_eq!(progress.last().expect("progress").copied_bytes, 7);
+    }
+
+    #[test]
+    fn importing_onto_an_existing_path_is_refused_before_copying() {
+        let p = project();
+        let source = p.root.parent().expect("parent").join("index.js");
+        std::fs::write(&source, "replacement").expect("write");
+
+        assert!(matches!(
+            import_local_paths(
+                &p.root,
+                "",
+                &[source],
+                "import-2",
+                &limits(),
+                |_| {},
+                || false
+            ),
+            Err(FileError::AlreadyExists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("index.js")).expect("read"),
+            "console.log('hi');\n",
+        );
+        assert!(!p.root.join(".project-host-import-import-2").exists());
+    }
+
+    #[test]
+    fn cancelling_a_local_import_removes_staged_files() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let p = project();
+        let source = p.root.parent().expect("parent").join("large.bin");
+        std::fs::write(&source, vec![7u8; 2 * 1024 * 1024]).expect("write");
+        let saw_progress = Rc::new(Cell::new(false));
+        let progress_flag = Rc::clone(&saw_progress);
+        let cancel_flag = Rc::clone(&saw_progress);
+
+        assert!(matches!(
+            import_local_paths(
+                &p.root,
+                "",
+                &[source],
+                "import-3",
+                &limits(),
+                move |event| {
+                    if event.copied_bytes > 0 {
+                        progress_flag.set(true);
+                    }
+                },
+                move || cancel_flag.get(),
+            ),
+            Err(FileError::Refused("import cancelled"))
+        ));
+        assert!(!p.root.join("large.bin").exists());
+        assert!(!p.root.join(".project-host-import-import-3").exists());
     }
 
     #[test]
