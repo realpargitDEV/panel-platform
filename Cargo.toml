@@ -8,6 +8,7 @@ members = [
     "crates/docker-manager",
     "crates/file-manager",
     "crates/project-manager",
+    "crates/host-runner",
     "crates/discord",
     "crates/updater",
     "crates/app-core",

@@ -350,7 +350,12 @@ fn quoted_arguments_survive_splitting() {
 
 - Produces: `ProcessGroup::spawn(command: ProcessCommand) -> io::Result<GroupedChild>`, `GroupedChild::{terminate(grace), kill(), id(), wait()}`.
 
-Windows uses a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; Unix uses `setsid` at spawn and `kill(-pgid, …)` at stop. Both `#[cfg]` blocks live in this file and nowhere else.
+**The workspace sets `unsafe_code = "forbid"`, which `allow` cannot downgrade, and there is no `unsafe` anywhere in the tree.** Use the safe APIs only:
+
+- Windows: `std::os::windows::process::CommandExt::creation_flags(CREATE_NEW_PROCESS_GROUP)` at spawn; end the tree with `taskkill /T /F /PID <pid>`.
+- Unix: `std::os::unix::process::CommandExt::process_group(0)` at spawn (stable since 1.64), then signal the group through a safe wrapper.
+
+Both `#[cfg]` blocks live in this file and nowhere else.
 
 - [ ] **Step 1:** Test that a spawned child that itself spawns a grandchild leaves no survivor after `kill()`. Windows-verifiable; the Unix arm is `#[cfg(unix)]` and marked unverified in the module doc.
 - [ ] **Step 2–5:** Run, implement, run, commit.

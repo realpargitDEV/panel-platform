@@ -188,9 +188,22 @@ port, and the next start then fails with a port conflict that has no visible
 cause. Every host child is therefore spawned as a process-group leader and
 terminated as a group:
 
-- **Windows** — a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, which is
-  also where the memory limit goes
-- **Unix** — `setsid()` at spawn, `kill(-pgid, …)` at stop
+**The workspace forbids `unsafe`.** `Cargo.toml` sets
+`unsafe_code = "forbid"` for every crate, there is not one `unsafe` block in the
+tree, and `forbid` cannot be downgraded by an `allow` at the crate or module
+level. Raw Job Object and `setsid` calls are therefore not available, and any
+design that reaches for them is wrong for this codebase rather than merely
+unfashionable. What is available is safe and sufficient:
+
+- **Windows** — `CommandExt::creation_flags(CREATE_NEW_PROCESS_GROUP)` at spawn,
+  and `taskkill /T /F /PID` to end the tree. Both are safe std or subprocess
+  calls.
+- **Unix** — `CommandExt::process_group(0)` at spawn, stable since Rust 1.64 and
+  safe, then signalling the group through a safe wrapper rather than raw `libc`.
+
+The memory limit in §14 is affected by the same rule: a Job Object memory cap
+needs `unsafe`, so on Windows it is either dropped or moved behind a crate that
+encapsulates it. That is a decision for that stage, not this one.
 
 Both live behind a `platform` capability. `docs/platform-support.md` is explicit
 that OS differences live in that crate and nowhere else, and this is exactly the
