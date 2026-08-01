@@ -367,8 +367,191 @@ export async function deleteProjectFile(
   return invoke('delete_project_file', { projectId, path, recursive });
 }
 
+/**
+ * Move an entry somewhere else in the same project.
+ *
+ * Separate from {@link renameProjectFile} because that one takes a single name
+ * and refuses anything with a separator in it, so a rename cannot relocate a
+ * file by accident. This is what the explorer's drag-and-drop uses.
+ */
+export async function moveProjectFile(
+  projectId: string,
+  from: string,
+  to: string,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(await invoke('move_project_file', { projectId, from, to }));
+}
+
+/** Copy an entry within the project — the explorer's "Duplicate". */
+export async function copyProjectFile(
+  projectId: string,
+  from: string,
+  to: string,
+): Promise<FileEntry> {
+  return toCamel<FileEntry>(await invoke('copy_project_file', { projectId, from, to }));
+}
+
 export async function searchProjectFiles(projectId: string, query: string): Promise<FileEntry[]> {
   return toCamel<FileEntry[]>(await invoke('search_project_files', { projectId, query }));
+}
+
+/**
+ * The project's folder on this machine.
+ *
+ * The only absolute path the window ever sees, and it is used for display only:
+ * every command still takes a path relative to the root.
+ */
+export async function projectRootPath(projectId: string): Promise<string> {
+  return invoke('project_root_path', { projectId });
+}
+
+/** Show one file or folder in the system's file manager. */
+export async function revealProjectPath(projectId: string, path: string): Promise<void> {
+  return invoke('reveal_project_path', { projectId, path });
+}
+
+// ------------------------------------------------------------ machine health
+
+/**
+ * What this machine is doing, measured.
+ *
+ * Host-wide rather than per project: reading a container's own CPU and memory
+ * means Docker's stats stream, which the manager does not do yet. These numbers
+ * are real, which is why they are worth showing at all.
+ */
+export interface SystemMetrics {
+  cpuPercent: number;
+  cpuCount: number;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  diskUsedBytes: number;
+  diskTotalBytes: number;
+  diskMount: string;
+}
+
+export async function systemMetrics(): Promise<SystemMetrics> {
+  return toCamel<SystemMetrics>(await invoke('system_metrics'));
+}
+
+/** One line of the audit log the core already writes. */
+export interface ActivityEntry {
+  id: string;
+  occurredAt: string;
+  action: string;
+  result: string;
+  targetType: string | null;
+  targetId: string | null;
+  targetLabel: string | null;
+  errorCode: string | null;
+}
+
+/** Newest first. An empty list means nothing has happened, not that it failed. */
+export async function recentActivity(limit: number, projectId?: string): Promise<ActivityEntry[]> {
+  return toCamel<ActivityEntry[]>(await invoke('recent_activity', { projectId, limit }));
+}
+
+// ----------------------------------------------------------- project details
+
+export interface RuntimeDetail {
+  runtime: string;
+  runtimeVersion: string;
+  packageManager: string;
+  installCommand: string | null;
+  buildCommand: string | null;
+  startCommand: string;
+  workingDir: string;
+  entryFile: string | null;
+  healthCheckType: string;
+  healthCheckTarget: string | null;
+}
+
+export interface PortMapping {
+  containerPort: number;
+  hostPort: number | null;
+  protocol: string;
+}
+
+/**
+ * An environment variable. A secret's value is never sent — the screen shows
+ * that the key exists, not what it holds.
+ */
+export interface EnvVarSummary {
+  key: string;
+  isSecret: boolean;
+  restartRequired: boolean;
+  value: string | null;
+}
+
+export interface ProjectDetail {
+  id: string;
+  slug: string;
+  displayName: string;
+  description: string;
+  projectType: string;
+  status: string;
+  desiredState: string;
+  health: string;
+  runMode: string;
+  restartPolicy: string;
+  networkMode: string;
+  autostart: boolean;
+  directory: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  sourceRef: string | null;
+  sourceCommit: string | null;
+  imageTag: string | null;
+  containerName: string | null;
+  memoryLimitMb: number;
+  cpuLimitCores: number;
+  storageLimitMb: number;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  lastExitCode: number | null;
+  lastFailureAt: string | null;
+  lastFailureReason: string | null;
+  restartCount: number;
+  createdAt: string;
+  updatedAt: string;
+  runtime: RuntimeDetail | null;
+  ports: PortMapping[];
+  envVars: EnvVarSummary[];
+}
+
+export async function projectDetails(projectId: string): Promise<ProjectDetail> {
+  return toCamel<ProjectDetail>(await invoke('project_details', { projectId }));
+}
+
+export interface DeploymentSummary {
+  id: string;
+  deploymentType: string;
+  status: string;
+  imageTag: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+}
+
+export async function projectDeployments(
+  projectId: string,
+  limit: number,
+): Promise<DeploymentSummary[]> {
+  return toCamel<DeploymentSummary[]>(await invoke('project_deployments', { projectId, limit }));
+}
+
+/** Starts, stops and crashes — the restart history. */
+export interface ContainerEvent {
+  id: string;
+  eventType: string;
+  exitCode: number | null;
+  detail: string | null;
+  occurredAt: string;
+}
+
+export async function projectEvents(projectId: string, limit: number): Promise<ContainerEvent[]> {
+  return toCamel<ContainerEvent[]>(await invoke('project_events', { projectId, limit }));
 }
 
 export interface AppSettings {

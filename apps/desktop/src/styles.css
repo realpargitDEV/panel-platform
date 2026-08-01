@@ -1,15 +1,70 @@
 @import 'tailwindcss';
 
-/* The palette is blue-tinted, not neutral: the canvas is a very dark navy and
-   the cards sit only a shade above it, with borders low enough in contrast to
-   read as edges rather than lines. */
+/* ==========================================================================
+   Design tokens
+   ==========================================================================
+
+   One neutral charcoal ramp, one blue accent, and three status colours. Every
+   surface in the application is a step on the ramp, so "which layer am I on?"
+   is answerable by eye rather than by reading the class list.
+
+   The ramp is deliberately not black. Pure black against a dark grey card
+   makes the card look like a hole; a charcoal canvas lets a surface sit on top
+   of it with a 1px border and read as raised.
+
+   Spacing is the 8px system throughout. Tailwind's scale is 4px per step, so
+   the sizes used across the application are the even ones: 2 (8px), 3 (12px),
+   4 (16px), 6 (24px), 8 (32px). Odd steps appear only inside controls, where
+   4px of optical padding is the difference between cramped and correct. */
 @theme {
-  --color-accent: #2f6bff;
-  --color-accent-soft: #1d3a8a;
-  --color-canvas: #080b12;
-  --color-surface: #0f1420;
-  --color-raised: #141b2b;
-  --color-edge: #1c2438;
+  /* Surfaces, darkest first. */
+  --color-canvas: #0e0e10;
+  --color-surface: #16161a;
+  --color-raised: #1c1c21;
+  --color-overlay: #212127;
+  --color-edge: #26262d;
+  --color-edge-strong: #35353e;
+
+  /* Text, brightest first. */
+  --color-ink: #e8e8ec;
+  --color-muted: #9d9da8;
+  --color-faint: #6e6e79;
+
+  /* One accent. Used for the primary action, the active nav item, focus rings
+     and links — and nothing else, so it always means "this one". */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2f74e6;
+  --color-accent-soft: #17233c;
+
+  /* Status. Red is reserved for errors and destructive actions; a stopped
+     project is neutral, not red, because stopping one is normal. */
+  --color-ok: #22c55e;
+  --color-ok-soft: #10281a;
+  --color-warn: #eab308;
+  --color-warn-soft: #2a2410;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2c1416;
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  /* The editor keeps its own names so the workspace can be reasoned about on
+     its own, but they are now points on the same charcoal ramp — the editor
+     used to be navy and visibly belonged to a different application. */
+  --color-vs-titlebar: #121215;
+  --color-vs-activity: #0e0e10;
+  --color-vs-sidebar: #141417;
+  --color-vs-editor: #161619;
+  --color-vs-tabbar: #121215;
+  --color-vs-panel: #141417;
+  --color-vs-status: #1d4ed8;
+  --color-vs-status-idle: #2f2f38;
+  --color-vs-border: #26262d;
+  --color-vs-selected: #232a38;
+  --color-vs-active: #2b3547;
+  --color-vs-text: #d6d6dc;
+  --color-vs-dim: #8b8b96;
+  --color-vs-badge: #3b82f6;
 }
 
 html,
@@ -20,86 +75,204 @@ body,
 
 body {
   margin: 0;
+  /* Inter when the machine has it, and the platform's own UI face otherwise.
+     Not bundled: a webfont binary in a desktop application is weight added to
+     every install to change the shape of the letters slightly, and the CSP
+     forbids fetching one. */
   font-family:
+    Inter,
     ui-sans-serif,
     system-ui,
     -apple-system,
     'Segoe UI',
+    Roboto,
     sans-serif;
+  font-size: 14px;
+  color: var(--color-ink);
+  background: var(--color-canvas);
   /* Selecting interface text is rarely wanted and makes drags feel broken.
      Anything genuinely readable — paths, ids, log output — opts back in with
      `select-text`. */
   user-select: none;
   -webkit-font-smoothing: antialiased;
-  /* A single very wide, very dim radial behind everything. It stops the large
-     dark areas reading as flat black without being visible as a gradient. */
-  background:
-    radial-gradient(120rem 60rem at 50% -20%, #101a33 0%, transparent 60%), var(--color-canvas);
+  text-rendering: optimizeLegibility;
 }
 
-/* Surfaces get a barely-there vertical gradient rather than a flat fill, which
-   is what keeps a dark interface from looking like construction paper. */
-.bg-surface {
-  background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.02), transparent 40%);
+/* Tabular figures everywhere a number changes in place, so a counter ticking
+   from 9 to 10 does not shift the text beside it. */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Chrome's default scrollbar is a bright slab against a dark interface. */
+/* --------------------------------------------------------------- scrollbars */
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: #253048 transparent;
+  scrollbar-color: #35353e transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #253048;
+  background: #35353e;
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #33415f;
+  background: #45454f;
   background-clip: content-box;
 }
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
 
-/* Every interactive element eases rather than snapping. 120ms is short enough
-   to feel immediate and long enough to read as deliberate. */
+/* -------------------------------------------------------------- transitions */
+
+/* 160ms: inside the 150–200ms band, and short enough that a hover state feels
+   like a response rather than an animation. */
 button,
 a,
 input,
-[role='button'] {
+select,
+textarea,
+[role='button'],
+[role='tab'],
+[role='option'],
+[role='menuitem'] {
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    box-shadow 160ms ease;
 }
 
-/* Keyboard focus must stay obvious even though the default outline is removed
-   for the mouse — dropping it entirely would make the app unusable without a
-   pointer. */
+/* ------------------------------------------------------------------- focus */
+
+/* Removed for the mouse, obvious for the keyboard. An application that cannot
+   be operated without a pointer is a broken application. */
+:focus {
+  outline: none;
+}
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
-/* Primary actions carry a soft accent glow so they read as raised. */
-.bg-accent:not(:disabled) {
-  box-shadow:
-    0 1px 0 0 rgb(255 255 255 / 0.12) inset,
-    0 6px 20px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
-}
-button.bg-accent:not(:disabled):hover {
-  filter: brightness(1.08);
-}
-button.bg-accent:not(:disabled):active {
-  transform: translateY(1px);
+/* ------------------------------------------------------------- motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
-/* Cards brighten their edge on hover where they are clickable. */
-.card-hover:hover {
-  border-color: #2b3a5c;
+/* ---------------------------------------------------------------- skeleton */
+
+/* A loading placeholder is a shape, not a spinner: it holds the space the real
+   content will take, so the page does not jump when it arrives. */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+.skeleton {
+  background: var(--color-raised);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------ toasts */
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-enter {
+  animation: toast-in 160ms ease-out;
+}
+
+/* ==========================================================================
+   Workspace (the file editor)
+   ========================================================================== */
+
+/* The workspace is a desktop editor, not a document: nothing in it scrolls the
+   page, and every scroll happens inside a pane that owns one. */
+.vs-root {
+  font-size: 13px;
+  color: var(--color-vs-text);
+}
+
+/* An IDE's scrollbars are overlays on the content, not gutters beside it. */
+.vs-root *::-webkit-scrollbar-thumb {
+  background: #3a3a44;
+  border-radius: 0;
+  border: 0;
+}
+.vs-root *::-webkit-scrollbar-thumb:hover {
+  background: #4a4a56;
+}
+
+/* The tab strip scrolls sideways without a visible bar, the way VS Code's
+   does — a horizontal bar across a 35px strip is most of the strip. */
+.vs-tabstrip {
+  scrollbar-width: none;
+}
+.vs-tabstrip::-webkit-scrollbar {
+  height: 0;
+}
+
+/* Transitions in the workspace are shorter than in the rest of the app. A
+   160ms ease on a tree row makes a file manager feel spongy. */
+.vs-root button,
+.vs-root a,
+.vs-root [role='button'],
+.vs-root [role='menuitem'],
+.vs-root [role='treeitem'],
+.vs-root [role='tab'] {
+  transition:
+    background-color 60ms linear,
+    color 60ms linear;
+}
+
+/* A drag over a drop target, and the resize handles. Both are the accent at
+   low opacity rather than a border, so nothing reflows while dragging. */
+.vs-drop-target {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.vs-handle {
+  background-color: transparent;
+  transition: background-color 90ms linear 130ms;
+}
+.vs-handle:hover,
+.vs-handle[data-dragging='true'] {
+  background-color: var(--color-accent);
+  transition-delay: 0ms;
+}
+
+/* Focus in a dense interface is a 1px inset ring, not an offset outline that
+   would overlap the neighbouring row. */
+.vs-root :focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+  border-radius: 0;
 }
