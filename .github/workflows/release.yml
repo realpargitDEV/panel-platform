@@ -105,6 +105,50 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.9
+
+            **The interface has been rebuilt.** The four dashboard-style
+            screens and the two-pane file view are gone, replaced by a
+            project-hosting interface and a proper editor workspace.
+
+            **A dashboard that reports the machine.** Live CPU, memory and disk
+            for the computer the projects run on, measured rather than
+            estimated, alongside project counts, an activity feed and a list of
+            anything that should be running and is not.
+
+            **Projects you can find.** Grid and list views, search, filters by
+            status and runtime, sorting, and start/stop/restart without opening
+            the project first.
+
+            **A project page with everything the application knows.** Seven
+            tabs — state, runtime and commands, deployments, container events,
+            ports, environment variables and limits. Most of this was already
+            recorded and had never been shown: uptime, restart counts, exit
+            codes, failure reasons, port mappings and build history all come
+            from the database as it stands.
+
+            **Creating a project is a four-step wizard.** Source, details,
+            runtime, review. What you type survives changing your mind about
+            where the files come from, errors appear next to the field that
+            caused them, and the review step tells you what will be detected
+            rather than making you guess.
+
+            **An editor that behaves like one.** A file tree with drag-and-drop
+            move and import, tabs with unsaved markers, Monaco with a minimap
+            and find-and-replace, a command palette, and the usual shortcuts.
+            Dropping a file that already exists now offers to replace, keep
+            both or skip, instead of failing.
+
+            **Activity.** Every start, stop, edit and failure the core recorded,
+            grouped by day and filterable.
+
+            Where the application cannot answer a question it now says so
+            rather than showing a convincing zero. Per-project CPU and memory
+            are not measured, there is no console or log collection, and
+            configuration is still read from `config.toml` at startup.
+
+            This release also carries everything in 0.1.7, below.
+
             ## What changed in 0.1.7
 
             **Dragging files and folders from your computer now imports them
@@ -242,9 +286,6 @@ jobs:
             | Windows, for deployment tooling | `Panel.Platform_*_x64_en-US.msi` | Group Policy, Intune |
             | **Debian / Ubuntu** | `Panel.Platform_*_amd64.deb` | **Recommended** |
             | Any other 64-bit Linux | `Panel.Platform_*_amd64.AppImage` | Portable, self-updating |
-
-            An easier front door, which picks the right file for you:
-            **https://realpargitdev.github.io/panel-platform/**
 
             ## Installing
 
