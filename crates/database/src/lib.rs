@@ -52,3 +52,6 @@ pub const REMOTE_SOURCES_MIGRATION: &str = include_str!("../migrations/0003_remo
 
 /// The runtimes migration, which rebuilds `project_runtimes`.
 pub const RUNTIMES_MIGRATION: &str = include_str!("../migrations/0004_runtimes.sql");
+
+/// The run-mode migration, which adds a column rather than rebuilding a table.
+pub const RUN_MODE_MIGRATION: &str = include_str!("../migrations/0005_run_mode.sql");

@@ -40,6 +40,9 @@ import {
   collectDroppedItems,
   directoryPathsForDrop,
   duplicateDroppedFilePath,
+  isInsideDropZone,
+  shouldImportBrowserDrop,
+  type DropPoint,
   type DroppedItems,
 } from './dropImport';
 
@@ -112,8 +115,24 @@ export default function ProjectFiles({
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const cancelledUploads = useRef(new Set<string>());
   const dragDepth = useRef(0);
-  const nativeDragActive = useRef(false);
-  const lastNativeDropAt = useRef(0);
+  /**
+   * Whether Tauri's OS-level drag/drop listener is live. While it is, it owns
+   * every drop and the HTML5 handlers below do nothing — see
+   * `shouldImportBrowserDrop`.
+   */
+  const nativeListenerReady = useRef(false);
+  const explorer = useRef<HTMLElement | null>(null);
+
+  /**
+   * The OS drag/drop event arrives for the whole window, so every native drag
+   * is hit-tested against the explorer here. Anywhere else — the editor, the
+   * header, the tab strip — is not a drop target and the drag is ignored.
+   */
+  const overExplorer = useCallback((position: DropPoint) => {
+    const zone = explorer.current;
+    if (!zone) return false;
+    return isInsideDropZone(position, zone.getBoundingClientRect(), window.devicePixelRatio);
+  }, []);
 
   const buffer = activeBuffer(editor);
   const dirty = editor.buffers.filter(isDirty).length;
@@ -400,12 +419,12 @@ export default function ProjectFiles({
   const handleDrop = useCallback(
     async (event: React.DragEvent<HTMLElement>) => {
       event.preventDefault();
+      // The OS listener has already imported this drop, hit-tested against the
+      // explorer. Doing it again here would import everything twice.
+      if (!shouldImportBrowserDrop(nativeListenerReady.current)) return;
+
       dragDepth.current = 0;
       setDraggingOver(false);
-
-      if (nativeDragActive.current || Date.now() - lastNativeDropAt.current < 1000) {
-        return;
-      }
 
       try {
         queueBrowserDrop(await collectDroppedItems(event.dataTransfer));
@@ -424,20 +443,22 @@ export default function ProjectFiles({
       .onDragDropEvent((event) => {
         switch (event.payload.type) {
           case 'enter':
-          case 'over':
-            nativeDragActive.current = true;
-            dragDepth.current = 1;
-            setDraggingOver(true);
+          case 'over': {
+            const inside = overExplorer(event.payload.position);
+            dragDepth.current = inside ? 1 : 0;
+            setDraggingOver(inside);
             break;
-          case 'drop':
-            nativeDragActive.current = false;
-            lastNativeDropAt.current = Date.now();
+          }
+          case 'drop': {
+            const inside = overExplorer(event.payload.position);
             dragDepth.current = 0;
             setDraggingOver(false);
-            queueNativeImport(event.payload.paths);
+            // Dropped on the editor or the chrome: not a target, and importing
+            // it would be a surprise the user cannot undo.
+            if (inside) queueNativeImport(event.payload.paths);
             break;
+          }
           case 'leave':
-            nativeDragActive.current = false;
             dragDepth.current = 0;
             setDraggingOver(false);
             break;
@@ -446,20 +467,29 @@ export default function ProjectFiles({
       .then((nextUnlisten) => {
         if (active) {
           unlisten = nextUnlisten;
+          nativeListenerReady.current = true;
         } else {
           nextUnlisten();
         }
       })
+      // Registration failing is not fatal: it means this window is not a Tauri
+      // webview, and the HTML5 handlers below take over instead.
       .catch((error) => setFailure(errorMessage(error)));
 
     return () => {
       active = false;
+      nativeListenerReady.current = false;
       unlisten?.();
     };
-  }, [queueNativeImport]);
+  }, [overExplorer, queueNativeImport]);
 
+  // The three below are inert while the OS listener is live, which drives the
+  // highlight itself and hit-tests the pointer properly. `preventDefault` still
+  // runs unconditionally: without it the webview navigates away to the dropped
+  // file, whichever path is doing the importing.
   function handleDragEnter(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
+    if (!shouldImportBrowserDrop(nativeListenerReady.current)) return;
     dragDepth.current += 1;
     setDraggingOver(true);
   }
@@ -471,6 +501,7 @@ export default function ProjectFiles({
 
   function handleDragLeave(event: React.DragEvent<HTMLElement>) {
     event.preventDefault();
+    if (!shouldImportBrowserDrop(nativeListenerReady.current)) return;
     dragDepth.current = Math.max(0, dragDepth.current - 1);
     if (dragDepth.current === 0) setDraggingOver(false);
   }
@@ -666,6 +697,7 @@ export default function ProjectFiles({
       <div className="mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[260px_1fr]">
         {/* ------------------------------------------------------------ tree */}
         <section
+          ref={explorer}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}

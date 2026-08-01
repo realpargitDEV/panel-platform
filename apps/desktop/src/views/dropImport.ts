@@ -63,6 +63,63 @@ export async function collectDroppedItems(dataTransfer: DataTransfer): Promise<D
   };
 }
 
+/**
+ * Should the webview's own drop event import what was dropped?
+ *
+ * A single drop can be delivered twice. Tauri's OS-level drag/drop event always
+ * fires; on macOS and Linux the webview's HTML5 `drop` event fires for the same
+ * gesture as well. (On Windows it never does — the webview only sees HTML5
+ * drag/drop when `dragDropEnabled` is turned off, and it is on.)
+ *
+ * Deciding between the two on elapsed time means the same drop is imported
+ * twice whenever the second delivery is late, and dropped entirely whenever an
+ * unrelated drop follows too quickly. The rule here is a fact rather than a
+ * timing guess: if the OS listener is live it owns every drop, and the HTML5
+ * handler stands down. The HTML5 path is what runs when that listener could not
+ * be registered — outside a Tauri webview, or if registration failed.
+ */
+export function shouldImportBrowserDrop(nativeListenerReady: boolean): boolean {
+  return !nativeListenerReady;
+}
+
+/** A pointer position as Tauri reports it: physical device pixels. */
+export interface DropPoint {
+  x: number;
+  y: number;
+}
+
+/** The part of a `DOMRect` a hit test needs, in CSS pixels. */
+export interface DropZoneRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Is a native drag over the explorer?
+ *
+ * The OS-level drag/drop event Tauri delivers is a *window* event: it fires
+ * wherever the pointer is, including over the editor and the page chrome.
+ * Without this test a folder dropped anywhere in the window is imported into
+ * the project, which is not what dropping onto an editor pane means.
+ *
+ * Tauri reports the position in physical device pixels while
+ * `getBoundingClientRect` is in CSS pixels, so the point is scaled down before
+ * being compared — on a 200% display the two disagree by a factor of two and an
+ * unscaled comparison silently shrinks the drop zone to its top-left quarter.
+ */
+export function isInsideDropZone(
+  position: DropPoint,
+  rect: DropZoneRect,
+  devicePixelRatio: number,
+): boolean {
+  const scale = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const x = position.x / scale;
+  const y = position.y / scale;
+  return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+}
+
 export function cleanDropPath(path: string): string {
   return path
     .replace(/\\/g, '/')

@@ -166,6 +166,21 @@ string_enum! {
 }
 
 string_enum! {
+    /// How a project runs: inside a container, or as an ordinary process on
+    /// this machine.
+    ///
+    /// `Docker` is the default, and is what every project created before this
+    /// existed is stored as — the column's default is what keeps their
+    /// behaviour identical. `Host` gives up the isolation, the resource limits
+    /// and the daemon that outlives the application, which is why it is never
+    /// selected without the user saying so.
+    RunMode {
+        Docker => "DOCKER",
+        Host => "HOST",
+    }
+}
+
+string_enum! {
     RestartPolicy {
         No => "NO",
         OnFailure => "ON_FAILURE",
@@ -345,6 +360,22 @@ mod tests {
             let back: ProjectStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(back, *status);
         }
+    }
+
+    /// How a project runs is stored per project, and `DOCKER` is the value
+    /// every project that already exists has. Getting a wire value wrong here
+    /// would silently change what an existing project does.
+    ///
+    /// There is deliberately no `Default` impl: the default lives on the
+    /// database column, and a second one in Rust could disagree with it.
+    #[test]
+    fn run_mode_round_trips_through_its_wire_value() {
+        for mode in RunMode::ALL {
+            assert_eq!(RunMode::from_str(mode.as_str()), Ok(*mode));
+        }
+        assert_eq!(RunMode::Docker.as_str(), "DOCKER");
+        assert_eq!(RunMode::Host.as_str(), "HOST");
+        assert!(RunMode::from_str("PODMAN").is_err());
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //!
 //! Symbolic links are never followed. On Windows that also covers junctions and
 //! mount points, which `symlink_metadata` reports as reparse points. A link
-//! inside a project is listed, and is refused as the target of anything else â€”
+//! inside a project is listed, and is refused as the target of anything else —
 //! following one is the cheapest way out of a sandbox and there is no legitimate
 //! use for it in a project directory the product itself manages.
 
@@ -226,7 +226,7 @@ fn require_kind(safe: &SafePath, expected: EntryKind) -> Result<std::fs::Metadat
     }
 }
 
-/// List one directory. Directories first, then files, each alphabetically â€”
+/// List one directory. Directories first, then files, each alphabetically —
 /// stable ordering matters because the client renders this without re-sorting.
 pub fn list_directory(
     root: &Path,
@@ -653,7 +653,7 @@ fn unique_suffix() -> String {
         .replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "")
 }
 
-/// Create an empty file. Fails if anything is already there â€” an explorer's
+/// Create an empty file. Fails if anything is already there — an explorer's
 /// "new file" must never silently truncate.
 pub fn create_file(root: &Path, relative: &str) -> Result<FileEntry, FileError> {
     let safe = resolve(root, relative)?;
@@ -688,7 +688,7 @@ pub fn delete(root: &Path, relative: &str, recursive: bool) -> Result<(), FileEr
     let safe = match resolve(root, relative) {
         Ok(safe) => safe,
         // A link out of the project fails the containment check, but removing
-        // the link never touches what it points at â€” and the listing shows it,
+        // the link never touches what it points at — and the listing shows it,
         // so refusing would leave an entry that cannot be got rid of. The
         // fallback is deliberately narrow: only a symlink takes it, and
         // anything else still escapes.
@@ -751,7 +751,7 @@ pub fn delete(root: &Path, relative: &str, recursive: bool) -> Result<(), FileEr
 /// Rename within the same parent directory.
 ///
 /// `new_name` is a single component, validated by joining it to the parent
-/// through [`SafePath`] â€” so `../elsewhere` is refused by the same rule that
+/// through [`SafePath`] — so `../elsewhere` is refused by the same rule that
 /// refuses it everywhere else, rather than by an ad-hoc check here.
 pub fn rename(root: &Path, relative: &str, new_name: &str) -> Result<FileEntry, FileError> {
     if new_name.contains('/') || new_name.contains('\\') {
@@ -921,6 +921,63 @@ struct ImportPlan {
     total_bytes: u64,
 }
 
+/// The prefix every import's staging directory is named with, at the project
+/// root. Shared by the import itself and by the sweep that clears up after one
+/// that never finished.
+const IMPORT_STAGE_PREFIX: &str = ".project-host-import-";
+
+fn import_stage_name(import_id: &str) -> String {
+    format!("{IMPORT_STAGE_PREFIX}{import_id}")
+}
+
+/// Remove staging directories left behind by imports that never finished.
+///
+/// An import removes its own staging directory on every path out of
+/// [`import_local_paths`], including cancellation and failure. What no amount of
+/// care inside that function can cover is the process not living to run it: a
+/// crash, a forced quit, or the machine losing power partway through a copy
+/// leaves the directory behind, and the user sees it in the explorer as a
+/// half-copied folder they did not create and cannot explain.
+///
+/// A *running* import owns its staging directory, so `is_active` is asked about
+/// every candidate before it is removed. Sweeping one that is in flight would
+/// delete the files out from under a copy that is still writing them.
+pub fn remove_abandoned_import_staging<A>(
+    root: &Path,
+    is_active: A,
+) -> Result<Vec<String>, FileError>
+where
+    A: Fn(&str) -> bool,
+{
+    let safe = SafePath::root(root)?;
+    require_kind(&safe, EntryKind::Directory)?;
+    let mut removed = Vec::new();
+
+    for item in std::fs::read_dir(safe.absolute()).map_err(FileError::io)? {
+        let item = item.map_err(FileError::io)?;
+        let name = item.file_name().to_string_lossy().to_string();
+        let Some(import_id) = name.strip_prefix(IMPORT_STAGE_PREFIX) else {
+            continue;
+        };
+        if import_id.is_empty() || is_active(import_id) {
+            continue;
+        }
+
+        // Anything here that is not a plain directory was not left by an
+        // import. Deleting it would mean following a link out of the project,
+        // which nothing in this module ever does.
+        let metadata = std::fs::symlink_metadata(item.path()).map_err(FileError::io)?;
+        if metadata.is_symlink() || !metadata.is_dir() {
+            continue;
+        }
+
+        std::fs::remove_dir_all(item.path()).map_err(FileError::io)?;
+        removed.push(name);
+    }
+
+    Ok(removed)
+}
+
 /// Import files or directories from the host filesystem into a project.
 ///
 /// The import is staged inside the project first, then renamed into place only
@@ -944,7 +1001,7 @@ where
 {
     validate_upload_id(import_id)?;
     let plan = plan_local_import(root, destination_directory, source_paths, limits)?;
-    let stage = resolve(root, &format!(".project-host-import-{import_id}"))?;
+    let stage = resolve(root, &import_stage_name(import_id))?;
 
     if std::fs::symlink_metadata(stage.absolute()).is_ok() {
         return Err(FileError::AlreadyExists(stage.relative().to_string()));
@@ -960,17 +1017,38 @@ where
     });
 
     let result = copy_and_commit_import(root, stage.absolute(), &plan, &mut progress, &cancelled);
+    // Once the commit has renamed everything into place the import *happened*.
+    // A staging directory that will not go away is litter, not a failure: the
+    // caller would report an error for files that are already in the project
+    // and the obvious retry would then fail with `AlreadyExists`.
     let cleanup = std::fs::remove_dir_all(stage.absolute());
 
-    match (result, cleanup) {
-        (Ok(entries), Ok(())) => Ok(LocalImportReport {
-            entries,
-            total_files: plan.total_files,
-            total_bytes: plan.total_bytes,
-        }),
-        (Err(error), _) => Err(error),
-        (Ok(_), Err(error)) => Err(FileError::io(error)),
+    import_outcome(result, cleanup, stage.relative()).map(|entries| LocalImportReport {
+        entries,
+        total_files: plan.total_files,
+        total_bytes: plan.total_bytes,
+    })
+}
+
+/// What an import reports, once the copy has finished and the staging directory
+/// has been cleaned up.
+///
+/// Cleaning up is deliberately not part of the outcome. By the time it runs the
+/// commit has already renamed every imported path into the project, so a
+/// staging directory that will not go away is litter and not a failure:
+/// reporting it would tell the user their import failed while the files sit
+/// exactly where they asked for them, and the obvious retry would then fail
+/// again with `AlreadyExists`. An import that genuinely failed reports why it
+/// failed, which is never the cleanup error.
+fn import_outcome<T>(
+    copied: Result<T, FileError>,
+    cleanup: std::io::Result<()>,
+    stage: &str,
+) -> Result<T, FileError> {
+    if let Err(error) = cleanup {
+        tracing::warn!(%error, stage, "could not remove the import staging directory");
     }
+    copied
 }
 
 fn plan_local_import<P: AsRef<Path>>(
@@ -1542,9 +1620,9 @@ mod tests {
     #[test]
     fn utf8_text_with_accents_is_not_mistaken_for_binary() {
         let p = project();
-        std::fs::write(p.root.join("notes.md"), "cafÃ© â€” naÃ¯ve âœ…\n").expect("write");
+        std::fs::write(p.root.join("notes.md"), "café — naïve ✅\n").expect("write");
         let file = read_text_file(&p.root, "notes.md", &limits()).expect("read");
-        assert!(file.text.contains("cafÃ©"));
+        assert!(file.text.contains("café"));
     }
 
     #[test]
@@ -1824,6 +1902,114 @@ mod tests {
             "console.log('hi');\n",
         );
         assert!(!p.root.join(".project-host-import-import-2").exists());
+    }
+
+    /// A crash partway through an import leaves its staging directory in the
+    /// project, where the user sees it as a half-copied folder they did not
+    /// create. The next import clears it up.
+    #[test]
+    fn staging_left_behind_by_a_crashed_import_is_swept_away() {
+        let p = project();
+        let abandoned = p.root.join(".project-host-import-import-dead");
+        std::fs::create_dir_all(abandoned.join("half/copied")).expect("dirs");
+        std::fs::write(abandoned.join("half/copied/part.bin"), "partial").expect("write");
+
+        let removed = remove_abandoned_import_staging(&p.root, |_| false).expect("sweep");
+
+        assert_eq!(
+            removed,
+            vec![".project-host-import-import-dead".to_string()]
+        );
+        assert!(!abandoned.exists());
+        assert!(
+            p.root.join("index.js").is_file(),
+            "the project is untouched"
+        );
+    }
+
+    /// The dangerous case: an import that is still copying owns its staging
+    /// directory, and sweeping it would delete the files out from under a copy
+    /// that is still writing them.
+    #[test]
+    fn staging_belonging_to_a_running_import_is_left_alone() {
+        let p = project();
+        let running = p.root.join(".project-host-import-import-live");
+        let abandoned = p.root.join(".project-host-import-import-dead");
+        std::fs::create_dir(&running).expect("create");
+        std::fs::create_dir(&abandoned).expect("create");
+
+        let removed =
+            remove_abandoned_import_staging(&p.root, |id| id == "import-live").expect("sweep");
+
+        assert_eq!(
+            removed,
+            vec![".project-host-import-import-dead".to_string()]
+        );
+        assert!(
+            running.is_dir(),
+            "a running import lost its staging directory"
+        );
+    }
+
+    /// The sweep runs at the project root, where the user's own files live.
+    #[test]
+    fn the_sweep_only_touches_import_staging_directories() {
+        let p = project();
+        std::fs::create_dir(p.root.join(".github")).expect("create");
+        std::fs::write(p.root.join(".project-host-import-not-a-directory"), "x").expect("write");
+        std::fs::create_dir(p.root.join(".project-host-upload-abc.tmp")).expect("create");
+
+        let removed = remove_abandoned_import_staging(&p.root, |_| false).expect("sweep");
+
+        assert!(removed.is_empty(), "removed {removed:?}");
+        assert!(p.root.join(".github").is_dir());
+        assert!(p.root.join("src/app.ts").is_file());
+        assert!(p
+            .root
+            .join(".project-host-import-not-a-directory")
+            .is_file());
+    }
+
+    fn cleanup_failed() -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "the staging directory is in use",
+        ))
+    }
+
+    /// The files are already in the project by the time the staging directory
+    /// is cleaned up. Reporting the cleanup as a failure tells the user their
+    /// import failed while the files sit exactly where they asked for them, and
+    /// the obvious retry then fails again with `AlreadyExists`.
+    #[test]
+    fn a_staging_directory_that_will_not_delete_does_not_fail_a_finished_import() {
+        assert_eq!(
+            import_outcome(Ok("imported"), cleanup_failed(), ".stage"),
+            Ok("imported")
+        );
+    }
+
+    /// And the ordinary case still reports what was imported.
+    #[test]
+    fn a_clean_import_reports_what_it_imported() {
+        assert_eq!(
+            import_outcome(Ok("imported"), Ok(()), ".stage"),
+            Ok("imported")
+        );
+    }
+
+    /// An import that really did fail has to say why it failed. Letting the
+    /// cleanup error win would replace "that file already exists" — which the
+    /// user can act on — with a stray permissions error about a path they have
+    /// never seen.
+    #[test]
+    fn a_failed_import_reports_its_own_error_rather_than_the_cleanup_error() {
+        let refused: Result<&str, FileError> = Err(FileError::Refused("import cancelled"));
+
+        assert_eq!(
+            import_outcome(refused, cleanup_failed(), ".stage"),
+            Err(FileError::Refused("import cancelled")),
+        );
     }
 
     #[test]

@@ -4883,6 +4883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-host-host-runner"
+version = "0.1.7"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.19",
+ "tracing",
+]
+
+[[package]]
 name = "project-host-platform"
 version = "0.1.7"
 dependencies = [
