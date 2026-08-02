@@ -12,6 +12,7 @@
 //! from `sysinfo` or from a subprocess, which is safe and sufficient.
 
 mod hardware;
+mod storage;
 
 use crate::snapshot::{Architecture, SystemSnapshot};
 
@@ -35,6 +36,10 @@ impl SystemProbe for SystemScanner {
         snapshot.arch = Architecture::from_target(std::env::consts::ARCH);
         snapshot.cpu = hardware::read_cpu(&system);
         snapshot.memory = hardware::read_memory(&system);
+
+        let disks = sysinfo::Disks::new_with_refreshed_list();
+        snapshot.volumes = storage::read_volumes(&disks);
+
         snapshot
     }
 }
