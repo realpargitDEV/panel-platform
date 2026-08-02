@@ -12,6 +12,11 @@
 //! from `sysinfo` or from a subprocess, which is safe and sufficient.
 
 mod hardware;
+/// Public because several of its parsers apply to only one platform, and a
+/// Linux-only parser is unreachable — and so dead code — in a Windows build.
+/// They are part of what this crate offers rather than an internal detail, and
+/// their tests run on every platform regardless of which build uses them.
+pub mod os;
 mod storage;
 
 use crate::snapshot::{Architecture, SystemSnapshot};
@@ -39,6 +44,21 @@ impl SystemProbe for SystemScanner {
 
         let disks = sysinfo::Disks::new_with_refreshed_list();
         snapshot.volumes = storage::read_volumes(&disks);
+
+        snapshot.os = os::read_os(
+            sysinfo::System::name(),
+            sysinfo::System::kernel_version(),
+            sysinfo::System::os_version(),
+        );
+
+        #[cfg(unix)]
+        {
+            snapshot.linux = Some(
+                std::fs::read_to_string("/etc/os-release")
+                    .map(|contents| os::parse_os_release(&contents))
+                    .unwrap_or_default(),
+            );
+        }
 
         snapshot
     }
