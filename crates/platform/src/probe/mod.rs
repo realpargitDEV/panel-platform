@@ -11,6 +11,8 @@
 //! **The workspace forbids `unsafe`**, so nothing here uses FFI. Facts come
 //! from `sysinfo` or from a subprocess, which is safe and sufficient.
 
+mod hardware;
+
 use crate::snapshot::{Architecture, SystemSnapshot};
 
 /// Something that can describe this machine.
@@ -24,9 +26,15 @@ pub struct SystemScanner;
 
 impl SystemProbe for SystemScanner {
     fn snapshot(&self) -> SystemSnapshot {
+        let mut system = sysinfo::System::new();
+        system.refresh_memory();
+        system.refresh_cpu_all();
+
         let mut snapshot = SystemSnapshot::unknown();
         // Always knowable: it is the target this binary was compiled for.
         snapshot.arch = Architecture::from_target(std::env::consts::ARCH);
+        snapshot.cpu = hardware::read_cpu(&system);
+        snapshot.memory = hardware::read_memory(&system);
         snapshot
     }
 }
