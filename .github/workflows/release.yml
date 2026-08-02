@@ -105,6 +105,26 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.10
+
+            **Imports now handle real project-shaped drops.** When files,
+            folders or complete project directories are brought into a
+            workspace, the desktop app can group them, detect likely project
+            roots, unwrap project folders when that is the safer landing shape,
+            and show the destination plan before anything is copied.
+
+            **Conflicts are resolved instead of guessed.** Existing files and
+            folders now get an explicit dialog with replace, keep both, skip and
+            relocation choices, backed by a transactional import path so failed
+            or cancelled work rolls back cleanly.
+
+            **Selection and organiser polish.** Explorer selection now supports
+            range selection, rubber-band selection and clipboard-style copy/cut
+            handling, while the import organiser and progress UI make multi-item
+            imports easier to review and cancel.
+
+            This release also carries everything in 0.1.9, below.
+
             ## What changed in 0.1.9
 
             **The interface has been rebuilt.** The four dashboard-style

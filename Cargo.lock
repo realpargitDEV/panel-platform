@@ -4401,7 +4401,7 @@ dependencies = [
 
 [[package]]
 name = "panel-platform-setup"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "base64 0.22.1",
  "eframe",
@@ -4776,7 +4776,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-api-types"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "schemars 1.2.2",
  "serde",
@@ -4787,7 +4787,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-core"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "project-host-api-types",
  "project-host-database",
@@ -4812,7 +4812,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-database"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "project-host-api-types",
  "project-host-discord",
@@ -4826,7 +4826,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-desktop"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "project-host-api-types",
  "project-host-core",
@@ -4851,7 +4851,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-discord"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "project-host-api-types",
  "serde",
@@ -4861,7 +4861,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-docker-manager"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "async-trait",
  "bollard",
@@ -4878,7 +4878,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-file-manager"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "dunce",
  "flate2",
@@ -4894,7 +4894,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-host-runner"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "tempfile",
  "thiserror 2.0.19",
@@ -4903,7 +4903,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-platform"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "serde",
  "serde_json",
@@ -4913,7 +4913,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-project-manager"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "project-host-docker-manager",
  "serde",
@@ -4926,7 +4926,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-security"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "chacha20poly1305",
  "rand 0.9.5",
@@ -4937,7 +4937,7 @@ dependencies = [
 
 [[package]]
 name = "project-host-updater"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "semver",
  "serde",
