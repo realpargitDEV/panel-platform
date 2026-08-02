@@ -320,14 +320,114 @@ export async function cancelProjectFileUpload(
   return invoke('cancel_project_file_upload', { projectId, path, uploadId });
 }
 
+/**
+ * Copy paths from this machine into the project.
+ *
+ * `unwrapPaths` is the subset of `sourcePaths` whose *contents* should land in
+ * the target rather than the folder itself — a project dropped into a project,
+ * where keeping the folder would produce `MyProject/MyProject/package.json`.
+ */
 export async function importProjectFiles(
   projectId: string,
   targetDirectory: string,
   sourcePaths: string[],
   importId: string,
+  unwrapPaths: string[] = [],
+  /** `[absolute source, final name]` for anything a resolution renamed. */
+  destinationNames: [string, string][] = [],
 ): Promise<FileEntry[]> {
   return toCamel<FileEntry[]>(
-    await invoke('import_project_files', { projectId, targetDirectory, sourcePaths, importId }),
+    await invoke('import_project_files', {
+      projectId,
+      targetDirectory,
+      sourcePaths,
+      unwrapPaths,
+      destinationNames,
+      importId,
+    }),
+  );
+}
+
+/**
+ * What a set of dropped paths turns out to be.
+ *
+ * The window has no filesystem access — the drag-and-drop event hands it
+ * operating-system paths and nothing else — so the core looks and reports, and
+ * the window decides what to offer.
+ */
+export interface ImportCandidate {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  /** True when the evidence says this folder is a project in its own right. */
+  isProject: boolean;
+  /** The score behind that decision, so the interface can explain itself. */
+  score: number;
+  /** The markers found, e.g. `package.json`, `src/`. */
+  signals: string[];
+  /** Top-level names inside, capped for the preview. */
+  children: string[];
+  childCount: number;
+  /** `Node.js`, `Rust`, `Tauri`… null when nothing identified it. */
+  ecosystem: string | null;
+  /** True when the folder holds several packages rather than being one. */
+  isMonorepo: boolean;
+  /** Projects found inside this one. */
+  nested: NestedProject[];
+}
+
+/**
+ * A project found inside another.
+ *
+ * `belongsToWorkspace` is the difference between a monorepo's member — which
+ * must stay with its parent — and two unrelated projects that happened to be
+ * dropped in one folder.
+ */
+export interface NestedProject {
+  path: string;
+  relative: string;
+  name: string;
+  ecosystem: string | null;
+  score: number;
+  belongsToWorkspace: boolean;
+}
+
+export async function inspectImportPaths(sourcePaths: string[]): Promise<ImportCandidate[]> {
+  return toCamel<ImportCandidate[]>(await invoke('inspect_import_paths', { sourcePaths }));
+}
+
+/**
+ * One thing an import would create.
+ *
+ * The window cannot work these out: unwrapping a folder lands its children and
+ * the window cannot read a directory. The sizes come back in the same call, so
+ * one walk answers both "what will collide?" and "how much is there?".
+ */
+export interface PlannedDestination {
+  /** The absolute source — a child, when a folder is unwrapped. */
+  source: string;
+  /** Where it lands, relative to the project root. */
+  relative: string;
+  isDirectory: boolean;
+  totalFiles: number;
+  totalBytes: number;
+  /** `file`, `directory`, or null when the path is free. */
+  existing: string | null;
+}
+
+export async function planImportDestinations(
+  projectId: string,
+  targetDirectory: string,
+  sourcePaths: string[],
+  unwrapPaths: string[] = [],
+): Promise<PlannedDestination[]> {
+  return toCamel<PlannedDestination[]>(
+    await invoke('plan_import_destinations', {
+      projectId,
+      targetDirectory,
+      sourcePaths,
+      unwrapPaths,
+    }),
   );
 }
 

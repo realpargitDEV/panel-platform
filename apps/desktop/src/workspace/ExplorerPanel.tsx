@@ -11,6 +11,7 @@ import { forwardRef } from 'react';
 
 import Icon from './Icon';
 import FileTree, { type TreeCallbacks, type TreeState } from './FileTree';
+import SelectionSurface from './SelectionSurface';
 import type { UploadItem, UploadStatus } from './uploads';
 
 export interface ExplorerActions {
@@ -38,6 +39,8 @@ const ExplorerPanel = forwardRef<
     onClearFinishedUploads: () => void;
     onEmptyAreaClick: () => void;
     onEmptyAreaContextMenu: (event: React.MouseEvent) => void;
+    /** The rows a selection rectangle has swept over. */
+    onRubberBandSelect: (paths: string[]) => void;
     onDragEnter: (event: React.DragEvent<HTMLElement>) => void;
     onDragLeave: (event: React.DragEvent<HTMLElement>) => void;
     onDragOver: (event: React.DragEvent<HTMLElement>) => void;
@@ -59,6 +62,7 @@ const ExplorerPanel = forwardRef<
     onClearFinishedUploads,
     onEmptyAreaClick,
     onEmptyAreaContextMenu,
+    onRubberBandSelect,
     onDragEnter,
     onDragLeave,
     onDragOver,
@@ -97,10 +101,15 @@ const ExplorerPanel = forwardRef<
       {/* The click and context-menu handlers are on the scroll area so the
           blank space below the tree acts on the project root, as it does in
           VS Code. Rows stop the event themselves. */}
-      <div
-        onClick={onEmptyAreaClick}
+      {/* The scroll area is also the surface a selection rectangle is dragged
+          across, and the blank space below the tree acts on the project root —
+          as it does in VS Code. Rows stop those events themselves. */}
+      <SelectionSurface
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto py-0.5"
+        currentPaths={state.selection.selected}
+        onSelectPaths={onRubberBandSelect}
+        onClearSelection={onEmptyAreaClick}
         onContextMenu={onEmptyAreaContextMenu}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5"
       >
         <FileTree
           directory=""
@@ -110,7 +119,7 @@ const ExplorerPanel = forwardRef<
           onSubmitEdit={onSubmitEdit}
           onCancelEdit={onCancelEdit}
         />
-      </div>
+      </SelectionSurface>
 
       {uploads.length > 0 && (
         <Transfers

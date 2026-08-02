@@ -22,6 +22,7 @@ pub mod git_clone;
 pub mod github_cli;
 pub mod http_archive;
 pub mod operations;
+pub mod project_detect;
 pub mod remote_url;
 pub mod safe_path;
 pub mod zip_import;
@@ -34,9 +35,10 @@ pub use http_archive::{
     RemoteArchiveRequest, ReqwestTransport,
 };
 pub use operations::{
-    EntryKind, FileEntry, FileError, FileLimits, Listing, LocalImportProgress, LocalImportReport,
-    TextFile,
+    EntryKind, FileEntry, FileError, FileLimits, ImportSource, Listing, LocalImportProgress,
+    LocalImportReport, TextFile,
 };
+pub use project_detect::{detect as detect_project, detect_directory, Candidate, Detection};
 pub use remote_url::{HostResolver, RemoteUrl, SystemResolver, UrlError};
 pub use safe_path::{PathError, SafePath};
 pub use zip_import::{ArchiveError, ArchiveLimits, ImportReport, Staging};

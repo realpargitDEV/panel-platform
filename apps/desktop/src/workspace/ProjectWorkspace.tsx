@@ -14,7 +14,9 @@ import {
   errorMessage,
   finishProjectFileUpload,
   importProjectFiles,
+  inspectImportPaths,
   killProject,
+  planImportDestinations,
   listProjectFiles,
   moveProjectFile,
   onFileImportProgress,
@@ -29,6 +31,8 @@ import {
   writeProjectFile,
   type AppSettings,
   type FileEntry,
+  type ImportCandidate,
+  type PlannedDestination,
   type ProjectSummary,
   type SystemStatus,
 } from '../api';
@@ -41,7 +45,52 @@ import CommandPalette, { type PaletteMode } from './CommandPalette';
 import type { Command } from './commands';
 import { conflictingPaths, resolveConflicts, type ConflictChoice } from './conflicts';
 import ContextMenu, { type MenuEntry, type MenuPosition } from './ContextMenu';
-import { ConfirmDialog, ConflictDialog } from './Dialogs';
+import { ConfirmDialog, ConflictDialog, ImportPreviewDialog } from './Dialogs';
+import BatchConflictDialog from './ConflictDialog';
+import {
+  allConflicts,
+  analyse,
+  planIsStale,
+  resolvePlan,
+  type Conflict,
+  type Decisions,
+  type ItemKind,
+  type Operation,
+  type PlannedItem,
+  type ResolvedItem,
+  type ResolvedPlan,
+} from './conflictResolution';
+import {
+  noGrouping,
+  pickableDirectories,
+  planRelocation,
+  preserveDecisions,
+  type PlanGrouping,
+  type RelocationPlan,
+  type RelocationRequest,
+} from './relocation';
+import { groupingFor, relocateGroups } from './organiserRelocation';
+import { runReplacementTransaction } from './replacementTransaction';
+import { describePlan, explainDetection, planImport, type ImportPlan } from './importPlan';
+import ImportOrganiser from './ImportOrganiser';
+import ImportProgressDialog from './ImportProgressDialog';
+import {
+  addError,
+  advanceRollback,
+  applyBatchProgress,
+  completeBatch,
+  enterCommit,
+  enterPhase,
+  finish,
+  newOperation,
+  requestCancellation,
+  shouldRender,
+  startRollback,
+  type BatchProgress,
+  type ImportOperationProgress,
+  type OperationBatch,
+} from './importOperation';
+import { groupsFrom, planFrom, summarise, type ImportGroup } from './importGroups';
 import {
   cleanDropPath,
   collectDroppedItems,
@@ -58,6 +107,7 @@ import ExplorerPanel from './ExplorerPanel';
 import type { InlineEdit, TreeState } from './FileTree';
 import { languageName } from './fileIcons';
 import Icon from './Icon';
+import { baseName } from '../lib/format';
 import {
   clampPanelHeight,
   clampSidebarWidth,
@@ -72,6 +122,24 @@ import { LogsPanel, OutputPanel, ProblemsPanel, TerminalPanel, type RunAction } 
 import { countProblems, useProblems, type Problem } from './problems';
 import ResizeHandle from './ResizeHandle';
 import { isTypingTarget } from './shortcuts';
+import {
+  clearSelection,
+  dragPaths as dragPathsFor,
+  emptySelection,
+  focusEdge,
+  selectFromPointer,
+  isEditableTarget,
+  moveFocus,
+  pruneSelection,
+  renameInSelection,
+  selectAll,
+  selectOnly,
+  selectPaths,
+  selectionForContextMenu,
+  type Selection,
+  type VisibleEntry,
+} from './selection';
+import { describePaste, pasteDestination, planMove, planPaste, type Clipboard } from './clipboard';
 import {
   AccountPanel,
   ExtensionsPanel,
@@ -152,7 +220,8 @@ export default function ProjectWorkspace({
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({});
   const [expanded, setExpanded] = useState<string[]>([]);
   const [editor, setEditor] = useState<EditorState>(emptyEditor);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>(emptySelection);
+  const [clipboard, setClipboard] = useState<Clipboard | null>(null);
   const [targetDirectory, setTargetDirectory] = useState('');
   const [editing, setEditing] = useState<InlineEdit | null>(null);
   const [saving, setSaving] = useState(false);
@@ -178,6 +247,38 @@ export default function ProjectWorkspace({
     paths: string[];
     directory: string;
     resolve: (choice: ConflictChoice | null) => void;
+  } | null>(null);
+  /** A drop waiting for the user to confirm how it should be laid out. */
+  const [importPreview, setImportPreview] = useState<{
+    plan: ImportPlan;
+    directory: string;
+  } | null>(null);
+  /** A collision the user has to settle before anything is written. */
+  const [conflictReview, setConflictReview] = useState<{
+    conflicts: Conflict[];
+    operation: Operation;
+    existing: string[];
+    items: PlannedItem[];
+    existingKinds: Map<string, ItemKind>;
+    grouping: PlanGrouping;
+    directories: string[];
+    initialDecisions?: Decisions;
+    notice: string | null;
+    /**
+     * Bumped every time the batch is re-analysed, so the dialog remounts with
+     * the new conflicts instead of holding decisions about the old ones.
+     */
+    revision: number;
+    resolve: (outcome: ConflictOutcome) => void;
+  } | null>(null);
+  /** The organised import that is running, if any. */
+  const [operationProgress, setOperationProgress] = useState<ImportOperationProgress | null>(null);
+  /** A drop complex enough to need the full organiser. */
+  const [organising, setOrganising] = useState<{
+    groups: ImportGroup[];
+    candidates: ImportCandidate[];
+    directory: string;
+    existing: string[];
   } | null>(null);
 
   const [output, setOutput] = useState<OutputLine[]>([]);
@@ -205,6 +306,84 @@ export default function ProjectWorkspace({
    */
   const nativeListenerReady = useRef(false);
   const explorer = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * The live values the keyboard and clipboard handlers need.
+   *
+   * Held in refs so those handlers can be bound once instead of re-binding on
+   * every keystroke that changes a listing — and so a callback created during
+   * one render never acts on a selection from that render.
+   */
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const listingsRef = useRef(listings);
+  listingsRef.current = listings;
+  const clipboardRef = useRef(clipboard);
+  clipboardRef.current = clipboard;
+  const targetDirectoryRef = useRef(targetDirectory);
+  targetDirectoryRef.current = targetDirectory;
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  /**
+   * The operation the progress dialog is showing.
+   *
+   * Events from an operation the user has already moved past must not repaint
+   * a newer one, so every publish checks this first.
+   */
+  const operationRef = useRef<string | null>(null);
+  /** When the progress dialog was last redrawn, for throttling. */
+  const lastProgressRender = useRef(0);
+  /** Operations the user has asked to stop. */
+  const cancelledOperations = useRef(new Set<string>());
+  /** The batches in flight, so their core events can be folded in. */
+  const activeImports = useRef(
+    new Map<
+      string,
+      {
+        operationId: string;
+        batches: OperationBatch[];
+        finished: { entries: number; bytes: number };
+        apply: (event: BatchProgress) => void;
+      }
+    >(),
+  );
+
+  /**
+   * Every row the tree is drawing, in the order it draws them.
+   *
+   * This is what a Shift-range measures across and what Ctrl+A selects, so it
+   * has to be built the same way the tree walks itself: a folder contributes
+   * its children only while it is expanded.
+   */
+  const visibleEntries = useMemo<VisibleEntry[]>(() => {
+    const rows: VisibleEntry[] = [];
+    const walk = (directory: string) => {
+      for (const entry of listings[directory] ?? []) {
+        rows.push({ path: entry.path, isDirectory: entry.kind === 'directory' });
+        if (entry.kind === 'directory' && expanded.includes(entry.path)) walk(entry.path);
+      }
+    };
+    walk('');
+    return rows;
+  }, [listings, expanded]);
+
+  const visibleRef = useRef(visibleEntries);
+  visibleRef.current = visibleEntries;
+
+  // A refresh, a delete or an import can take rows away underneath a
+  // selection. Keeping paths that no longer exist makes the count lie and the
+  // next Delete ask about files that are already gone.
+  useEffect(() => {
+    setSelection((current) =>
+      current.selected.length === 0
+        ? current
+        : pruneSelection(
+            current,
+            visibleEntries.map((entry) => entry.path),
+          ),
+    );
+  }, [visibleEntries]);
 
   const problems = useProblems();
   const { errors, warnings } = countProblems(problems);
@@ -334,7 +513,7 @@ export default function ProjectWorkspace({
       try {
         const file = await readProjectFile(project.id, path);
         setEditor((current) => openFile(current, file));
-        setSelected(path);
+        setSelection(selectOnly(path));
         setTargetDirectory(parentOf(path));
         setHistory((current) => {
           if (current.paths[current.index] === path) return current;
@@ -423,7 +602,7 @@ export default function ProjectWorkspace({
           await loadDirectory(parentOf(request.path));
           // The open tab follows, keeping any unsaved text.
           setEditor((current) => renamePath(current, request.path, renamed.path));
-          setSelected(renamed.path);
+          setSelection((current) => renameInSelection(current, request.path, renamed.path));
           say('Files', `Renamed ${request.path} to ${renamed.path}.`);
           return;
         }
@@ -436,7 +615,7 @@ export default function ProjectWorkspace({
         if (isFolder) {
           setExpanded((current) => (current.includes(path) ? current : [...current, path]));
           setTargetDirectory(path);
-          setSelected(path);
+          setSelection(selectOnly(path));
         } else {
           await openPath(created.path);
         }
@@ -447,33 +626,76 @@ export default function ProjectWorkspace({
     [editing, loadDirectory, openPath, project.id, report, say],
   );
 
-  const remove = useCallback(
-    (entry: FileEntry) => {
-      const isDirectory = entry.kind === 'directory';
+  /**
+   * Delete every path given, behind one confirmation.
+   *
+   * One dialog for the whole selection rather than one per file: seven prompts
+   * in a row is how people learn to click through them without reading.
+   * Failures are collected and reported together for the same reason.
+   */
+  const removePaths = useCallback(
+    (paths: string[]) => {
+      if (paths.length === 0) return;
+      const entries = paths
+        .map((path) => findEntry(listingsRef.current, path))
+        .filter((entry): entry is FileEntry => entry !== null);
+      if (entries.length === 0) return;
+
+      const [only] = entries;
+      const title =
+        entries.length === 1 && only
+          ? only.kind === 'directory'
+            ? `Are you sure you want to delete “${only.name}” and everything inside it?`
+            : `Are you sure you want to delete “${only.name}”?`
+          : `Are you sure you want to delete these ${entries.length} items?`;
+
       setConfirm({
-        title: isDirectory
-          ? `Are you sure you want to delete “${entry.name}” and everything inside it?`
-          : `Are you sure you want to delete “${entry.name}”?`,
+        title,
         detail: 'This cannot be undone.',
         confirmLabel: 'Delete',
         danger: true,
         onConfirm: () => {
           setConfirm(null);
           void (async () => {
-            try {
-              await deleteProjectFile(project.id, entry.path, isDirectory);
-              await loadDirectory(parentOf(entry.path));
-              setEditor((current) => forgetDeleted(current, entry.path));
-              setSelected((current) => (current === entry.path ? null : current));
-              say('Files', `Deleted ${entry.path}.`);
-            } catch (error) {
-              report('Files', error);
+            const failed: string[] = [];
+            const directories = new Set<string>();
+
+            for (const entry of entries) {
+              try {
+                await deleteProjectFile(project.id, entry.path, entry.kind === 'directory');
+                directories.add(parentOf(entry.path));
+                setEditor((current) => forgetDeleted(current, entry.path));
+                say('Files', `Deleted ${entry.path}.`);
+              } catch (error) {
+                failed.push(`${entry.path}: ${errorMessage(error)}`);
+              }
+            }
+
+            await Promise.all([...directories].map((directory) => loadDirectory(directory)));
+            const gone = new Set(
+              entries
+                .filter((entry) => !failed.some((line) => line.startsWith(entry.path)))
+                .map((entry) => entry.path),
+            );
+            setSelection((current) =>
+              pruneSelection(
+                current,
+                current.selected.filter((path) => !gone.has(path)),
+              ),
+            );
+
+            if (failed.length > 0) {
+              say(
+                'Files',
+                `Could not delete ${failed.length} item(s): ${failed.join('; ')}`,
+                'error',
+              );
             }
           })();
         },
       });
     },
-    [loadDirectory, project.id, report, say],
+    [loadDirectory, project.id, say],
   );
 
   const duplicate = useCallback(
@@ -500,31 +722,343 @@ export default function ProjectWorkspace({
     [loadDirectory, pathsIn, project.id, report, say],
   );
 
-  const move = useCallback(
-    async (from: string, toDirectory: string) => {
-      const name = from.slice(from.lastIndexOf('/') + 1);
-      const to = childPath(toDirectory, name);
-      if (to === from) return;
-      // Dropping a folder into itself, or into its own child, would move the
-      // tree under its own feet. The core refuses it too; catching it here
-      // keeps the error out of the panel for something the user cannot mean.
-      if (toDirectory === from || toDirectory.startsWith(`${from}/`)) {
-        say('Files', `${from} cannot be moved inside itself.`, 'warn');
-        return;
-      }
-
+  /** What is at a destination, and whether each entry is a folder. */
+  const kindsIn = useCallback(
+    async (directory: string): Promise<Map<string, ItemKind>> => {
       try {
-        const moved = await moveProjectFile(project.id, from, to);
-        await Promise.all([loadDirectory(parentOf(from)), loadDirectory(toDirectory)]);
-        setEditor((current) => renamePath(current, from, moved.path));
-        setSelected(moved.path);
-        say('Files', `Moved ${from} to ${moved.path}.`);
-      } catch (error) {
-        report('Files', error);
+        const listing = await listProjectFiles(project.id, directory);
+        return new Map(
+          listing.entries.map((entry) => [
+            entry.path,
+            entry.kind === 'directory' ? ('directory' as const) : ('file' as const),
+          ]),
+        );
+      } catch {
+        // Unreadable: the operation will fail for its own reasons and say so.
+        return new Map();
       }
     },
-    [loadDirectory, project.id, report, say],
+    [project.id],
   );
+
+  /**
+   * Put the conflicts in front of the user and wait for an answer.
+   *
+   * Three answers, not two: confirm, cancel, or "send this somewhere else",
+   * which is not an answer at all but a new question. The caller rewrites the
+   * plan and asks again, which is why relocation cannot be resolved inside the
+   * dialog — only the caller knows how to re-plan its own operation.
+   */
+  const reviewConflicts = useCallback(
+    (
+      conflicts: Conflict[],
+      operation: Operation,
+      existing: string[],
+      context: {
+        items: PlannedItem[];
+        existingKinds: Map<string, ItemKind>;
+        grouping?: PlanGrouping;
+        directories?: string[];
+        initialDecisions?: Decisions;
+        notice?: string | null;
+      },
+    ) =>
+      new Promise<ConflictOutcome>((resolve) => {
+        setConflictReview((current) => ({
+          conflicts,
+          operation,
+          existing,
+          items: context.items,
+          existingKinds: context.existingKinds,
+          grouping: context.grouping ?? noGrouping,
+          directories: context.directories ?? [],
+          initialDecisions: context.initialDecisions,
+          notice: context.notice ?? null,
+          revision: (current?.revision ?? 0) + 1,
+          resolve: (outcome) => {
+            setConflictReview(null);
+            resolve(outcome);
+          },
+        }));
+      }),
+    [],
+  );
+
+  /**
+   * Carry out resolved work.
+   *
+   * A replacement is staged rather than destroyed: the existing item is renamed
+   * aside, the incoming one is put in place, and only then is the old one
+   * deleted. If anything fails, the old one is renamed back — so a failed
+   * replace leaves exactly what was there before, not a hole.
+   *
+   * A move is a rename, so the source only stops existing once the destination
+   * does. Nothing is copied-then-deleted.
+   */
+  const executeResolved = useCallback(
+    async (items: ResolvedItem[], operation: Operation): Promise<string[]> => {
+      const failures: string[] = [];
+      const landed: string[] = [];
+      const touched = new Set<string>();
+
+      for (const item of items) {
+        // A unique sibling name; the core refuses a rename with a separator in
+        // it, so the backup stays in the same folder as its original.
+        const backup = `${item.destination}.replaced-${createUploadId().slice(0, 8)}`;
+        let staged = false;
+
+        try {
+          if (item.replaces) {
+            await renameProjectFile(project.id, item.destination, nameOfPath(backup));
+            staged = true;
+          }
+
+          if (operation === 'copy') {
+            const copied = await copyProjectFile(project.id, item.source, item.destination);
+            landed.push(copied.path);
+          } else {
+            const moved = await moveProjectFile(project.id, item.source, item.destination);
+            touched.add(parentOf(item.source));
+            setEditor((current) => renamePath(current, item.source, moved.path));
+            landed.push(moved.path);
+          }
+
+          // Committed. Only now is the replaced item allowed to disappear.
+          if (staged) {
+            await deleteProjectFile(project.id, backup, item.replacedDirectory === true);
+          }
+        } catch (error) {
+          if (staged) {
+            try {
+              await renameProjectFile(project.id, backup, nameOfPath(item.destination));
+            } catch (restoreError) {
+              // The one case worth shouting about: the original is still on
+              // disk but under a name nobody asked for.
+              failures.push(
+                `${item.destination}: could not be replaced and its original is left at ${backup} (${errorMessage(restoreError)})`,
+              );
+              continue;
+            }
+          }
+          failures.push(`${item.source}: ${errorMessage(error)}`);
+        }
+        touched.add(parentOf(item.destination));
+      }
+
+      await Promise.all([...touched].map((directory) => loadDirectory(directory)));
+      if (landed.length > 0) setSelection(selectPaths(landed));
+      return failures;
+    },
+    [loadDirectory, project.id],
+  );
+
+  /**
+   * Settle every collision, then carry the work out.
+   *
+   * Returns the failures, or `null` when the user cancelled — the caller must
+   * tell those apart, because a cancelled paste has to keep the clipboard.
+   *
+   * The plan is analysed against the destination twice: once to build the
+   * dialog, and again immediately before executing. A file that appeared while
+   * the dialog was open sends the user back to review it rather than being
+   * silently overwritten by a decision made about something else.
+   */
+  const settleAndExecute = useCallback(
+    async (
+      wanted: { source: string; destination: string; incoming: ItemKind }[],
+      directory: string,
+      operation: Operation,
+    ): Promise<string[] | null> => {
+      if (wanted.length === 0) return [];
+
+      // Relocating rewrites the plan and asks again; it is not the destination
+      // changing underneath us, so it must not spend the stale-retry budget.
+      let items = wanted;
+      let carried: Decisions | undefined;
+      let notice: string | null = null;
+
+      for (let attempt = 0; attempt < 3;) {
+        const kinds = await kindsIn(directory);
+        const analysis = analyse(items, kinds, operation);
+        const conflicts = allConflicts(analysis);
+
+        let decisions: Decisions = {};
+        if (conflicts.length > 0) {
+          const answered = await reviewConflicts(conflicts, operation, [...kinds.keys()], {
+            items,
+            existingKinds: kinds,
+            directories: pickableDirectories(kinds.keys(), [directory]),
+            initialDecisions: carried,
+            notice,
+          });
+
+          if (answered.kind === 'cancelled') {
+            say('Files', 'Cancelled.', 'warn');
+            return null;
+          }
+
+          if (answered.kind === 'relocate') {
+            const plan = planRelocation(conflicts, answered.request, {
+              items,
+              existing: kinds,
+              grouping: noGrouping,
+            });
+            items = plan.items;
+
+            // Re-analysed straight away, so any collision the new destination
+            // creates is shown rather than discovered while writing.
+            const after = allConflicts(analyse(items, kinds, operation));
+            // The decisions the user had already made come back, minus the ones
+            // about collisions that have just moved.
+            carried = preserveDecisions(answered.decisions, conflicts, after, plan.moved);
+            notice = describeRelocation(plan, after.length - conflicts.length);
+            continue;
+          }
+
+          decisions = answered.decisions;
+        }
+
+        const resolved = resolvePlan(analysis, decisions, [...kinds.keys()]);
+        if (resolved.items.length === 0) {
+          if (resolved.skipped.length > 0) {
+            say('Files', `${resolved.skipped.length} item(s) skipped.`);
+          }
+          return [];
+        }
+
+        // Checked against the destination as it is *now*, not as it was when
+        // the dialog opened.
+        const now = await pathsIn(directory);
+        if (planIsStale(resolved, now)) {
+          say('Files', 'The destination changed while you were deciding. Reviewing again.', 'warn');
+          // Only a *stale* plan counts against the budget: the user relocating
+          // things is progress, and cutting them off after three tries would be.
+          attempt += 1;
+          // The destinations the user picked are still wanted; only the
+          // decisions about what changed underneath are re-asked.
+          carried = undefined;
+          notice = 'The project changed while you were deciding, so this has been checked again.';
+          continue;
+        }
+
+        if (resolved.skipped.length > 0) {
+          say('Files', `${resolved.skipped.length} item(s) skipped.`);
+        }
+        return executeResolved(resolved.items, operation);
+      }
+
+      say('Files', 'The destination kept changing; nothing was done.', 'error');
+      return null;
+    },
+    [executeResolved, kindsIn, pathsIn, reviewConflicts, say],
+  );
+
+  /**
+   * Move several paths into a folder.
+   *
+   * Planned before anything happens — a folder cannot go inside itself, an item
+   * cannot land where it already is, and a name that is already taken is a
+   * conflict rather than an overwrite. The plan is checked once for the whole
+   * batch so a partial move is reported as one outcome, not seven.
+   */
+  const movePaths = useCallback(
+    async (paths: string[], toDirectory: string) => {
+      if (paths.length === 0) return;
+
+      const existing = await pathsIn(toDirectory);
+      const plan = planMove(paths, toDirectory, existing, (path) => {
+        const entry = findEntry(listingsRef.current, path);
+        return entry?.kind === 'directory';
+      });
+
+      for (const rejection of plan.rejected) {
+        say('Files', rejection.reason, 'warn');
+      }
+      if (plan.items.length === 0) return;
+
+      const failures = await settleAndExecute(
+        plan.items.map((item) => ({
+          source: item.from,
+          destination: item.to,
+          incoming: item.isDirectory ? ('directory' as const) : ('file' as const),
+        })),
+        toDirectory,
+        'move',
+      );
+      if (failures === null) return;
+
+      if (failures.length > 0) {
+        // Named individually: a half-finished move is exactly when the user
+        // needs to know which files did not arrive.
+        say('Files', `Could not move ${failures.length} item(s): ${failures.join('; ')}`, 'error');
+      } else {
+        say('Files', describePaste(plan, toDirectory));
+      }
+    },
+    [pathsIn, say, settleAndExecute],
+  );
+
+  /** Copy or cut the selection. Nothing happens until it is pasted. */
+  const cutOrCopy = useCallback(
+    (mode: 'copy' | 'cut') => {
+      const paths = selectionRef.current.selected;
+      if (paths.length === 0) return;
+      setClipboard({ mode, paths: [...paths] });
+      say(
+        'Files',
+        `${mode === 'cut' ? 'Cut' : 'Copied'} ${paths.length} item${paths.length === 1 ? '' : 's'}.`,
+      );
+    },
+    [say],
+  );
+
+  /**
+   * Paste the clipboard.
+   *
+   * A cut is carried out as a move, so the source only disappears once the
+   * destination exists — the core renames rather than copying-then-deleting,
+   * which is what makes that true rather than merely intended.
+   */
+  const paste = useCallback(async () => {
+    const held = clipboardRef.current;
+    if (!held) return;
+
+    const destination = pasteDestination(
+      selectionRef.current.selected,
+      (path) => findEntry(listingsRef.current, path)?.kind === 'directory',
+      targetDirectoryRef.current,
+    );
+
+    const existing = await pathsIn(destination);
+    const plan = planPaste(held, destination, existing, (path) => {
+      const entry = findEntry(listingsRef.current, path);
+      return entry?.kind === 'directory';
+    });
+
+    for (const rejection of plan.rejected) say('Files', rejection.reason, 'warn');
+    if (plan.items.length === 0) return;
+
+    const failures = await settleAndExecute(
+      plan.items.map((item) => ({
+        source: item.from,
+        destination: item.to,
+        incoming: item.isDirectory ? ('directory' as const) : ('file' as const),
+      })),
+      destination,
+      held.mode === 'cut' ? 'move' : 'copy',
+    );
+    if (failures === null) return;
+
+    // A cut is spent once pasted; a copy can be pasted again. Only cleared
+    // when the paste actually ran, so a cancelled dialog keeps the clipboard.
+    if (held.mode === 'cut' && failures.length === 0) setClipboard(null);
+
+    if (failures.length > 0) {
+      say('Files', `Could not paste ${failures.length} item(s): ${failures.join('; ')}`, 'error');
+    } else {
+      say('Files', describePaste(plan, destination));
+    }
+  }, [pathsIn, say, settleAndExecute]);
 
   const copyToClipboard = useCallback(
     (text: string, description: string) => {
@@ -634,12 +1168,16 @@ export default function ProjectWorkspace({
           item.targetDirectory,
           item.sourcePaths,
           item.uploadId,
+          item.unwrapPaths ?? [],
         );
         updateUpload(item.id, { status: 'success', message: 'Imported.' });
         say(
           'Transfers',
           `Imported ${imported.length} item${imported.length === 1 ? '' : 's'} into ${displayDirectory(item.targetDirectory)}.`,
         );
+        // Every imported top-level entry, plus the folder they landed in: an
+        // unwrapped project adds many entries at once and the tree has to show
+        // all of them, not just the first.
         await Promise.all(imported.map((entry) => refreshBranch(entry.path)));
         await loadDirectory(item.targetDirectory);
       } catch (error) {
@@ -661,6 +1199,22 @@ export default function ProjectWorkspace({
 
     void onFileImportProgress((progress) => {
       if (progress.projectId !== project.id) return;
+
+      // A batch belonging to an organised import feeds the operation instead
+      // of standing on its own in the transfer list.
+      const inFlight = activeImports.current.get(progress.importId);
+      if (inFlight) {
+        inFlight.apply({
+          importId: progress.importId,
+          copiedFiles: progress.copiedFiles,
+          copiedBytes: progress.copiedBytes,
+          totalFiles: progress.totalFiles,
+          totalBytes: progress.totalBytes,
+          currentPath: progress.currentPath,
+        });
+        return;
+      }
+
       updateUpload(progress.importId, {
         uploadedBytes: progress.copiedBytes,
         sizeBytes: progress.totalBytes,
@@ -800,6 +1354,44 @@ export default function ProjectWorkspace({
     ],
   );
 
+  /** Start the copy, once what to do with each path has been settled. */
+  const startNativeImport = useCallback(
+    (sourcePaths: string[], unwrapPaths: string[], directory: string) => {
+      const id = createUploadId();
+      const item: NativeImportItem = {
+        kind: 'native',
+        id,
+        uploadId: id,
+        sourcePaths,
+        unwrapPaths,
+        targetDirectory: directory,
+        path: nativeImportLabel(sourcePaths, directory),
+        uploadedBytes: 0,
+        sizeBytes: 0,
+        copiedFiles: 0,
+        totalFiles: 0,
+        status: 'queued',
+        message: 'Waiting to import…',
+      };
+      setUploads((current) => [...current, item]);
+      void runNativeImport(item);
+    },
+    [runNativeImport],
+  );
+
+  /**
+   * A drop from the operating system.
+   *
+   * The window is handed paths and nothing else — it cannot read a directory —
+   * so the core is asked what each one is before anything is copied. A folder
+   * that turns out to be a project is imported as its *contents*: keeping the
+   * folder would produce `MyProject/MyProject/package.json`, which is the whole
+   * reason this path exists.
+   *
+   * The user is asked first whenever that reshaping is about to happen, or
+   * whenever several things arrive at once. Dropping one ordinary folder is not
+   * worth a dialog.
+   */
   const queueNativeImport = useCallback(
     (paths: string[]) => {
       const sourcePaths = [...new Set(paths.filter((path) => path.trim().length > 0))];
@@ -808,30 +1400,366 @@ export default function ProjectWorkspace({
         return;
       }
 
-      const id = createUploadId();
-      const item: NativeImportItem = {
-        kind: 'native',
-        id,
-        uploadId: id,
-        sourcePaths,
-        targetDirectory,
-        path: nativeImportLabel(sourcePaths, targetDirectory),
-        uploadedBytes: 0,
-        sizeBytes: 0,
-        copiedFiles: 0,
-        totalFiles: 0,
-        status: 'queued',
-        message: 'Waiting to import…',
+      const directory = targetDirectory;
+      void (async () => {
+        let candidates: ImportCandidate[];
+        try {
+          candidates = await inspectImportPaths(sourcePaths);
+        } catch (error) {
+          // Looking failed, so nothing is known about the shape of the drop.
+          // Importing it unchanged is the behaviour that existed before any of
+          // this and never loses a file.
+          report('Transfers', error);
+          startNativeImport(sourcePaths, [], directory);
+          return;
+        }
+
+        const plan = planImport(candidates);
+        for (const candidate of candidates.filter((item) => item.isDirectory)) {
+          say('Transfers', `${candidate.name}: ${explainDetection(candidate)}`);
+        }
+
+        // Nothing surprising: one ordinary folder, or loose files. The fast
+        // path, with no dialog at all.
+        if (!plan.unwraps && plan.projects.length === 0) {
+          say('Transfers', describePlan(plan, directory));
+          startNativeImport(sourcePaths, [], directory);
+          return;
+        }
+
+        // One clear project on its own gets the compact confirmation; anything
+        // mixed or ambiguous gets the organiser, where it can be rearranged.
+        const simple =
+          plan.projects.length === 1 && plan.folders.length === 0 && plan.files.length === 0;
+        if (simple) {
+          setImportPreview({ plan, directory });
+          return;
+        }
+
+        setOrganising({
+          groups: groupsFrom(candidates, directory),
+          candidates,
+          directory,
+          existing: await pathsIn(directory),
+        });
+      })();
+    },
+    [pathsIn, report, say, startNativeImport, targetDirectory],
+  );
+
+  /**
+   * Run an organised import.
+   *
+   * The plan is checked against the project *again* here rather than trusting
+   * the check made when the organiser opened: files can arrive while a dialog
+   * is up, and a conflict check from a minute ago is not a conflict check.
+   */
+  /**
+   * Carry out an approved organised import.
+   *
+   * One operation across every group: the totals are known before the first
+   * byte moves, so the bar fills once rather than once per group. Each batch is
+   * still a separate core call — that is how the core imports — but its
+   * progress is folded into the operation rather than shown on its own.
+   *
+   * A replacement is staged: the existing item is renamed aside first and only
+   * deleted once the import has committed. If the import fails it is renamed
+   * back, and anything this operation created is removed. Files that were
+   * already in the project and were not staged are never touched.
+   */
+  const executeOperation = useCallback(
+    async (
+      operationId: string,
+      planned: PlannedDestination[],
+      resolved: ResolvedPlan,
+      groups: ImportGroup[],
+      directory: string,
+    ) => {
+      const sizeOf = new Map(planned.map((entry) => [entry.source, entry]));
+      const groupFor = new Map<string, string>();
+      for (const group of groups) {
+        for (const entry of group.entries) groupFor.set(entry.path, group.name);
+      }
+
+      // One batch per destination directory, carrying only the sources that
+      // survived resolution, plus the names and replacements it decided.
+      const byDestination = new Map<string, OperationBatch>();
+      for (const item of resolved.items) {
+        const cut = item.destination.lastIndexOf('/');
+        const key = cut < 0 ? '' : item.destination.slice(0, cut);
+        const batch =
+          byDestination.get(key) ??
+          ({
+            importId: createUploadId(),
+            groupName: groupFor.get(item.source) ?? 'Files',
+            destination: key,
+            sourcePaths: [],
+            unwrapPaths: [],
+            destinationNames: [],
+            replacePaths: [],
+            totalEntries: 0,
+            totalBytes: 0,
+          } satisfies OperationBatch);
+
+        batch.sourcePaths.push(item.source);
+        const finalName = item.destination.slice(cut + 1);
+        const sourceName = baseName(item.source);
+        if (finalName !== sourceName) batch.destinationNames.push([item.source, finalName]);
+        if (item.replaces) batch.replacePaths.push(item.destination);
+
+        const measured = sizeOf.get(item.source);
+        batch.totalEntries += Math.max(1, measured?.totalFiles ?? 1);
+        batch.totalBytes += measured?.totalBytes ?? 0;
+        byDestination.set(key, batch);
+      }
+
+      const batches = [...byDestination.values()];
+      let operation = newOperation(operationId, batches);
+
+      const publish = (next: ImportOperationProgress, final = false) => {
+        operation = next;
+        // A stale operation must never repaint a newer one.
+        if (operationRef.current !== operationId) return;
+        const now = Date.now();
+        if (!shouldRender(lastProgressRender.current, now, { final })) return;
+        lastProgressRender.current = now;
+        setOperationProgress(next);
       };
 
-      say(
-        'Transfers',
-        `Importing ${sourcePaths.length} item${sourcePaths.length === 1 ? '' : 's'} into ${displayDirectory(targetDirectory)}.`,
+      publish(enterPhase(operation, 'preparing'), true);
+
+      const done = { entries: 0, bytes: 0 };
+
+      // The staging, commit and rollback live in `replacementTransaction`, with
+      // the filesystem injected — that is the only way the rollback path can be
+      // made to run on purpose in a test, and rollback is code that never runs
+      // except when something has already gone wrong.
+      const result = await runReplacementTransaction(
+        batches,
+        {
+          rename: (path, toName) => renameProjectFile(project.id, path, toName).then(() => undefined),
+          remove: (path, isDirectory) =>
+            deleteProjectFile(project.id, path, isDirectory).then(() => undefined),
+          isDirectory: (path) => findEntry(listingsRef.current, path)?.kind === 'directory',
+          importBatch: async (batch) => {
+            activeImports.current.set(batch.importId, {
+              operationId,
+              batches,
+              finished: { ...done },
+              apply: (event) => publish(applyBatchProgress(operation, batches, { ...done }, event)),
+            });
+            try {
+              const imported = await importProjectFiles(
+                project.id,
+                batch.destination,
+                batch.sourcePaths,
+                batch.importId,
+                batch.unwrapPaths,
+                batch.destinationNames,
+              );
+              return imported.map((entry) => entry.path);
+            } finally {
+              activeImports.current.delete(batch.importId);
+            }
+          },
+        },
+        {
+          onPhase: (phase) => publish(enterPhase(operation, phase), true),
+          onBatchComplete: (batch) => {
+            done.entries += batch.totalEntries;
+            done.bytes += batch.totalBytes;
+            publish(completeBatch(operation, batches, batch.importId), true);
+          },
+          onRollbackStart: (total) => publish(startRollback(operation, total), true),
+          onRollbackStep: (failed) => publish(advanceRollback(operation, failed), true),
+          isCancelled: () => cancelledOperations.current.has(operationId),
+        },
+        `replaced-${operationId.slice(0, 8)}`,
       );
-      setUploads((current) => [...current, item]);
-      void runNativeImport(item);
+
+      const created = result.created;
+
+      if (result.outcome === 'completed') {
+        publish(enterCommit(operation), true);
+      }
+      for (const error of result.errors.filter((entry) => entry.rollback !== true)) {
+        publish(addError(operation, error), true);
+      }
+      if (result.failure !== null) {
+        publish(
+          addError(operation, { path: directory || 'the project root', message: result.failure }),
+          true,
+        );
+      }
+      if (result.outcome !== 'completed') {
+        publish(finish(operation, result.outcome === 'cancelled' ? 'completed' : 'failed'), true);
+      }
+
+      // Refreshed once, at the end: a tree that reshuffles three times during
+      // an operation cannot be read.
+      const outcome = operation.phase === 'failed' ? 'failed' : 'completed';
+      publish(enterPhase(operation, 'finalising'), true);
+      const directories = new Set<string>([
+        directory,
+        ...batches.map((batch) => batch.destination),
+      ]);
+      await Promise.all([...directories].map((entry) => loadDirectory(entry)));
+      if (created.length > 0 && outcome === 'completed') setSelection(selectPaths(created));
+
+      publish(finish(operation, outcome), true);
+      cancelledOperations.current.delete(operationId);
+
+      if (resolved.skipped.length > 0) {
+        say('Transfers', `${resolved.skipped.length} item(s) were skipped.`);
+      }
+      say('Transfers', summarise(groups));
     },
-    [runNativeImport, say, targetDirectory],
+    [loadDirectory, project.id, say],
+  );
+
+  /**
+   * Run an organised import as one operation.
+   *
+   * The plan is turned into real destinations by the core — it is the only
+   * side that can read a folder, and an unwrapped group lands its children
+   * rather than itself. Those destinations go through the same conflict
+   * analysis and the same dialog as paste, cut and drag; there is no second
+   * reduced path.
+   *
+   * Everything is checked again immediately before execution, because a file
+   * can appear while the dialog is open and a decision made about a different
+   * file must never overwrite it.
+   */
+  const runOrganisedImport = useCallback(
+    async (initialGroups: ImportGroup[], directory: string) => {
+      const operationId = createUploadId();
+      operationRef.current = operationId;
+
+      // The groups are the plan. A destination chosen in the dialog edits them,
+      // and the next pass re-plans from the core — so the change reaches the
+      // backend rather than being patched onto paths on the way past.
+      let groups = initialGroups;
+      /** Decisions from the previous pass, with the conflicts they answered. */
+      let carried: { decisions: Decisions; conflicts: Conflict[] } | undefined;
+      let notice: string | null = null;
+
+      for (let attempt = 0; attempt < 3;) {
+        const plan = planFrom(groups);
+        if (plan.batches.length === 0) {
+          say('Transfers', 'Nothing is left to import.', 'warn');
+          return;
+        }
+
+        // 1. What would this actually create, and how much does it weigh?
+        const planned: PlannedDestination[] = [];
+        try {
+          for (const batch of plan.batches) {
+            const destinations = await planImportDestinations(
+              project.id,
+              batch.destination,
+              batch.sourcePaths,
+              batch.unwrapPaths,
+            );
+            planned.push(...destinations);
+          }
+        } catch (error) {
+          report('Transfers', error);
+          return;
+        }
+
+        // 2. Analyse every landing path at once, before anything is written.
+        const existing = new Map<string, ItemKind>();
+        for (const entry of planned) {
+          if (entry.existing !== null) {
+            existing.set(entry.relative, entry.existing === 'directory' ? 'directory' : 'file');
+          }
+        }
+        const items: PlannedItem[] = planned.map((entry) => ({
+          source: entry.source,
+          destination: entry.relative,
+          incoming: entry.isDirectory ? ('directory' as const) : ('file' as const),
+        }));
+        const analysis = analyse(items, existing, 'import');
+        const conflicts = allConflicts(analysis);
+
+        // 3. The same dialog the other operations use.
+        let decisions: Decisions = {};
+        if (conflicts.length > 0) {
+          const grouping = groupingFor(planned, groups);
+          const answered = await reviewConflicts(conflicts, 'import', [...existing.keys()], {
+            items,
+            existingKinds: existing,
+            grouping,
+            directories: pickableDirectories(await pathsIn(directory), [directory]),
+            // A decision only survives if it still answers the same collision
+            // at the same path; the rest go back to unresolved.
+            initialDecisions: carried
+              ? preserveDecisions(carried.decisions, carried.conflicts, conflicts)
+              : undefined,
+            notice,
+          });
+
+          if (answered.kind === 'cancelled') {
+            say('Transfers', 'Import cancelled. The organiser is unchanged.', 'warn');
+            return;
+          }
+
+          if (answered.kind === 'relocate') {
+            // The organiser's groups are edited, not the paths: re-planning
+            // through the core is what recalculates every child path, which is
+            // how a group keeps its own shape instead of being flattened.
+            const targets = planRelocation(conflicts, answered.request, {
+              items,
+              existing,
+              grouping,
+            });
+            const moved = relocateGroups(
+              groups,
+              planned,
+              conflicts,
+              answered.request,
+              targets.moved,
+            );
+            groups = moved.groups;
+            carried = { decisions: answered.decisions, conflicts };
+            notice = [moved.summary, ...moved.refused.map((entry) => entry.message)].join(' ');
+            say('Transfers', moved.summary);
+            continue;
+          }
+
+          decisions = answered.decisions;
+        }
+
+        const resolved = resolvePlan(analysis, decisions, [...existing.keys()]);
+        if (resolved.items.length === 0) {
+          say('Transfers', 'Everything was skipped; nothing was imported.', 'warn');
+          return;
+        }
+
+        // 4. Revalidate. A destination that changed sends us back to review,
+        // with the destinations the user chose still in the plan — those live
+        // in `groups`, so a stale filesystem does not undo them.
+        const now = await pathsIn(directory);
+        if (planIsStale(resolved, now)) {
+          say(
+            'Transfers',
+            'The project changed while you were deciding. Reviewing the conflicts again.',
+            'warn',
+          );
+          attempt += 1;
+          carried = { decisions, conflicts };
+          notice =
+            'The project changed while you were deciding, so the conflicts have been checked again.';
+          continue;
+        }
+
+        await executeOperation(operationId, planned, resolved, groups, directory);
+        return;
+      }
+
+      say('Transfers', 'The project kept changing; nothing was imported.', 'error');
+    },
+    [executeOperation, pathsIn, project.id, report, reviewConflicts, say],
   );
 
   const cancelUpload = useCallback(
@@ -1337,24 +2265,109 @@ export default function ProjectWorkspace({
         return;
       }
 
-      // The two that act on the tree act only when the tree is what has focus:
-      // Delete inside the editor deletes a character, and must go on doing so.
-      if (typing) return;
-      const entry = selected === null ? null : findEntry(listings, selected);
-      if (event.key === 'F2' && entry) {
+      // Everything below acts on the tree, so it stands down whenever the user
+      // is typing — in a rename box, the editor, a dialog or a text field.
+      // Delete inside the editor deletes a character and must go on doing so.
+      if (typing || isEditableTarget(event.target)) return;
+
+      const key = event.key.toLowerCase();
+      const current = selectionRef.current;
+      const rows = visibleRef.current;
+
+      if (modifier && !event.shiftKey && key === 'a') {
         event.preventDefault();
-        beginRename(entry);
+        setSelection(selectAll(rows));
         return;
       }
-      if (event.key === 'Delete' && entry) {
+      if (modifier && !event.shiftKey && key === 'c') {
         event.preventDefault();
-        remove(entry);
+        cutOrCopy('copy');
+        return;
+      }
+      if (modifier && !event.shiftKey && key === 'x') {
+        event.preventDefault();
+        cutOrCopy('cut');
+        return;
+      }
+      if (modifier && !event.shiftKey && key === 'v') {
+        event.preventDefault();
+        void paste();
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        setSelection(clearSelection());
+        return;
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const mode = event.shiftKey ? 'extend' : modifier ? 'keep' : 'replace';
+        setSelection(moveFocus(current, rows, event.key === 'ArrowDown' ? 1 : -1, mode));
+        return;
+      }
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        const mode = event.shiftKey ? 'extend' : modifier ? 'keep' : 'replace';
+        setSelection(focusEdge(current, rows, event.key === 'Home' ? 'first' : 'last', mode));
+        return;
+      }
+
+      const focusedEntry =
+        current.focused === null ? null : findEntry(listingsRef.current, current.focused);
+
+      if (event.key === 'ArrowRight' && focusedEntry?.kind === 'directory') {
+        event.preventDefault();
+        if (!expandedRef.current.includes(focusedEntry.path)) {
+          setExpanded((entries) => toggleExpanded(entries, focusedEntry.path));
+          if (!listingsRef.current[focusedEntry.path]) void loadDirectory(focusedEntry.path);
+        }
+        return;
+      }
+      if (event.key === 'ArrowLeft' && focusedEntry?.kind === 'directory') {
+        event.preventDefault();
+        if (expandedRef.current.includes(focusedEntry.path)) {
+          setExpanded((entries) => toggleExpanded(entries, focusedEntry.path));
+        }
+        return;
+      }
+
+      if (event.key === 'Enter' && focusedEntry) {
+        event.preventDefault();
+        if (focusedEntry.kind === 'directory') {
+          setExpanded((entries) => toggleExpanded(entries, focusedEntry.path));
+          if (!listingsRef.current[focusedEntry.path]) void loadDirectory(focusedEntry.path);
+        } else if (focusedEntry.kind === 'file') {
+          void openPath(focusedEntry.path);
+        }
+        return;
+      }
+
+      if (event.key === 'F2' && focusedEntry) {
+        event.preventDefault();
+        beginRename(focusedEntry);
+        return;
+      }
+      if (event.key === 'Delete' && current.selected.length > 0) {
+        event.preventDefault();
+        removePaths(current.selected);
       }
     }
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [beginRename, editor.active, listings, remove, requestClose, runCommand, save, selected]);
+  }, [
+    beginRename,
+    cutOrCopy,
+    editor.active,
+    loadDirectory,
+    openPath,
+    paste,
+    removePaths,
+    requestClose,
+    runCommand,
+    save,
+  ]);
 
   // ------------------------------------------------------------------ menus
   function commandEntry(id: string): MenuEntry {
@@ -1547,7 +2560,7 @@ export default function ProjectWorkspace({
       if (path === undefined) return current;
       if (bufferFor(editor, path)) {
         setEditor((state) => ({ ...state, active: path }));
-        setSelected(path);
+        setSelection(selectOnly(path));
       } else {
         void openPath(path);
       }
@@ -1559,7 +2572,10 @@ export default function ProjectWorkspace({
   function fileMenu(entry: FileEntry, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    setSelected(entry.path);
+    // A right-click inside a multi-selection keeps it, so "Delete" on the menu
+    // acts on everything the user can see is selected.
+    const acting = selectionForContextMenu(selection, entry.path);
+    setSelection(acting);
     if (entry.kind === 'directory') setTargetDirectory(entry.path);
 
     const directory = entry.kind === 'directory' ? entry.path : parentOf(entry.path);
@@ -1610,13 +2626,35 @@ export default function ProjectWorkspace({
           icon: 'copy',
           run: () => void duplicate(entry),
         },
+        { id: 'sep3', separator: true },
+        {
+          id: 'cut',
+          label: acting.selected.length > 1 ? `Cut ${acting.selected.length} items` : 'Cut',
+          keybinding: 'Ctrl+X',
+          run: () => cutOrCopy('cut'),
+        },
+        {
+          id: 'copy',
+          label: acting.selected.length > 1 ? `Copy ${acting.selected.length} items` : 'Copy',
+          icon: 'copy',
+          keybinding: 'Ctrl+C',
+          run: () => cutOrCopy('copy'),
+        },
+        {
+          id: 'paste',
+          label: 'Paste',
+          keybinding: 'Ctrl+V',
+          enabled: clipboard !== null,
+          run: () => void paste(),
+        },
+        { id: 'sep4', separator: true },
         {
           id: 'delete',
-          label: 'Delete',
+          label: acting.selected.length > 1 ? `Delete ${acting.selected.length} items` : 'Delete',
           icon: 'trash',
           keybinding: 'Delete',
           danger: true,
-          run: () => remove(entry),
+          run: () => removePaths(acting.selected),
         },
       ],
     });
@@ -1624,7 +2662,7 @@ export default function ProjectWorkspace({
 
   function rootMenu(event: React.MouseEvent) {
     event.preventDefault();
-    setSelected(null);
+    setSelection(clearSelection());
     setTargetDirectory('');
     setMenu({
       position: { x: event.clientX, y: event.clientY },
@@ -1642,6 +2680,14 @@ export default function ProjectWorkspace({
           run: () => beginCreate('', true),
         },
         { id: 'sep', separator: true },
+        {
+          id: 'paste',
+          label: 'Paste',
+          keybinding: 'Ctrl+V',
+          enabled: clipboard !== null,
+          run: () => void paste(),
+        },
+        { id: 'sep2', separator: true },
         {
           id: 'refresh',
           label: 'Refresh Explorer',
@@ -1696,7 +2742,7 @@ export default function ProjectWorkspace({
           label: 'Reveal in Explorer View',
           run: () => {
             showSidebar('explorer');
-            setSelected(path);
+            setSelection(selectOnly(path));
             const directory = parentOf(path);
             if (directory) {
               setExpanded((current) =>
@@ -1714,7 +2760,7 @@ export default function ProjectWorkspace({
   const treeState: TreeState = {
     listings,
     expanded,
-    selected,
+    selection,
     targetDirectory,
     editing,
   };
@@ -1816,12 +2862,16 @@ export default function ProjectWorkspace({
                       if (!listings[path]) void loadDirectory(path);
                     },
                     onContextMenu: fileMenu,
-                    onMove: (from, to) => void move(from, to),
-                    onSelectDirectory: (path) => {
-                      setTargetDirectory(path);
-                      setSelected(path);
-                    },
-                    onSelectFile: setSelected,
+                    onMove: (paths, to) => void movePaths(paths, to),
+                    dragPathsFor: (path) => dragPathsFor(selection, path),
+                    onRowPointerDown: (entry, event) =>
+                      setSelection((current) =>
+                        selectFromPointer(current, entry.path, visibleEntries, {
+                          ctrl: event.ctrlKey || event.metaKey,
+                          shift: event.shiftKey,
+                        }),
+                      ),
+                    onSelectDirectory: (path) => setTargetDirectory(path),
                   }}
                   actions={{
                     onNewFile: () => beginCreate(targetDirectory, false),
@@ -1844,10 +2894,11 @@ export default function ProjectWorkspace({
                     )
                   }
                   onEmptyAreaClick={() => {
-                    setSelected(null);
+                    setSelection(clearSelection());
                     setTargetDirectory('');
                   }}
                   onEmptyAreaContextMenu={rootMenu}
+                  onRubberBandSelect={(paths) => setSelection(selectPaths(paths))}
                   onDragEnter={onDragEnter}
                   onDragLeave={onDragLeave}
                   onDragOver={onDragOver}
@@ -1920,7 +2971,7 @@ export default function ProjectWorkspace({
                 active={editor.active}
                 onSelect={(path) => {
                   setEditor((current) => ({ ...current, active: path }));
-                  setSelected(path);
+                  setSelection(selectOnly(path));
                 }}
                 onClose={requestClose}
                 onContextMenu={tabMenu}
@@ -2051,6 +3102,95 @@ export default function ProjectWorkspace({
         />
       )}
 
+      {operationProgress && (
+        <ImportProgressDialog
+          operation={operationProgress}
+          onCancel={() => {
+            cancelledOperations.current.add(operationProgress.operationId);
+            // The core keys cancellation by *import* id, so every batch this
+            // operation has in flight is named individually. Sending the
+            // operation id would cancel nothing at all.
+            for (const [importId, inFlight] of activeImports.current) {
+              if (inFlight.operationId !== operationProgress.operationId) continue;
+              void cancelProjectFileImport(importId).catch(() => undefined);
+            }
+            setOperationProgress((current) =>
+              current === null ? null : requestCancellation(current),
+            );
+          }}
+          onClose={() => {
+            operationRef.current = null;
+            setOperationProgress(null);
+          }}
+        />
+      )}
+
+      {organising && (
+        <ImportOrganiser
+          groups={organising.groups}
+          candidates={organising.candidates}
+          destination={organising.directory}
+          existingPaths={organising.existing}
+          onChange={(groups) =>
+            setOrganising((current) => (current ? { ...current, groups } : null))
+          }
+          onCancel={() => {
+            setOrganising(null);
+            say('Transfers', 'Import cancelled.', 'warn');
+          }}
+          onImport={() => {
+            const { groups, directory } = organising;
+            setOrganising(null);
+            void runOrganisedImport(groups, directory);
+          }}
+        />
+      )}
+
+      {importPreview && (
+        <ImportPreviewDialog
+          plan={importPreview.plan}
+          targetDirectory={importPreview.directory}
+          onCancel={() => {
+            setImportPreview(null);
+            say('Transfers', 'Import cancelled.', 'warn');
+          }}
+          onConfirm={(unwrap) => {
+            const { plan, directory } = importPreview;
+            setImportPreview(null);
+            const unwrapPaths = unwrap ? plan.unwrapPaths : [];
+            say(
+              'Transfers',
+              unwrap
+                ? describePlan(plan, directory)
+                : `Importing ${plan.sourcePaths.length} item${plan.sourcePaths.length === 1 ? '' : 's'} into ${displayDirectory(directory)}.`,
+            );
+            startNativeImport(plan.sourcePaths, unwrapPaths, directory);
+          }}
+        />
+      )}
+
+      {conflictReview && (
+        <BatchConflictDialog
+          // Remounted on every re-analysis: a dialog that kept its state would
+          // be showing decisions about conflicts that no longer exist.
+          key={conflictReview.revision}
+          conflicts={conflictReview.conflicts}
+          operation={conflictReview.operation}
+          existing={conflictReview.existing}
+          items={conflictReview.items}
+          existingKinds={conflictReview.existingKinds}
+          grouping={conflictReview.grouping}
+          directories={conflictReview.directories}
+          initialDecisions={conflictReview.initialDecisions}
+          notice={conflictReview.notice}
+          onRelocate={(request, decisions) =>
+            conflictReview.resolve({ kind: 'relocate', request, decisions })
+          }
+          onCancel={() => conflictReview.resolve({ kind: 'cancelled' })}
+          onConfirm={(decisions) => conflictReview.resolve({ kind: 'confirmed', decisions })}
+        />
+      )}
+
       {conflict && (
         <ConflictDialog
           conflicts={conflict.paths}
@@ -2072,6 +3212,51 @@ export default function ProjectWorkspace({
       )}
     </div>
   );
+}
+
+/**
+ * What the conflict dialog can come back with.
+ *
+ * Relocation is deliberately not a decision: it does not settle a collision, it
+ * replaces the question. Modelling it as a third outcome is what stops it being
+ * mistaken for one and executed.
+ */
+type ConflictOutcome =
+  | { kind: 'confirmed'; decisions: Decisions }
+  | { kind: 'relocate'; request: RelocationRequest; decisions: Decisions }
+  | { kind: 'cancelled' };
+
+/**
+ * What to tell the user after a destination change.
+ *
+ * The number of *new* conflicts is the part worth saying out loud: moving
+ * something to a folder that already has one of those is a common way to swap
+ * one collision for another without noticing.
+ */
+function describeRelocation(plan: RelocationPlan, newConflicts: number): string {
+  const parts: string[] = [];
+  parts.push(
+    plan.moved.length === 1
+      ? 'The destination has been changed and the conflicts checked again.'
+      : `${plan.moved.length} destinations have been changed and the conflicts checked again.`,
+  );
+  if (plan.refused.length > 0) {
+    parts.push(
+      `${plan.refused.length} could not be moved there: ${plan.refused[0]?.message ?? ''}`,
+    );
+  }
+  if (newConflicts > 0) {
+    parts.push(
+      `That created ${newConflicts} new conflict${newConflicts === 1 ? '' : 's'}, which must be decided before continuing.`,
+    );
+  }
+  return parts.join(' ');
+}
+
+/** The last component of a project-relative path. */
+function nameOfPath(path: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut < 0 ? path : path.slice(cut + 1);
 }
 
 /** The absolute path of a project file, for display and for the clipboard. */

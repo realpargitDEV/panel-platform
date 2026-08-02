@@ -918,6 +918,18 @@ async fn cancel_project_file_upload(
         .map_err(CommandError::from)
 }
 
+/// Copy paths from this machine into the project.
+///
+/// `unwrap_paths` is the subset of `source_paths` whose *contents* should be
+/// imported rather than the folder itself — a project dropped into a project,
+/// where keeping the folder would produce `MyProject/MyProject/package.json`.
+/// Absent means none, which is what every caller other than a project drop
+/// wants. `destination_names` maps an absolute source to the final name it
+/// should land under — what a "keep both" resolution produces.
+// A Tauri command's arguments *are* its request body: each one is a named
+// field the window sends, so splitting them into a struct to satisfy a lint
+// would only move the same eight names one level down.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn import_project_files(
     app_handle: tauri::AppHandle,
@@ -926,6 +938,8 @@ async fn import_project_files(
     project_id: String,
     target_directory: String,
     source_paths: Vec<String>,
+    unwrap_paths: Option<Vec<String>>,
+    destination_names: Option<Vec<(String, String)>>,
     import_id: String,
 ) -> CommandResult<Vec<FileEntryDto>> {
     let app: &AppState = &state;
@@ -939,7 +953,22 @@ async fn import_project_files(
     }
 
     let limits = file_limits(app);
-    let sources: Vec<std::path::PathBuf> = source_paths.into_iter().map(Into::into).collect();
+    let unwrap: std::collections::HashSet<String> =
+        unwrap_paths.unwrap_or_default().into_iter().collect();
+    let names: std::collections::HashMap<String, String> =
+        destination_names.unwrap_or_default().into_iter().collect();
+    let sources: Vec<project_host_file_manager::ImportSource> = source_paths
+        .into_iter()
+        .map(|path| {
+            if unwrap.contains(&path) {
+                project_host_file_manager::ImportSource::unwrapped(path)
+            } else if let Some(name) = names.get(&path) {
+                project_host_file_manager::ImportSource::renamed(path, name.clone())
+            } else {
+                project_host_file_manager::ImportSource::nested(path)
+            }
+        })
+        .collect();
     let cancels_for_work = cancels.inner().clone();
     // The guard releases both the running mark and any cancellation when it
     // drops. Nothing is cleared on the way *in*: an import id is generated per
@@ -969,7 +998,7 @@ async fn import_project_files(
             Ok(_) => {}
         }
 
-        project_host_file_manager::operations::import_local_paths(
+        project_host_file_manager::operations::import_local_sources(
             &root,
             &target_directory,
             &sources,
@@ -1426,6 +1455,276 @@ async fn project_events(
             exit_code: record.exit_code,
             detail: record.detail,
             occurred_at: record.occurred_at,
+        })
+        .collect())
+}
+
+// ---------------------------------------------------------- import inspection
+
+/// What one dropped path turned out to be.
+///
+/// The window cannot answer any of this itself: it is handed operating-system
+/// paths by the drag-and-drop event and has no filesystem access at all. So the
+/// core looks, and the window decides what to offer.
+#[derive(Debug, Serialize)]
+pub struct ImportCandidate {
+    /// The absolute path, echoed back so the window can name it in the import.
+    pub path: String,
+    pub name: String,
+    pub is_directory: bool,
+    /// True when the evidence says this folder is a project in its own right.
+    pub is_project: bool,
+    /// The score behind that decision, so the interface can explain itself.
+    pub score: u32,
+    /// The markers found, e.g. `package.json`, `src/`.
+    pub signals: Vec<String>,
+    /// The top-level names inside, for the preview. Bounded: a folder with ten
+    /// thousand entries would otherwise be sent through the bridge to draw a
+    /// list nobody reads.
+    pub children: Vec<String>,
+    pub child_count: usize,
+    /// `Node.js`, `Rust`, `Tauri`… absent when nothing identified it.
+    pub ecosystem: Option<String>,
+    /// True when this folder holds several packages rather than being one.
+    pub is_monorepo: bool,
+    /// Projects found *inside* this one.
+    pub nested: Vec<NestedProject>,
+}
+
+/// A project found inside another.
+///
+/// Whether it deserves to be treated separately depends on why it is there. A
+/// package under a monorepo's `packages/` belongs to its parent and must not be
+/// split out; two unrelated projects someone dropped into one folder are
+/// independent and should be.
+#[derive(Debug, Serialize)]
+pub struct NestedProject {
+    pub path: String,
+    /// Relative to the folder it was found in, so the preview can show a tree.
+    pub relative: String,
+    pub name: String,
+    pub ecosystem: Option<String>,
+    pub score: u32,
+    /// True when the parent is a workspace and this sits in a workspace folder.
+    pub belongs_to_workspace: bool,
+}
+
+/// How deep the search for nested projects goes.
+///
+/// Two levels finds `packages/api` and `apps/web` without walking a whole
+/// `node_modules`, which is the only thing at that depth worth avoiding.
+const NESTED_SEARCH_DEPTH: usize = 2;
+
+/// Look for projects inside a folder.
+///
+/// Generated directories are skipped: every `node_modules` contains hundreds of
+/// folders with a `package.json`, and reporting them as nested projects would
+/// bury the real answer.
+fn find_nested_projects(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    parent_is_monorepo: bool,
+    depth: usize,
+    found: &mut Vec<NestedProject>,
+) {
+    if depth > NESTED_SEARCH_DEPTH || found.len() >= 24 {
+        return;
+    }
+
+    let Ok(listing) = std::fs::read_dir(current) else {
+        return;
+    };
+
+    for item in listing.flatten() {
+        if !item.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = item.file_name().to_string_lossy().into_owned();
+        let lower = name.to_lowercase();
+        if project_host_file_manager::project_detect::GENERATED_DIRECTORIES
+            .contains(&lower.as_str())
+            || lower.starts_with('.')
+        {
+            continue;
+        }
+
+        let path = item.path();
+        let detection = project_host_file_manager::detect_directory(&path);
+        if detection.is_project {
+            let relative = path
+                .strip_prefix(root)
+                .map(|value| value.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| name.clone());
+            // A package sitting in a workspace folder of a monorepo belongs to
+            // its parent. Splitting it out would break the workspace.
+            let in_workspace_folder = current
+                .file_name()
+                .map(|folder| {
+                    project_host_file_manager::project_detect::WORKSPACE_DIRECTORIES
+                        .contains(&folder.to_string_lossy().to_lowercase().as_str())
+                })
+                .unwrap_or(false);
+
+            found.push(NestedProject {
+                path: path.to_string_lossy().into_owned(),
+                relative,
+                name,
+                ecosystem: detection.ecosystem,
+                score: detection.score,
+                belongs_to_workspace: parent_is_monorepo && in_workspace_folder,
+            });
+            // Not descended into: a project inside a project inside a project is
+            // detail the preview cannot use.
+            continue;
+        }
+
+        find_nested_projects(root, &path, parent_is_monorepo, depth + 1, found);
+    }
+}
+
+/// The cap on names returned per folder. Enough to recognise a project by.
+const IMPORT_PREVIEW_CHILDREN: usize = 24;
+
+/// Look at what is being dropped, without copying anything.
+#[tauri::command]
+async fn inspect_import_paths(source_paths: Vec<String>) -> CommandResult<Vec<ImportCandidate>> {
+    let mut candidates = Vec::new();
+
+    for path in source_paths {
+        let source = std::path::PathBuf::from(&path);
+        let Ok(metadata) = std::fs::symlink_metadata(&source) else {
+            continue;
+        };
+        let name = source
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+
+        if !metadata.is_dir() || metadata.is_symlink() {
+            candidates.push(ImportCandidate {
+                path,
+                name,
+                is_directory: false,
+                is_project: false,
+                score: 0,
+                signals: Vec::new(),
+                children: Vec::new(),
+                child_count: 0,
+                ecosystem: None,
+                is_monorepo: false,
+                nested: Vec::new(),
+            });
+            continue;
+        }
+
+        let detection = project_host_file_manager::detect_directory(&source);
+        let mut children = Vec::new();
+        let mut child_count = 0usize;
+        if let Ok(listing) = std::fs::read_dir(&source) {
+            for item in listing.flatten() {
+                child_count += 1;
+                if children.len() < IMPORT_PREVIEW_CHILDREN {
+                    let mut label = item.file_name().to_string_lossy().into_owned();
+                    if item.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                        label.push('/');
+                    }
+                    children.push(label);
+                }
+            }
+        }
+        children.sort();
+
+        let mut nested = Vec::new();
+        find_nested_projects(&source, &source, detection.is_monorepo, 1, &mut nested);
+
+        candidates.push(ImportCandidate {
+            path,
+            name,
+            is_directory: true,
+            is_project: detection.is_project,
+            score: detection.score,
+            signals: detection.signals,
+            children,
+            child_count,
+            ecosystem: detection.ecosystem,
+            is_monorepo: detection.is_monorepo,
+            nested,
+        });
+    }
+
+    Ok(candidates)
+}
+
+/// One thing an organised import would create.
+#[derive(Debug, Serialize)]
+pub struct PlannedDestinationDto {
+    /// The absolute path it comes from — a child, when a folder is unwrapped.
+    pub source: String,
+    /// Where it lands, relative to the project root.
+    pub relative: String,
+    pub is_directory: bool,
+    pub total_files: u64,
+    pub total_bytes: u64,
+    /// What is already at that path, if anything: `file` or `directory`.
+    pub existing: Option<String>,
+}
+
+/// Work out what an import would create, without copying anything.
+///
+/// The window cannot compute this: unwrapping a folder lands its children and
+/// the window cannot read a directory. Returning the sizes at the same time
+/// means one walk answers both "what will collide?" and "how much is there?",
+/// which is what the conflict dialog and the progress bar each need before the
+/// first byte moves.
+#[tauri::command]
+async fn plan_import_destinations(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    target_directory: String,
+    source_paths: Vec<String>,
+    unwrap_paths: Option<Vec<String>>,
+) -> CommandResult<Vec<PlannedDestinationDto>> {
+    let app: &AppState = &state;
+    let (root, _) = project_root(app, &project_id).await?;
+    let unwrap: std::collections::HashSet<String> =
+        unwrap_paths.unwrap_or_default().into_iter().collect();
+
+    let sources: Vec<project_host_file_manager::ImportSource> = source_paths
+        .into_iter()
+        .map(|path| {
+            if unwrap.contains(&path) {
+                project_host_file_manager::ImportSource::unwrapped(path)
+            } else {
+                project_host_file_manager::ImportSource::nested(path)
+            }
+        })
+        .collect();
+
+    let planned = project_host_file_manager::operations::plan_import_destinations(
+        &root,
+        &target_directory,
+        &sources,
+        &file_limits(app),
+    )
+    .map_err(CommandError::from)?;
+
+    Ok(planned
+        .into_iter()
+        .map(|entry| {
+            let existing = project_host_file_manager::operations::stat(&root, &entry.relative)
+                .ok()
+                .map(|found| match found.kind {
+                    project_host_file_manager::EntryKind::Directory => "directory".to_string(),
+                    _ => "file".to_string(),
+                });
+            PlannedDestinationDto {
+                source: entry.source.to_string_lossy().into_owned(),
+                relative: entry.relative,
+                is_directory: entry.is_directory,
+                total_files: entry.total_files,
+                total_bytes: entry.total_bytes,
+                existing,
+            }
         })
         .collect())
 }
@@ -1944,6 +2243,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             copy_project_file,
             delete_project_file,
             search_project_files,
+            inspect_import_paths,
+            plan_import_destinations,
             project_root_path,
             reveal_project_path,
             system_metrics,
