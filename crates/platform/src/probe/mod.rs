@@ -17,6 +17,10 @@ mod hardware;
 /// They are part of what this crate offers rather than an internal detail, and
 /// their tests run on every platform regardless of which build uses them.
 pub mod os;
+/// Public for the same reason as [`os`]: its parsers each apply to one
+/// platform, and the one that does not apply to this build would otherwise be
+/// dead code.
+pub mod platform_specific;
 mod storage;
 
 use crate::snapshot::{Architecture, SystemSnapshot};
@@ -51,14 +55,7 @@ impl SystemProbe for SystemScanner {
             sysinfo::System::os_version(),
         );
 
-        #[cfg(unix)]
-        {
-            snapshot.linux = Some(
-                std::fs::read_to_string("/etc/os-release")
-                    .map(|contents| os::parse_os_release(&contents))
-                    .unwrap_or_default(),
-            );
-        }
+        platform_specific::enrich(&mut snapshot);
 
         snapshot
     }
