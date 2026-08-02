@@ -985,13 +985,153 @@ where
 /// before staging begins, duplicate destination paths are refused before any
 /// bytes are written, and a cancelled or failed import removes its staging
 /// directory so half-copied files do not appear in the explorer.
+/// One thing being imported, and whether its own folder comes with it.
+///
+/// `unwrap` exists for the case where the folder is a container the user has
+/// already opened: dropping a project into a project should put the project's
+/// files at the root, not produce `MyProject/MyProject/package.json`. It is
+/// meaningless for a file and ignored there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportSource {
+    pub path: std::path::PathBuf,
+    /// Copy the directory's *children* into the destination, not the directory.
+    pub unwrap: bool,
+    /// Land under this name instead of the source's own.
+    ///
+    /// What a "keep both" resolution needs: the incoming `config.json` becomes
+    /// `config copy.json` without the caller having to copy it and rename it
+    /// afterwards, which would leave the wrong name on disk in between.
+    /// Ignored when `unwrap` is set, because then there is no single name.
+    pub name: Option<String>,
+}
+
+impl ImportSource {
+    /// The ordinary case: the folder is copied, name and all.
+    pub fn nested(path: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            unwrap: false,
+            name: None,
+        }
+    }
+
+    /// The contents land in the destination and the folder itself does not.
+    pub fn unwrapped(path: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            unwrap: true,
+            name: None,
+        }
+    }
+
+    /// Land under a name of the caller's choosing.
+    pub fn renamed(path: impl Into<std::path::PathBuf>, name: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            unwrap: false,
+            name: Some(name.into()),
+        }
+    }
+}
+
+/// One thing an import would create, worked out without copying anything.
+///
+/// The window cannot compute these itself: unwrapping a folder lands its
+/// children, and it has no way to read a directory. Returning the sizes at the
+/// same time means one walk answers both "what will collide?" and "how much is
+/// there?".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedDestination {
+    /// The absolute path this comes from — a child, when a folder is unwrapped.
+    pub source: std::path::PathBuf,
+    /// Where it lands, relative to the project root.
+    pub relative: String,
+    pub is_directory: bool,
+    pub total_files: u64,
+    pub total_bytes: u64,
+}
+
+/// What an import would create, and how much it would copy.
+///
+/// Reads the sources but writes nothing. Used to analyse conflicts and to size
+/// a progress bar before the first byte moves.
+pub fn plan_import_destinations(
+    root: &Path,
+    destination_directory: &str,
+    sources: &[ImportSource],
+    limits: &FileLimits,
+) -> Result<Vec<PlannedDestination>, FileError> {
+    let plan = plan_local_import_unchecked(root, destination_directory, sources, limits)?;
+
+    // The plan lists every entry in the tree; the caller wants the top level,
+    // with each one's subtree rolled up into it.
+    let mut destinations = Vec::new();
+    for relative in &plan.top_level_destinations {
+        let prefix = format!("{relative}/");
+        let mut total_files = 0u64;
+        let mut total_bytes = 0u64;
+        let mut source = None;
+        let mut is_directory = false;
+
+        for entry in &plan.entries {
+            if entry.relative != *relative && !entry.relative.starts_with(&prefix) {
+                continue;
+            }
+            if entry.relative == *relative {
+                source = Some(entry.source.clone());
+                is_directory = matches!(entry.kind, PlannedImportKind::Directory);
+            }
+            if let PlannedImportKind::File { size } = entry.kind {
+                total_files += 1;
+                total_bytes = total_bytes.saturating_add(size);
+            }
+        }
+
+        let Some(source) = source else { continue };
+        destinations.push(PlannedDestination {
+            source,
+            relative: relative.clone(),
+            is_directory,
+            total_files,
+            total_bytes,
+        });
+    }
+
+    Ok(destinations)
+}
+
+/// Import paths from this machine, each keeping or shedding its own folder.
+pub fn import_local_sources<F, C>(
+    root: &Path,
+    destination_directory: &str,
+    sources: &[ImportSource],
+    import_id: &str,
+    limits: &FileLimits,
+    progress: F,
+    cancelled: C,
+) -> Result<LocalImportReport, FileError>
+where
+    F: FnMut(LocalImportProgress),
+    C: Fn() -> bool,
+{
+    import_planned(
+        root,
+        destination_directory,
+        sources,
+        import_id,
+        limits,
+        progress,
+        cancelled,
+    )
+}
+
 pub fn import_local_paths<P, F, C>(
     root: &Path,
     destination_directory: &str,
     source_paths: &[P],
     import_id: &str,
     limits: &FileLimits,
-    mut progress: F,
+    progress: F,
     cancelled: C,
 ) -> Result<LocalImportReport, FileError>
 where
@@ -999,8 +1139,36 @@ where
     F: FnMut(LocalImportProgress),
     C: Fn() -> bool,
 {
+    let sources: Vec<ImportSource> = source_paths
+        .iter()
+        .map(|path| ImportSource::nested(path.as_ref()))
+        .collect();
+    import_planned(
+        root,
+        destination_directory,
+        &sources,
+        import_id,
+        limits,
+        progress,
+        cancelled,
+    )
+}
+
+fn import_planned<F, C>(
+    root: &Path,
+    destination_directory: &str,
+    sources: &[ImportSource],
+    import_id: &str,
+    limits: &FileLimits,
+    mut progress: F,
+    cancelled: C,
+) -> Result<LocalImportReport, FileError>
+where
+    F: FnMut(LocalImportProgress),
+    C: Fn() -> bool,
+{
     validate_upload_id(import_id)?;
-    let plan = plan_local_import(root, destination_directory, source_paths, limits)?;
+    let plan = plan_local_import(root, destination_directory, sources, limits)?;
     let stage = resolve(root, &import_stage_name(import_id))?;
 
     if std::fs::symlink_metadata(stage.absolute()).is_ok() {
@@ -1051,13 +1219,55 @@ fn import_outcome<T>(
     copied
 }
 
-fn plan_local_import<P: AsRef<Path>>(
+/// Plan the copy, and refuse anything that would land on an existing file.
+fn plan_local_import(
     root: &Path,
     destination_directory: &str,
-    source_paths: &[P],
+    sources: &[ImportSource],
     limits: &FileLimits,
 ) -> Result<ImportPlan, FileError> {
-    if source_paths.is_empty() {
+    let plan = plan_local_import_unchecked(root, destination_directory, sources, limits)?;
+
+    let mut seen = HashSet::new();
+    for entry in &plan.entries {
+        if !seen.insert(destination_key(&entry.relative)) {
+            return Err(FileError::AlreadyExists(entry.relative.clone()));
+        }
+        let destination = resolve(root, &entry.relative)?;
+        let Ok(existing) = std::fs::symlink_metadata(destination.absolute()) else {
+            continue;
+        };
+
+        // A folder that is already there is merged into, not refused. Dropping
+        // a project with a `src/` into a project that has one should put the
+        // incoming files beside the existing ones, which is what every file
+        // manager does and what "preserve the folder structure" requires.
+        //
+        // A *file* that is already there is still refused, before anything is
+        // copied. Merging cannot mean overwriting.
+        let mergeable = matches!(entry.kind, PlannedImportKind::Directory)
+            && existing.is_dir()
+            && !existing.is_symlink();
+        if !mergeable {
+            return Err(FileError::AlreadyExists(destination.relative().to_string()));
+        }
+    }
+
+    Ok(plan)
+}
+
+/// Work out what would be copied where, without asking whether it is free.
+///
+/// Split out so the destinations can be reported to the window for conflict
+/// analysis — which needs to know about the collisions rather than be stopped
+/// by them.
+fn plan_local_import_unchecked(
+    root: &Path,
+    destination_directory: &str,
+    sources: &[ImportSource],
+    limits: &FileLimits,
+) -> Result<ImportPlan, FileError> {
+    if sources.is_empty() {
         return Err(FileError::Refused("no files or folders were provided"));
     }
 
@@ -1075,8 +1285,8 @@ fn plan_local_import<P: AsRef<Path>>(
     let mut total_files = 0u64;
     let mut total_bytes = 0u64;
 
-    for source in source_paths {
-        let source = source.as_ref();
+    for item in sources {
+        let source = item.path.as_path();
         if !source.is_absolute() {
             return Err(FileError::Refused("import sources must be absolute paths"));
         }
@@ -1084,10 +1294,59 @@ fn plan_local_import<P: AsRef<Path>>(
         if metadata.is_symlink() {
             return Err(FileError::Refused("symbolic links cannot be imported"));
         }
-        let name = source
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or(FileError::Refused("source path contains invalid Unicode"))?;
+
+        // Unwrapping is only meaningful for a directory. Asking for it on a
+        // file is a caller mistake worth naming rather than quietly ignoring,
+        // because the file would otherwise land somewhere unexpected.
+        if item.unwrap && !metadata.is_dir() {
+            return Err(FileError::Refused(
+                "only a folder's contents can be imported without the folder",
+            ));
+        }
+
+        if item.unwrap {
+            // The children are planned as though each had been dropped on its
+            // own, so the folder contributes its contents and not its name.
+            for child in std::fs::read_dir(source).map_err(FileError::io)? {
+                let child = child.map_err(FileError::io)?;
+                let name = child
+                    .file_name()
+                    .to_str()
+                    .ok_or(FileError::Refused("source path contains invalid Unicode"))?
+                    .to_string();
+                let relative = join_relative(destination.relative(), &name);
+                top_level_destinations.push(resolve(root, &relative)?.relative().to_string());
+                let child_metadata =
+                    std::fs::symlink_metadata(child.path()).map_err(FileError::io)?;
+                plan_import_entry(
+                    root,
+                    &child.path(),
+                    &relative,
+                    child_metadata,
+                    limits,
+                    &mut visited,
+                    &mut total_files,
+                    &mut total_bytes,
+                    &mut entries,
+                )?;
+            }
+            continue;
+        }
+
+        let name = match item.name.as_deref() {
+            Some(chosen) => {
+                if chosen.contains('/') || chosen.contains('\\') {
+                    return Err(FileError::Refused(
+                        "an import name must be a single path component",
+                    ));
+                }
+                chosen
+            }
+            None => source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or(FileError::Refused("source path contains invalid Unicode"))?,
+        };
         let relative = join_relative(destination.relative(), name);
         top_level_destinations.push(resolve(root, &relative)?.relative().to_string());
         plan_import_entry(
@@ -1101,17 +1360,6 @@ fn plan_local_import<P: AsRef<Path>>(
             &mut total_bytes,
             &mut entries,
         )?;
-    }
-
-    let mut seen = HashSet::new();
-    for entry in &entries {
-        if !seen.insert(destination_key(&entry.relative)) {
-            return Err(FileError::AlreadyExists(entry.relative.clone()));
-        }
-        let destination = resolve(root, &entry.relative)?;
-        if std::fs::symlink_metadata(destination.absolute()).is_ok() {
-            return Err(FileError::AlreadyExists(destination.relative().to_string()));
-        }
     }
 
     Ok(ImportPlan {
@@ -1323,14 +1571,10 @@ fn commit_staged_import(
     for relative in &plan.top_level_destinations {
         let source = stage_root.join(Path::new(relative));
         let destination = resolve(root, relative)?;
-        if let Some(parent) = destination.absolute().parent() {
-            std::fs::create_dir_all(parent).map_err(FileError::io)?;
-        }
-        if let Err(error) = std::fs::rename(&source, destination.absolute()) {
+        if let Err(error) = merge_into_place(&source, destination.absolute(), &mut moved) {
             rollback_import(&moved);
-            return Err(FileError::io(error));
+            return Err(error);
         }
-        moved.push(destination.absolute().to_path_buf());
     }
 
     plan.top_level_destinations
@@ -1344,6 +1588,47 @@ fn commit_staged_import(
             )
         })
         .collect()
+}
+
+/// Move one staged path into the project, merging folders that already exist.
+///
+/// The fast path is a single rename of the whole subtree, which is what happens
+/// when nothing is in the way. When a directory *is* in the way the two are
+/// merged by recursing, because refusing would mean a project containing `src/`
+/// could never be imported into a project containing `src/`.
+///
+/// Every path this creates is recorded in `moved`, and only those. That is what
+/// makes the rollback safe: a failure halfway through a merge removes the files
+/// this import added and never the ones that were already there.
+fn merge_into_place(
+    source: &Path,
+    destination: &Path,
+    moved: &mut Vec<PathBuf>,
+) -> Result<(), FileError> {
+    let Ok(existing) = std::fs::symlink_metadata(destination) else {
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(FileError::io)?;
+        }
+        std::fs::rename(source, destination).map_err(FileError::io)?;
+        moved.push(destination.to_path_buf());
+        return Ok(());
+    };
+
+    let staged = std::fs::symlink_metadata(source).map_err(FileError::io)?;
+    if !(existing.is_dir() && !existing.is_symlink() && staged.is_dir()) {
+        // Planning refused this case before a byte was copied. Reaching it here
+        // means the path appeared while the copy was running, and the file that
+        // arrived first is the one that stays.
+        return Err(FileError::AlreadyExists(
+            destination.to_string_lossy().into_owned(),
+        ));
+    }
+
+    for child in std::fs::read_dir(source).map_err(FileError::io)? {
+        let child = child.map_err(FileError::io)?;
+        merge_into_place(&child.path(), &destination.join(child.file_name()), moved)?;
+    }
+    Ok(())
 }
 
 fn rollback_import(paths: &[PathBuf]) {
@@ -1877,6 +2162,171 @@ mod tests {
         );
         assert_eq!(progress.last().expect("progress").copied_files, 2);
         assert_eq!(progress.last().expect("progress").copied_bytes, 7);
+    }
+
+    /// The bug this exists to prevent: a dropped project produced
+    /// `Project/RomiPlayoff/package.json` — the folder the user had already
+    /// opened, wrapped in itself.
+    #[test]
+    fn an_unwrapped_folder_lands_as_its_contents_not_as_itself() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("RomiPlayoff");
+        std::fs::create_dir_all(source_root.join("src/commands")).expect("dirs");
+        std::fs::create_dir_all(source_root.join("empty")).expect("dirs");
+        std::fs::write(source_root.join("src/commands/ping.ts"), "ping").expect("write");
+        std::fs::write(source_root.join("package.json"), "{}").expect("write");
+        // A dotfile, because these are the ones an import quietly drops.
+        std::fs::write(source_root.join(".env"), "TOKEN=1").expect("write");
+
+        let report = import_local_sources(
+            &p.root,
+            "",
+            &[ImportSource::unwrapped(&source_root)],
+            "unwrap-1",
+            &limits(),
+            |_| {},
+            || false,
+        )
+        .expect("import");
+
+        assert!(p.root.join("package.json").is_file());
+        assert!(p.root.join(".env").is_file(), "dotfiles must survive");
+        assert!(p.root.join("src/commands/ping.ts").is_file());
+        assert!(p.root.join("empty").is_dir(), "empty folders must survive");
+        assert!(
+            !p.root.join("RomiPlayoff").exists(),
+            "the folder itself must not appear"
+        );
+
+        let mut top = report
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        top.sort_unstable();
+        assert_eq!(top, vec![".env", "empty", "package.json", "src"]);
+    }
+
+    /// Importing a project into a project that already has a `src/` must put
+    /// the incoming files beside the existing ones rather than refusing, and
+    /// must not disturb what was already there.
+    #[test]
+    fn a_folder_that_already_exists_is_merged_into() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("incoming");
+        std::fs::create_dir_all(source_root.join("src/deep")).expect("dirs");
+        std::fs::write(source_root.join("src/added.ts"), "added").expect("write");
+        std::fs::write(source_root.join("src/deep/nested.ts"), "nested").expect("write");
+
+        import_local_sources(
+            &p.root,
+            "",
+            &[ImportSource::unwrapped(&source_root)],
+            "merge-1",
+            &limits(),
+            |_| {},
+            || false,
+        )
+        .expect("import");
+
+        assert!(p.root.join("src/added.ts").is_file(), "incoming file");
+        assert!(p.root.join("src/deep/nested.ts").is_file(), "nested file");
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("src/app.ts")).expect("read"),
+            "export const a = 1;\n",
+            "the file that was already there must be untouched",
+        );
+    }
+
+    /// The dangerous half of merging: a failure partway through must not take
+    /// the user's existing files with it.
+    #[test]
+    fn a_failed_merge_removes_only_what_it_added() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("half");
+        std::fs::create_dir_all(&source_root).expect("dirs");
+        std::fs::create_dir_all(source_root.join("src")).expect("dirs");
+        std::fs::write(source_root.join("src/new.ts"), "new").expect("write");
+
+        let mut moved = Vec::new();
+        merge_into_place(&source_root.join("src"), &p.root.join("src"), &mut moved).expect("merge");
+
+        // Only the file that did not exist before is recorded, so rolling back
+        // cannot delete `src/app.ts` or the `src` directory itself.
+        assert_eq!(moved, vec![p.root.join("src/new.ts")]);
+
+        rollback_import(&moved);
+        assert!(!p.root.join("src/new.ts").exists(), "added file removed");
+        assert!(p.root.join("src/app.ts").is_file(), "existing file kept");
+        assert!(p.root.join("src").is_dir(), "existing folder kept");
+    }
+
+    #[test]
+    fn an_unwrapped_folder_can_land_inside_a_subdirectory() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("bundle");
+        std::fs::create_dir_all(&source_root).expect("dirs");
+        std::fs::write(source_root.join("a.txt"), "a").expect("write");
+
+        import_local_sources(
+            &p.root,
+            "src",
+            &[ImportSource::unwrapped(&source_root)],
+            "unwrap-2",
+            &limits(),
+            |_| {},
+            || false,
+        )
+        .expect("import");
+
+        assert!(p.root.join("src/a.txt").is_file());
+        assert!(!p.root.join("src/bundle").exists());
+    }
+
+    #[test]
+    fn unwrapping_still_refuses_to_overwrite_what_is_already_there() {
+        let p = project();
+        let source_root = p.root.parent().expect("parent").join("clash");
+        std::fs::create_dir_all(&source_root).expect("dirs");
+        std::fs::write(source_root.join("index.js"), "replacement").expect("write");
+
+        assert!(matches!(
+            import_local_sources(
+                &p.root,
+                "",
+                &[ImportSource::unwrapped(&source_root)],
+                "unwrap-3",
+                &limits(),
+                |_| {},
+                || false,
+            ),
+            Err(FileError::AlreadyExists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(p.root.join("index.js")).expect("read"),
+            "console.log('hi');\n",
+            "the existing file must be untouched",
+        );
+    }
+
+    #[test]
+    fn a_file_cannot_be_unwrapped() {
+        let p = project();
+        let source = p.root.parent().expect("parent").join("loose.txt");
+        std::fs::write(&source, "x").expect("write");
+
+        assert!(matches!(
+            import_local_sources(
+                &p.root,
+                "",
+                &[ImportSource::unwrapped(&source)],
+                "unwrap-4",
+                &limits(),
+                |_| {},
+                || false,
+            ),
+            Err(FileError::Refused(_))
+        ));
     }
 
     #[test]

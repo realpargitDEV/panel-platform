@@ -37,6 +37,11 @@ export interface NativeImportItem extends BaseUploadItem {
   kind: 'native';
   sourcePaths: string[];
   targetDirectory: string;
+  /**
+   * The subset of `sourcePaths` whose contents land in the target rather than
+   * the folder itself — a project dropped into a project.
+   */
+  unwrapPaths?: string[];
 }
 
 export type UploadItem = BrowserUploadItem | NativeImportItem;
