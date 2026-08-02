@@ -86,7 +86,10 @@ class FakeProject {
         const created: string[] = [];
         for (const [, name] of batch.destinationNames.length > 0
           ? batch.destinationNames
-          : batch.sourcePaths.map((source): [string, string] => [source, source.split('/').pop() ?? source])) {
+          : batch.sourcePaths.map((source): [string, string] => [
+              source,
+              source.split('/').pop() ?? source,
+            ])) {
           const path = batch.destination ? `${batch.destination}/${name}` : name;
           this.files.set(path, `imported:${name}`);
           created.push(path);

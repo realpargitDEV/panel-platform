@@ -1537,7 +1537,8 @@ export default function ProjectWorkspace({
       const result = await runReplacementTransaction(
         batches,
         {
-          rename: (path, toName) => renameProjectFile(project.id, path, toName).then(() => undefined),
+          rename: (path, toName) =>
+            renameProjectFile(project.id, path, toName).then(() => undefined),
           remove: (path, isDirectory) =>
             deleteProjectFile(project.id, path, isDirectory).then(() => undefined),
           isDirectory: (path) => findEntry(listingsRef.current, path)?.kind === 'directory',
