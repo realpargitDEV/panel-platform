@@ -25,7 +25,13 @@
     )
 )]
 
+pub mod blocker;
+pub mod catalog;
 pub mod machines;
+pub mod select;
 pub mod tier;
 
+pub use blocker::Blocker;
+pub use catalog::{catalog, Artifact, DockerProduct, HostKind, Requirements};
+pub use select::{select, unmet, Selection};
 pub use tier::{assess, Assessment, PerformanceTier, ResourceDefaults, MIN_MEMORY_MB};
