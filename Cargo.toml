@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/api-types",
     "crates/platform",
+    "crates/compatibility",
     "crates/security",
     "crates/database",
     "crates/docker-manager",

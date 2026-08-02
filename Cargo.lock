@@ -4796,6 +4796,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-host-compatibility"
+version = "0.1.10"
+dependencies = [
+ "project-host-platform",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "project-host-core"
 version = "0.1.10"
 dependencies = [

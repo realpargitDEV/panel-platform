@@ -1,0 +1,18 @@
+[package]
+name = "project-host-compatibility"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+project-host-platform = { path = "../platform" }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json = "1.0.151"
