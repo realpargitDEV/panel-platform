@@ -85,6 +85,28 @@ pub fn windows_11_low_end() -> SystemSnapshot {
     }
 }
 
+/// Exactly on both Standard boundaries: 4 logical cores and 8 GB.
+///
+/// The set needs a machine that lands on `Standard`, and a boundary is the
+/// right place to put it — the thresholds are `>=`, so this machine proves the
+/// comparison is not off by one in either direction.
+pub fn windows_11_midrange() -> SystemSnapshot {
+    SystemSnapshot {
+        cpu: CpuInfo {
+            vendor: Some("GenuineIntel".to_string()),
+            model: Some("Intel(R) Core(TM) i5-8250U".to_string()),
+            physical_cores: Some(4),
+            logical_cores: Some(4),
+        },
+        memory: MemoryInfo {
+            total_bytes: Some(8 * GB),
+            available_bytes: Some(3 * GB),
+        },
+        volumes: vec![volume("C:\\", 500, 120)],
+        ..windows_base()
+    }
+}
+
 /// Capable in every respect, on an architecture with no Docker Desktop build.
 pub fn windows_on_arm() -> SystemSnapshot {
     SystemSnapshot {
@@ -158,6 +180,7 @@ pub fn knows_nothing() -> SystemSnapshot {
 pub fn golden_set() -> Vec<(&'static str, SystemSnapshot)> {
     vec![
         ("windows-11-workstation", windows_11_workstation()),
+        ("windows-11-midrange", windows_11_midrange()),
         ("windows-11-low-end", windows_11_low_end()),
         ("windows-on-arm", windows_on_arm()),
         (
@@ -179,6 +202,7 @@ mod tests {
         let names: Vec<&str> = golden_set().iter().map(|(name, _)| *name).collect();
         for expected in [
             "windows-11-workstation",
+            "windows-11-midrange",
             "windows-11-low-end",
             "windows-on-arm",
             "windows-virtualization-disabled",

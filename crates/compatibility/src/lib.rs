@@ -26,3 +26,6 @@
 )]
 
 pub mod machines;
+pub mod tier;
+
+pub use tier::{assess, Assessment, PerformanceTier, ResourceDefaults, MIN_MEMORY_MB};
