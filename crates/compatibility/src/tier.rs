@@ -52,6 +52,18 @@ pub struct Assessment {
 
 const GB: u64 = 1024 * 1024 * 1024;
 
+/// Memory thresholds sit slightly below the round number they stand for.
+///
+/// A machine sold as 16 GB never reports 16 GiB: firmware reserves some, and
+/// the advertised figure is decimal GB against `total_memory`'s binary GiB. The
+/// development machine reports 16_216_674_304 bytes — 15.1 GiB — so a literal
+/// `>= 16 GiB` test put it, and effectively every real 16 GB machine, in the
+/// tier below the one it belongs to. The 6% allowance is what makes the tier
+/// table describe machines as they are sold rather than as they measure.
+const fn advertised(gibibytes: u64) -> u64 {
+    gibibytes * GB / 100 * 94
+}
+
 fn tier_of_cores(cores: Option<u32>) -> PerformanceTier {
     match cores {
         Some(cores) if cores >= 8 => PerformanceTier::Performance,
@@ -64,8 +76,8 @@ fn tier_of_cores(cores: Option<u32>) -> PerformanceTier {
 
 fn tier_of_memory(total: Option<u64>) -> PerformanceTier {
     match total {
-        Some(bytes) if bytes >= 16 * GB => PerformanceTier::Performance,
-        Some(bytes) if bytes >= 8 * GB => PerformanceTier::Standard,
+        Some(bytes) if bytes >= advertised(16) => PerformanceTier::Performance,
+        Some(bytes) if bytes >= advertised(8) => PerformanceTier::Standard,
         _ => PerformanceTier::Minimal,
     }
 }
@@ -148,9 +160,8 @@ mod tests {
 
     #[test]
     fn the_thresholds_are_inclusive_at_both_boundaries() {
-        // The midrange machine sits exactly on 4 cores and 8 GB. One core or
-        // one byte less must drop it, which is what proves the comparison is
-        // not off by one.
+        // The midrange machine sits exactly on 4 cores and 8 GB. One core less
+        // must drop it, which is what proves the comparison is not off by one.
         let boundary = machines::windows_11_midrange();
         assert_eq!(assess(&boundary).tier, PerformanceTier::Standard);
 
@@ -158,9 +169,38 @@ mod tests {
         one_core_short.cpu.logical_cores = Some(3);
         assert_eq!(assess(&one_core_short).tier, PerformanceTier::Minimal);
 
-        let mut one_byte_short = boundary;
-        one_byte_short.memory.total_bytes = Some(8 * GB - 1);
-        assert_eq!(assess(&one_byte_short).tier, PerformanceTier::Minimal);
+        let mut well_short = boundary;
+        well_short.memory.total_bytes = Some(6 * GB);
+        assert_eq!(assess(&well_short).tier, PerformanceTier::Minimal);
+    }
+
+    #[test]
+    fn a_machine_sold_as_16gb_reaches_the_performance_tier() {
+        // Regression guard, from the development machine's actual reading. A
+        // literal `>= 16 GiB` threshold rejected 16_216_674_304 bytes — 15.1
+        // GiB — and would have put effectively every real 16 GB machine one
+        // tier below where it belongs.
+        let mut machine = machines::windows_11_workstation();
+        machine.memory.total_bytes = Some(16_216_674_304);
+        assert_eq!(assess(&machine).tier, PerformanceTier::Performance);
+
+        // An 8 GB machine reporting the same shortfall still clears Standard.
+        let mut eight = machines::windows_11_midrange();
+        eight.memory.total_bytes = Some(8_105_337_152);
+        assert_eq!(assess(&eight).tier, PerformanceTier::Standard);
+    }
+
+    #[test]
+    fn the_allowance_does_not_promote_a_genuinely_smaller_machine() {
+        // 12 GB must not be mistaken for a 16 GB machine reporting low.
+        let mut twelve = machines::windows_11_workstation();
+        twelve.memory.total_bytes = Some(12 * GB);
+        assert_eq!(assess(&twelve).tier, PerformanceTier::Standard);
+
+        // Nor 6 GB for an 8 GB one.
+        let mut six = machines::windows_11_midrange();
+        six.memory.total_bytes = Some(6 * GB);
+        assert_eq!(assess(&six).tier, PerformanceTier::Minimal);
     }
 
     #[test]

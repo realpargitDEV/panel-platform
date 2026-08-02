@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use project_host_compatibility::{Assessment, ResourceDefaults};
 use project_host_database::Database;
 use project_host_docker_manager::{DockerProbe, DockerStatus};
 use tokio::sync::RwLock;
@@ -22,6 +23,13 @@ pub struct Inner {
     /// call — a status bar that pinged Docker on every render would turn a slow
     /// daemon into a slow interface.
     pub docker_status: RwLock<DockerStatus>,
+    /// What this machine is, and the resource defaults that follow from it.
+    ///
+    /// Decided once at startup: the hardware does not change while the process
+    /// runs, and re-scanning per project creation would spawn subprocesses on a
+    /// path the user is waiting on. Existing projects are never touched — a
+    /// user who set a limit deliberately does not have it overwritten.
+    pub assessment: Assessment,
     pub instance_id: String,
     pub app_version: String,
     pub schema_version: u32,
@@ -49,6 +57,7 @@ impl AppState {
         database: Database,
         docker: Arc<dyn DockerProbe>,
         docker_status: DockerStatus,
+        assessment: Assessment,
         identity: Identity,
     ) -> Self {
         Self(Arc::new(Inner {
@@ -56,6 +65,7 @@ impl AppState {
             database,
             docker,
             docker_status: RwLock::new(docker_status),
+            assessment,
             instance_id: identity.instance_id,
             app_version: identity.app_version,
             schema_version: identity.schema_version,
@@ -74,6 +84,15 @@ impl AppState {
 
     pub fn database(&self) -> &Database {
         &self.0.database
+    }
+
+    /// The resource limits a newly created project should start with.
+    pub fn resource_defaults(&self) -> ResourceDefaults {
+        self.0.assessment.defaults
+    }
+
+    pub fn assessment(&self) -> Assessment {
+        self.0.assessment
     }
 
     /// Monotonic, so a system clock change cannot produce a negative uptime.

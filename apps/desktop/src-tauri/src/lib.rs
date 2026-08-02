@@ -520,6 +520,11 @@ async fn create_project(
         }
     };
 
+    // Sized to what this machine measured at startup rather than to three
+    // constants. A user who later sets a limit deliberately keeps it: only the
+    // starting values come from here.
+    let defaults = app.resource_defaults();
+
     let record = match projects::create_project(
         app.database(),
         &projects::NewProject {
@@ -540,10 +545,13 @@ async fn create_project(
             autostart: false,
             restart_policy: "UNLESS_STOPPED".to_string(),
             network_mode: "INTERNET".to_string(),
-            memory_limit_mb: 512,
-            cpu_limit_cores: 1.0,
+            memory_limit_mb: defaults.memory_limit_mb,
+            cpu_limit_cores: defaults.cpu_limit_cores,
+            // Not part of ResourceDefaults: no probe here measures what a
+            // project will store, so tiering it would be a guess dressed as a
+            // measurement.
             storage_limit_mb: 2048,
-            process_limit: 128,
+            process_limit: defaults.process_limit,
             runtime: plan.spec.clone(),
             ports: vec![projects::NewPort {
                 container_port: plan.container_port,

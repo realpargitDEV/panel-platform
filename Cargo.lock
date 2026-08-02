@@ -4810,6 +4810,7 @@ name = "project-host-core"
 version = "0.1.10"
 dependencies = [
  "project-host-api-types",
+ "project-host-compatibility",
  "project-host-database",
  "project-host-discord",
  "project-host-docker-manager",
