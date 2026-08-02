@@ -10,7 +10,7 @@ hardware can actually sustain.
 Today a machine without a daemon reaches `install_hint()` in
 `crates/platform/src/docker.rs` — one paragraph and a documentation URL. That
 paragraph is correct and it is the entire onboarding story. It does not say
-whether *this* machine can run Docker at all, which of several installers is the
+whether _this_ machine can run Docker at all, which of several installers is the
 right one, or why the daemon that is installed still is not answering.
 
 This design replaces that with a scan, a decision, an acquisition and a proof.
@@ -35,7 +35,7 @@ root-equivalent and is therefore also asked rather than assumed.
 
 **It does not write machine-global configuration.** The tier sets defaults for
 projects this application creates. The Docker Desktop VM cap — `.wslconfig` —
-is *displayed* as a recommended block to copy. That file is shared by every
+is _displayed_ as a recommended block to copy. That file is shared by every
 WSL2 consumer on the machine, and rewriting software we do not own is not ours
 to do quietly.
 
@@ -51,12 +51,12 @@ Four units. The split exists so that every decision is a pure function of a
 value, and can be tested on a machine with no Docker, no WSL and no Linux —
 which is the machine this is written on.
 
-| Unit                          | Responsibility                                            | Depends on                                |
-| ----------------------------- | --------------------------------------------------------- | ----------------------------------------- |
-| `crates/platform` (extended)  | Probe the OS, produce a `SystemSnapshot`                   | the OS                                    |
-| `crates/compatibility` (new)  | `SystemSnapshot` → tier, plan, or blockers. No I/O.        | nothing                                   |
-| `crates/docker-setup` (new)   | Catalogue, download, verify, hand off, test container      | `platform`, `compatibility`, `docker-manager` |
-| `app-core/src/setup_flow.rs`  | The retryable step machine the interface drives            | all three                                 |
+| Unit                         | Responsibility                                        | Depends on                                    |
+| ---------------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| `crates/platform` (extended) | Probe the OS, produce a `SystemSnapshot`              | the OS                                        |
+| `crates/compatibility` (new) | `SystemSnapshot` → tier, plan, or blockers. No I/O.   | nothing                                       |
+| `crates/docker-setup` (new)  | Catalogue, download, verify, hand off, test container | `platform`, `compatibility`, `docker-manager` |
+| `app-core/src/setup_flow.rs` | The retryable step machine the interface drives       | all three                                     |
 
 `crates/platform` remains the only place carrying `#[cfg(windows)]` or
 `#[cfg(unix)]`, as `docs/platform-support.md` requires.
@@ -78,17 +78,17 @@ has no failure case. A machine that will not report its GPU still gets Docker
 installed, and a scan that could fail would be a scan that blocks setup on
 something irrelevant to it.
 
-| Group          | Fields                                                                        |
-| -------------- | ----------------------------------------------------------------------------- |
-| CPU            | vendor, model string, physical cores, logical cores                           |
-| Memory         | total bytes, available bytes                                                  |
-| Storage        | per volume: mount point, total, free, removable, `SSD`/`HDD`/`Unknown`        |
-| Architecture   | `x86_64`, `aarch64`, other                                                    |
-| Operating system | name, edition, version, **build number**, kernel version                    |
-| Virtualization | supported, enabled, hypervisor already present                                |
-| Windows        | WSL present, WSL version, default WSL distro                                  |
-| Linux          | distro id, version id, package manager (`apt`/`dnf`/`pacman`/`zypper`)        |
-| GPU            | vendor, model                                                                 |
+| Group            | Fields                                                                 |
+| ---------------- | ---------------------------------------------------------------------- |
+| CPU              | vendor, model string, physical cores, logical cores                    |
+| Memory           | total bytes, available bytes                                           |
+| Storage          | per volume: mount point, total, free, removable, `SSD`/`HDD`/`Unknown` |
+| Architecture     | `x86_64`, `aarch64`, other                                             |
+| Operating system | name, edition, version, **build number**, kernel version               |
+| Virtualization   | supported, enabled, hypervisor already present                         |
+| Windows          | WSL present, WSL version, default WSL distro                           |
+| Linux            | distro id, version id, package manager (`apt`/`dnf`/`pacman`/`zypper`) |
+| GPU              | vendor, model                                                          |
 
 `probe/` holds one module per group, and each is the only place that knows how
 its group is read on a given OS. The submodules return their own small types;
@@ -110,11 +110,11 @@ tier by wiring them into it — see §4.
 
 A pure function, `SystemSnapshot` → `PerformanceTier` → `ResourceDefaults`.
 
-| Tier          | Trigger                                                    | `memory_limit_mb` | `cpu_limit_cores` | `process_limit` |
-| ------------- | ---------------------------------------------------------- | ----------------- | ----------------- | --------------- |
-| `Minimal`     | <4 logical cores, or <8 GB RAM, or <20 GB free on the target volume | 512      | 0.5               | 128             |
-| `Standard`    | <8 logical cores, or <16 GB RAM                             | 1024              | 1.0               | 256             |
-| `Performance` | otherwise                                                   | 2048              | 2.0               | 512             |
+| Tier          | Trigger                                                             | `memory_limit_mb` | `cpu_limit_cores` | `process_limit` |
+| ------------- | ------------------------------------------------------------------- | ----------------- | ----------------- | --------------- |
+| `Minimal`     | <4 logical cores, or <8 GB RAM, or <20 GB free on the target volume | 512               | 0.5               | 128             |
+| `Standard`    | <8 logical cores, or <16 GB RAM                                     | 1024              | 1.0               | 256             |
+| `Performance` | otherwise                                                           | 2048              | 2.0               | 512             |
 
 The tier is the **weakest** of the three axes, not an average. A 32-core machine
 with 6 GB of RAM is a `Minimal` machine, and averaging would hand it defaults it
@@ -145,7 +145,7 @@ property over every synthetic machine in the golden set, not spot-checked.
 
 ## 5. Selection
 
-The catalogue lists each installer artefact beside its *requirements*:
+The catalogue lists each installer artefact beside its _requirements_:
 architecture, minimum OS build or kernel, required edition, whether
 virtualization must be enabled, and free disk needed.
 
@@ -160,10 +160,10 @@ is enforced by one property test:
 A property over the whole set, rather than a case per artefact, is what keeps
 the guarantee true when a future artefact is added.
 
-| Host    | Target                                                                 |
-| ------- | ---------------------------------------------------------------------- |
-| Windows | Docker Desktop; WSL2 or Hyper-V backend chosen from edition and build   |
-| Linux   | Docker Engine, for the detected package manager                         |
+| Host    | Target                                                                |
+| ------- | --------------------------------------------------------------------- |
+| Windows | Docker Desktop; WSL2 or Hyper-V backend chosen from edition and build |
+| Linux   | Docker Engine, for the detected package manager                       |
 
 Windows on ARM has no Docker Desktop artefact, and is therefore a blocker rather
 than a wrong download.
@@ -209,16 +209,16 @@ Eight steps. Each carries
 and all eight are visible from the start, so the user sees the shape of what is
 about to happen rather than a spinner that occasionally changes its caption.
 
-| # | Step             | Notes                                                        |
-| - | ---------------- | ------------------------------------------------------------ |
-| 1 | Scan             | Cannot fail; unavailable probes yield `Unknown`               |
-| 2 | Assess           | Tier, plan or blockers. Pure.                                 |
-| 3 | Prerequisites    | Virtualization, OS support, free disk. The firmware gate.     |
-| 4 | Acquire          | Download, then verify publisher                               |
-| 5 | Hand off         | Vendor installer; the one privileged prompt                   |
-| 6 | Await daemon     | Poll the endpoints `platform::docker` already knows           |
-| 7 | Test container   | Pull, run, assert exit 0, remove                              |
-| 8 | Apply defaults   | Tier defaults stored; `.wslconfig` block displayed            |
+| #   | Step           | Notes                                                     |
+| --- | -------------- | --------------------------------------------------------- |
+| 1   | Scan           | Cannot fail; unavailable probes yield `Unknown`           |
+| 2   | Assess         | Tier, plan or blockers. Pure.                             |
+| 3   | Prerequisites  | Virtualization, OS support, free disk. The firmware gate. |
+| 4   | Acquire        | Download, then verify publisher                           |
+| 5   | Hand off       | Vendor installer; the one privileged prompt               |
+| 6   | Await daemon   | Poll the endpoints `platform::docker` already knows       |
+| 7   | Test container | Pull, run, assert exit 0, remove                          |
+| 8   | Apply defaults | Tier defaults stored; `.wslconfig` block displayed        |
 
 Steps 4 to 6 are skipped when a healthy daemon already answers. A machine that
 already has Docker gets a scan, a tier and a proof — not an install it does not
@@ -267,18 +267,18 @@ Each platform ends up with exactly one privileged prompt.
 
 `SetupBlocker` carries what failed, and what the user can do:
 
-| Blocker                    | Names                                                        |
-| -------------------------- | ------------------------------------------------------------ |
-| `VirtualizationDisabled`   | That it is supported but off, and how to reach firmware       |
-| `VirtualizationUnsupported`| That the CPU lacks it, so no fix exists on this machine       |
-| `ArchitectureUnsupported`  | The architecture, and that no artefact is published for it    |
-| `OsTooOld`                 | The build found, and the build required                       |
-| `EditionUnsupported`       | The edition, and which backend it would have needed           |
-| `InsufficientDisk`         | Free space, space required, and on which volume               |
-| `VerificationFailed`       | What was expected of the signature, and that the file was deleted |
-| `HandoffFailed`            | The installer's own exit code, and the manual command         |
-| `DaemonNeverAnswered`      | The endpoints tried, and how long was waited                  |
-| `TestContainerFailed`      | The stage — pull, create or run — and the output              |
+| Blocker                     | Names                                                             |
+| --------------------------- | ----------------------------------------------------------------- |
+| `VirtualizationDisabled`    | That it is supported but off, and how to reach firmware           |
+| `VirtualizationUnsupported` | That the CPU lacks it, so no fix exists on this machine           |
+| `ArchitectureUnsupported`   | The architecture, and that no artefact is published for it        |
+| `OsTooOld`                  | The build found, and the build required                           |
+| `EditionUnsupported`        | The edition, and which backend it would have needed               |
+| `InsufficientDisk`          | Free space, space required, and on which volume                   |
+| `VerificationFailed`        | What was expected of the signature, and that the file was deleted |
+| `HandoffFailed`             | The installer's own exit code, and the manual command             |
+| `DaemonNeverAnswered`       | The endpoints tried, and how long was waited                      |
+| `TestContainerFailed`       | The stage — pull, create or run — and the output                  |
 
 Every variant names concrete values. "Virtualization is disabled" without the
 key to press is the failure mode this whole design exists to replace.
