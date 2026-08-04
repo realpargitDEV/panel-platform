@@ -17,6 +17,7 @@
  * `sidebar` block there for why the blue is darker than `--color-accent`.
  */
 import Icon, { type IconName } from '../ui/Icon';
+import Logo from '../ui/Logo';
 import { Menu, useMenu, type MenuItem } from '../ui/overlays';
 import { IconButton } from '../ui/primitives';
 
@@ -82,12 +83,11 @@ export default function Sidebar({
           collapses: 60px rail − 24px gutters = the mark's own 36px. */}
       <div className="flex h-16 items-center gap-2.5 px-3">
         <span
-          aria-hidden
-          className={`brand-mark grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[14px] font-bold text-white ${
+          className={`brand-tile grid h-9 w-9 shrink-0 place-items-center rounded-[10px] ${
             collapsed ? 'mx-auto' : ''
           }`}
         >
-          P
+          <Logo size={22} title="Panel Platform" />
         </span>
 
         {!collapsed && (
