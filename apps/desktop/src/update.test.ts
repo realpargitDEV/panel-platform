@@ -11,8 +11,11 @@ import {
   formatBytes,
   formatRate,
   formatRemaining,
+  canClose,
   idle,
+  isWorking,
   rateBetween,
+  screenFor,
   secondsRemaining,
   smoothRate,
   isBusy,
@@ -476,5 +479,122 @@ describe('download rate and time remaining', () => {
     expect(formatRemaining(300)).toBe('5 min left');
     expect(formatRemaining(3900)).toBe('1h 5m left');
     expect(formatRemaining(null)).toBeNull();
+  });
+});
+
+describe('the screen model', () => {
+  const base = { check: null, checking: false, checkFailure: null, phase: idle };
+  const available = {
+    state: 'available' as const,
+    currentVersion: '0.1.11',
+    newVersion: '0.1.12',
+    notes: 'Fixes',
+    publishedAt: null,
+    downloadUrl: 'https://example.test/x',
+    signature: 'sig',
+  };
+
+  it('is idle before the first check answers', () => {
+    expect(screenFor(base)).toEqual({ state: 'idle' });
+  });
+
+  it('shows checking while a check is in flight', () => {
+    expect(screenFor({ ...base, checking: true }).state).toBe('checking');
+  });
+
+  it('shows the release when one is available', () => {
+    expect(screenFor({ ...base, check: available })).toEqual({
+      state: 'available',
+      version: '0.1.12',
+      notes: 'Fixes',
+      publishedAt: null,
+    });
+  });
+
+  it('shows no-update and ahead-of-published distinctly', () => {
+    expect(
+      screenFor({ ...base, check: { state: 'up_to_date', currentVersion: '0.1.11' } }).state,
+    ).toBe('no_update');
+    expect(
+      screenFor({
+        ...base,
+        check: { state: 'ahead_of_published', currentVersion: '0.2.0', publishedVersion: '0.1.11' },
+      }).state,
+    ).toBe('ahead');
+  });
+
+  /** Without this the screen would sit on the details page for the first
+   *  seconds of every download, until the first byte arrived. */
+  it('shows preparing once the install is accepted but no byte has arrived', () => {
+    expect(screenFor({ ...base, check: available }, true).state).toBe('preparing');
+  });
+
+  it('follows the install through every stage', () => {
+    const stage = (phase: typeof base.phase) =>
+      screenFor({ ...base, check: available, phase }).state;
+
+    expect(stage({ state: 'downloading', downloadedBytes: 1, totalBytes: 2 })).toBe('downloading');
+    expect(stage({ state: 'verifying' })).toBe('verifying');
+    expect(stage({ state: 'installing' })).toBe('installing');
+    expect(stage({ state: 'restarting' })).toBe('restart_required');
+    expect(stage({ state: 'installed' })).toBe('completed');
+  });
+
+  /** Once bytes are moving, what the last check said is history. */
+  it('lets the install outrank the check', () => {
+    const screen = screenFor({
+      ...base,
+      checking: true,
+      check: available,
+      phase: { state: 'downloading', downloadedBytes: 5, totalBytes: 10 },
+    });
+    expect(screen.state).toBe('downloading');
+  });
+
+  it('offers retry on a failed install only while there is something to install', () => {
+    const failed = { state: 'failed' as const, message: 'boom' };
+    expect(screenFor({ ...base, check: available, phase: failed })).toMatchObject({
+      state: 'failed',
+      canRetry: true,
+    });
+    expect(screenFor({ ...base, phase: failed })).toMatchObject({ canRetry: false });
+  });
+
+  /** A failed check is recovered by checking again, never by installing. */
+  it('does not offer an install retry for a failed check', () => {
+    expect(screenFor({ ...base, checkFailure: 'no network' })).toEqual({
+      state: 'failed',
+      message: 'no network',
+      canRetry: false,
+    });
+  });
+
+  it('treats a skipped version as nothing to show', () => {
+    expect(screenFor({ ...base, check: { state: 'skipped', skippedVersion: '0.1.9' } }).state).toBe(
+      'idle',
+    );
+  });
+});
+
+describe('what the controls may do', () => {
+  /** Closing during a download costs the download; during an install it can
+   *  leave a half-written application. */
+  it('forbids closing while work is in flight', () => {
+    for (const state of ['preparing', 'downloading', 'verifying', 'installing'] as const) {
+      expect(canClose({ state } as never)).toBe(false);
+    }
+  });
+
+  it('allows closing everywhere else', () => {
+    for (const state of ['idle', 'checking', 'no_update', 'available', 'completed'] as const) {
+      expect(canClose({ state } as never)).toBe(true);
+    }
+  });
+
+  it('knows which states the user is waiting through', () => {
+    expect(isWorking({ state: 'downloading' } as never)).toBe(true);
+    expect(isWorking({ state: 'checking' } as never)).toBe(true);
+    expect(isWorking({ state: 'available' } as never)).toBe(false);
+    expect(isWorking({ state: 'completed' } as never)).toBe(false);
   });
 });

@@ -416,3 +416,119 @@ export function formatRemaining(seconds: number | null): string | null {
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m left`;
 }
+
+// ------------------------------------------------------------- screen model
+
+/**
+ * What the update manager is showing, as one value.
+ *
+ * The store keeps the check and the install as two independent facts, which is
+ * right for the store — a check can fail while an install is running — but
+ * wrong for a screen, which is only ever in one state. This collapses them into
+ * the single union the interface renders, so the screen has no conditionals of
+ * its own to get out of step with the store.
+ *
+ * It is a pure function of the state, which is what lets every one of these
+ * eleven states be tested without a download, a network, or a timer. Nothing
+ * here advances on a clock: a stage the updater never reports is a stage the
+ * screen never shows.
+ */
+export type UpdateScreen =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'no_update'; currentVersion: string }
+  /** The published build is older than this one — a development install. */
+  | { state: 'ahead'; currentVersion: string; publishedVersion: string }
+  | { state: 'available'; version: string; notes: string; publishedAt: string | null }
+  /** Accepted, but the updater has not yet reported a byte. */
+  | { state: 'preparing' }
+  | { state: 'downloading'; downloadedBytes: number; totalBytes: number | null }
+  | { state: 'verifying' }
+  | { state: 'installing' }
+  | { state: 'restart_required' }
+  | { state: 'completed' }
+  | { state: 'failed'; message: string; canRetry: boolean };
+
+/**
+ * `accepted` is what the store cannot know: whether the user pressed Install.
+ * Without it there is no way to tell "an update is available" from "an install
+ * has been asked for but no byte has arrived yet", and the screen would sit on
+ * the details page for the first seconds of every download.
+ */
+export function screenFor(state: UpdateState, accepted = false): UpdateScreen {
+  // The install outranks the check: once bytes are moving, what the last check
+  // said is history.
+  switch (state.phase.state) {
+    case 'downloading':
+      return {
+        state: 'downloading',
+        downloadedBytes: state.phase.downloadedBytes,
+        totalBytes: state.phase.totalBytes,
+      };
+    case 'verifying':
+      return { state: 'verifying' };
+    case 'installing':
+      return { state: 'installing' };
+    case 'restarting':
+      return { state: 'restart_required' };
+    case 'installed':
+      return { state: 'completed' };
+    case 'failed':
+      // Retry re-enters the same install, which is only meaningful while there
+      // is still an update to install.
+      return {
+        state: 'failed',
+        message: state.phase.message,
+        canRetry: state.check?.state === 'available',
+      };
+    case 'idle':
+      break;
+  }
+
+  if (accepted) return { state: 'preparing' };
+  if (state.checking) return { state: 'checking' };
+
+  if (state.checkFailure !== null) {
+    // A failed *check* is recoverable by checking again, never by installing.
+    return { state: 'failed', message: state.checkFailure, canRetry: false };
+  }
+
+  const check = state.check;
+  if (check === null) return { state: 'idle' };
+
+  switch (check.state) {
+    case 'available':
+      return {
+        state: 'available',
+        version: check.newVersion,
+        notes: check.notes,
+        publishedAt: check.publishedAt,
+      };
+    case 'up_to_date':
+      return { state: 'no_update', currentVersion: check.currentVersion };
+    case 'ahead_of_published':
+      return {
+        state: 'ahead',
+        currentVersion: check.currentVersion,
+        publishedVersion: check.publishedVersion,
+      };
+    case 'skipped':
+      return { state: 'idle' };
+  }
+}
+
+/**
+ * Whether the window may be closed.
+ *
+ * Closing during a download costs the download; closing during an install can
+ * leave a half-written application. The control is disabled rather than hidden,
+ * so it is visible that it exists and is temporarily unavailable.
+ */
+export function canClose(screen: UpdateScreen): boolean {
+  return !['preparing', 'downloading', 'verifying', 'installing'].includes(screen.state);
+}
+
+/** Whether this state is one the user is waiting through. */
+export function isWorking(screen: UpdateScreen): boolean {
+  return ['checking', 'preparing', 'downloading', 'verifying', 'installing'].includes(screen.state);
+}
