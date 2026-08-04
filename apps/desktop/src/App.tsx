@@ -153,6 +153,33 @@ export default function App() {
     // remounted this in development.
   }, []);
 
+  // Announce a project that changed state on its own — a container that fell
+  // over, or one Docker restarted. Only transitions are reported, never the
+  // first load, or opening the window would toast once per running project.
+  const lastStatuses = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (!projects) return;
+
+    const current = new Map(projects.map((item) => [item.id, item.status]));
+    const previous = lastStatuses.current;
+    lastStatuses.current = current;
+
+    if (!previous || !preferences.notifyStateChanges) return;
+
+    for (const [id, status] of current) {
+      const before = previous.get(id);
+      if (before === undefined || before === status) continue;
+
+      const project = projects.find((item) => item.id === id);
+      if (!project) continue;
+
+      const label = `${project.displayName} is now ${status.toLowerCase()}`;
+      if (status === 'FAILED') toast.error(label, 'It stopped without being asked to.');
+      else if (isRunning(status)) toast.success(label);
+      else toast.info(label);
+    }
+  }, [projects, preferences.notifyStateChanges]);
+
   // Written to the document rather than threaded through the tree: a theme is
   // an attribute the token blocks in `styles.css` respond to, so switching one
   // re-paints without re-rendering anything.
@@ -456,6 +483,7 @@ export default function App() {
               key={project.id}
               project={project}
               dockerAvailable={status?.dockerAvailable ?? false}
+              developerMode={preferences.developerMode}
               onRefreshProjects={refresh}
               onBack={() => setOpenProject(null)}
               onOpenFiles={() => setEditing(true)}

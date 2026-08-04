@@ -64,12 +64,15 @@ type TabId =
 export default function ProjectDetail({
   project,
   dockerAvailable,
+  developerMode = false,
   onRefreshProjects,
   onBack,
   onOpenFiles,
 }: {
   project: ProjectSummary;
   dockerAvailable: boolean;
+  /** Shows the internal identifiers a bug report needs. */
+  developerMode?: boolean;
   onRefreshProjects: () => Promise<void>;
   onBack: () => void;
   onOpenFiles: () => void;
@@ -170,6 +173,11 @@ export default function ProjectDetail({
             <p className="mt-1 truncate text-[13px] text-muted">
               {project.description || project.slug}
             </p>
+            {developerMode && (
+              <p className="mt-1 font-mono text-[11px] text-faint select-text">
+                {project.id} · {project.projectType}
+              </p>
+            )}
           </div>
         </div>
 
