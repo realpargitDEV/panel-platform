@@ -431,6 +431,17 @@ textarea,
   }
 }
 
+/* A project mark. The same lit-surface treatment as the workspace mark and the
+   primary button — a hairline highlight on the top edge and a shadow under it
+   — so a coloured tile reads as the same material as everything else rather
+   than as a sticker on top of the interface. */
+.mark-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    inset 0 0 0 1px rgb(0 0 0 / 0.06);
+}
+
 /* ================================================================== motion */
 
 /* One scale, so a new animation does not invent a sixth duration.

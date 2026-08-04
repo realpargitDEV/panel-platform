@@ -25,6 +25,7 @@ import {
   needsAttention,
   statusLook,
 } from '../lib/projects';
+import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
 import {
   Badge,
@@ -336,13 +337,7 @@ export default function Overview({
                       onClick={() => onOpenProject(project.id)}
                       className="flex w-full items-center gap-2.5 rounded-[8px] px-2 py-2 text-left hover:bg-raised"
                     >
-                      <span
-                        aria-hidden
-                        className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] text-[11px] font-semibold text-white"
-                        style={{ background: project.color ?? '#3b82f6' }}
-                      >
-                        {project.displayName.slice(0, 1).toUpperCase()}
-                      </span>
+                      <ProjectMark projectId={project.id} runtime={project.projectType} size={24} />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
                         {project.displayName}
                       </span>
