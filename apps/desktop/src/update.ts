@@ -338,3 +338,81 @@ export function createUpdateStore(backend: UpdateBackend): UpdateStore {
     },
   };
 }
+
+// ------------------------------------------------------------- transfer rate
+
+/**
+ * A point in the download, for working out how fast it is going.
+ *
+ * Rate and time-remaining are *derived* from the bytes the backend already
+ * reports rather than invented: nothing here is a decorative number, which is
+ * the whole reason they are computed in this file with tests rather than in a
+ * component.
+ */
+export interface TransferSample {
+  /** Milliseconds, from a monotonic clock. */
+  at: number;
+  bytes: number;
+}
+
+/**
+ * Bytes per second between two samples.
+ *
+ * `null` when the pair cannot support an answer — no elapsed time, or bytes
+ * that went backwards, which happens if a download restarts. A wrong number is
+ * worse than no number: a user watching "2 seconds remaining" for a minute
+ * stops believing the whole window.
+ */
+export function rateBetween(previous: TransferSample, next: TransferSample): number | null {
+  const elapsed = next.at - previous.at;
+  const moved = next.bytes - previous.bytes;
+  if (elapsed <= 0 || moved < 0) return null;
+  return (moved / elapsed) * 1000;
+}
+
+/**
+ * Blend a new rate into the running one.
+ *
+ * An exponential moving average, because a raw per-chunk rate swings wildly and
+ * an estimate that flickers between "3 seconds" and "4 minutes" reads as broken
+ * even when each individual figure is honest.
+ */
+export function smoothRate(previous: number | null, sample: number, weight = 0.25): number {
+  if (previous === null || !Number.isFinite(previous)) return sample;
+  return previous * (1 - weight) + sample * weight;
+}
+
+/** Seconds left at the current rate, or `null` when that cannot be known. */
+export function secondsRemaining(
+  downloadedBytes: number,
+  totalBytes: number | null,
+  bytesPerSecond: number | null,
+): number | null {
+  if (totalBytes === null || bytesPerSecond === null || bytesPerSecond <= 0) return null;
+  const remaining = totalBytes - downloadedBytes;
+  if (remaining <= 0) return 0;
+  return remaining / bytesPerSecond;
+}
+
+export function formatRate(bytesPerSecond: number | null): string | null {
+  if (bytesPerSecond === null || !Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+    return null;
+  }
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+/**
+ * A duration a person can act on.
+ *
+ * Deliberately coarse above a minute: reporting "3 minutes 41 seconds" implies
+ * a precision the estimate does not have.
+ */
+export function formatRemaining(seconds: number | null): string | null {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return null;
+  if (seconds < 5) return 'a moment left';
+  if (seconds < 60) return `${Math.round(seconds)}s left`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min left`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m left`;
+}

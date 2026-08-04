@@ -9,7 +9,12 @@ import {
   describeCheck,
   failureMessage,
   formatBytes,
+  formatRate,
+  formatRemaining,
   idle,
+  rateBetween,
+  secondsRemaining,
+  smoothRate,
   isBusy,
   phaseFor,
   progressCaption,
@@ -425,5 +430,51 @@ describe('the update store', () => {
     const before = seen.length;
     await store.check();
     expect(seen.length).toBe(before);
+  });
+});
+
+describe('download rate and time remaining', () => {
+  it('measures bytes per second between two samples', () => {
+    expect(rateBetween({ at: 0, bytes: 0 }, { at: 1000, bytes: 500_000 })).toBe(500_000);
+    expect(rateBetween({ at: 1000, bytes: 500_000 }, { at: 3000, bytes: 1_500_000 })).toBe(500_000);
+  });
+
+  /** A wrong figure is worse than none: a user watching "2 seconds remaining"
+   *  for a minute stops trusting the whole window. */
+  it('refuses to guess when the samples cannot support an answer', () => {
+    expect(rateBetween({ at: 500, bytes: 10 }, { at: 500, bytes: 20 })).toBeNull();
+    expect(rateBetween({ at: 0, bytes: 100 }, { at: 1000, bytes: 40 })).toBeNull();
+  });
+
+  it('takes the first sample as the rate, then blends', () => {
+    expect(smoothRate(null, 800)).toBe(800);
+    expect(smoothRate(1000, 2000, 0.25)).toBe(1250);
+  });
+
+  it('computes the time left from the rate', () => {
+    expect(secondsRemaining(2_000_000, 10_000_000, 1_000_000)).toBe(8);
+    expect(secondsRemaining(10_000_000, 10_000_000, 1_000_000)).toBe(0);
+  });
+
+  it('has no estimate without a total or a rate', () => {
+    expect(secondsRemaining(10, null, 500)).toBeNull();
+    expect(secondsRemaining(10, 100, null)).toBeNull();
+    expect(secondsRemaining(10, 100, 0)).toBeNull();
+  });
+
+  it('renders a rate only when there is one', () => {
+    expect(formatRate(1_500_000)).toBe('1.4 MB/s');
+    expect(formatRate(null)).toBeNull();
+    expect(formatRate(0)).toBeNull();
+  });
+
+  /** Coarse above a minute on purpose: "3 minutes 41 seconds" implies a
+   *  precision the estimate does not have. */
+  it('renders a duration a person can act on', () => {
+    expect(formatRemaining(2)).toBe('a moment left');
+    expect(formatRemaining(42)).toBe('42s left');
+    expect(formatRemaining(300)).toBe('5 min left');
+    expect(formatRemaining(3900)).toBe('1h 5m left');
+    expect(formatRemaining(null)).toBeNull();
   });
 });
