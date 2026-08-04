@@ -147,17 +147,17 @@ mod tests {
         assert_eq!(merged, paths(&["/usr/bin", "/usr/local/bin"]));
     }
 
+    /// Directories are joined rather than concatenated, and the expected path
+    /// is built the same way the code builds it. A literal `"a\\b"` would be
+    /// one component on Linux and two on Windows, which is how a test like
+    /// this passes on the machine it was written on and fails in CI.
     #[test]
     fn an_executable_is_found_in_the_first_directory_that_has_it() {
-        let present = PathBuf::from("C:\\second\\node.exe");
+        let directories = paths(&["first", "second"]);
+        let present = directories[1].join("node.exe");
         let exists = |path: &Path| path == present;
 
-        let found = find_executable(
-            &paths(&["C:\\first", "C:\\second"]),
-            "node",
-            suffixes_for(true),
-            &exists,
-        );
+        let found = find_executable(&directories, "node", suffixes_for(true), &exists);
 
         assert_eq!(found, Some(present));
     }
@@ -166,10 +166,11 @@ mod tests {
     /// report a working Node installation as broken.
     #[test]
     fn a_windows_executable_is_found_under_any_of_its_suffixes() {
-        let present = PathBuf::from("C:\\nodejs\\npm.cmd");
+        let directories = paths(&["nodejs"]);
+        let present = directories[0].join("npm.cmd");
         let exists = |path: &Path| path == present;
 
-        let found = find_executable(&paths(&["C:\\nodejs"]), "npm", suffixes_for(true), &exists);
+        let found = find_executable(&directories, "npm", suffixes_for(true), &exists);
 
         assert_eq!(found, Some(present));
     }
@@ -179,7 +180,7 @@ mod tests {
         let exists = |_: &Path| false;
 
         assert_eq!(
-            find_executable(&paths(&["C:\\nodejs"]), "node", suffixes_for(true), &exists),
+            find_executable(&paths(&["nodejs"]), "node", suffixes_for(true), &exists),
             None
         );
     }
