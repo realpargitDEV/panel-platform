@@ -161,6 +161,37 @@ install can ever be updated again**, because clients trust exactly one key.
 
 Nothing installs without the user pressing the button.
 
+### 5.1 What the update manager can and cannot offer
+
+The window is driven by `screenFor` in `apps/desktop/src/update.ts`, a pure
+function of the store's state, and shows twelve states — idle, checking, no
+update, ahead of published, available, preparing, downloading, verifying,
+installing, restart required, completed, failed. Nothing advances on a timer:
+every stage comes from an `update://progress` event the core actually emitted,
+and percentage, size, rate and time remaining each render nothing rather than a
+guess when the reported data cannot support one.
+
+**There is no pause and no cancel, by design.** `tauri-plugin-updater`
+downloads, verifies and installs in a single call that cannot be interrupted or
+resumed. Offering either control would mean replacing that call with a
+downloader of our own — which would also mean re-implementing minisign
+verification against the compiled-in key, in application code, rather than
+inheriting it from the plugin. That trades a real security guarantee for a
+button, so it is not done. `Minimise` is offered instead: the window gets out of
+the way and the update carries on.
+
+`Close` is disabled rather than hidden while an update is in flight. Closing
+during a download costs the download; closing during an install can leave a
+half-written application.
+
+| Control  | Backed by                              |
+| -------- | -------------------------------------- |
+| Install  | `install_update` (plugin, verified)    |
+| Retry    | the same command, re-entered           |
+| Restart  | `restart_app` → `AppHandle::restart()` |
+| Minimise | `minimize_window` → `Window::minimize` |
+| Close    | window state only, gated on safety     |
+
 The `.deb` case is refused **before** anything is downloaded, and says which
 command to run instead. An AppImage sets `APPIMAGE` to its own path when it
 runs, so its absence on Linux identifies a packaged install. Left to the
