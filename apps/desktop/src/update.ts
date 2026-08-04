@@ -11,6 +11,7 @@
  * was already downloading. There is one update process, so there is one store.
  */
 import type { UpdateCheck } from './api';
+import type { IconName } from './ui/Icon';
 
 /** Where an install attempt has got to. */
 export type InstallPhase =
@@ -36,25 +37,6 @@ export function canStart(phase: InstallPhase): boolean {
 /** True while the update process owns the application. */
 export function isBusy(phase: InstallPhase): boolean {
   return !canStart(phase) && phase.state !== 'installed';
-}
-
-export function buttonLabel(phase: InstallPhase): string {
-  switch (phase.state) {
-    case 'downloading':
-      return 'Downloading…';
-    case 'verifying':
-      return 'Verifying…';
-    case 'installing':
-      return 'Installing…';
-    case 'restarting':
-      return 'Restarting…';
-    case 'installed':
-      return 'Restart to finish';
-    case 'failed':
-      return 'Try again';
-    default:
-      return 'Update now';
-  }
 }
 
 /**
@@ -106,27 +88,6 @@ export function progressCaption(phase: InstallPhase): string | null {
       return 'Starting the new version';
     default:
       return null;
-  }
-}
-
-/**
- * What the check produced, in one line.
- *
- * The two states that matter most — "Update available" and "You're up to date"
- * — are the first two cases, and neither is shown speculatively: `available` is
- * only produced by the core when the published version is strictly greater than
- * the installed one.
- */
-export function describeCheck(check: UpdateCheck): string {
-  switch (check.state) {
-    case 'available':
-      return `Update available — version ${check.newVersion}`;
-    case 'up_to_date':
-      return `You're up to date (version ${check.currentVersion})`;
-    case 'skipped':
-      return `Version ${check.skippedVersion} was skipped`;
-    case 'ahead_of_published':
-      return `You are running ${check.currentVersion}, which is newer than the published ${check.publishedVersion}`;
   }
 }
 
@@ -189,6 +150,17 @@ export interface UpdateState {
   /** Why the last check failed. Shown where the user asked for it. */
   checkFailure: string | null;
   phase: InstallPhase;
+  /**
+   * The user has asked for this update and the request has not yet finished.
+   *
+   * This is install *intent*, which no phase can express: between pressing
+   * Install and the first byte the updater reports, the phase is still `idle`
+   * and the screen would otherwise sit on the release notes as though nothing
+   * had been pressed. It is owned by the store — set in exactly one place and
+   * cleared in exactly one place — because a flag each component sets for
+   * itself is how the two-`useState` bug this store replaced came about.
+   */
+  accepted: boolean;
 }
 
 export const initialState: UpdateState = {
@@ -196,6 +168,7 @@ export const initialState: UpdateState = {
   checking: false,
   checkFailure: null,
   phase: idle,
+  accepted: false,
 };
 
 /** The `update://progress` payload, as the core emits it. */
@@ -269,10 +242,19 @@ export function createUpdateStore(backend: UpdateBackend): UpdateStore {
 
   const check = async () => {
     // Already asking, or busy installing the answer to the last question.
-    if (state.checking || isBusy(state.phase)) {
+    if (state.checking || state.accepted || isBusy(state.phase)) {
       return;
     }
-    set({ checking: true, checkFailure: null });
+    // A fresh question supersedes a stale answer: the intent is spent, and a
+    // failure from a previous attempt must not outlive the attempt that
+    // replaces it. `installed` is deliberately kept — that one is still true
+    // until the application restarts.
+    set({
+      checking: true,
+      checkFailure: null,
+      accepted: false,
+      phase: state.phase.state === 'failed' ? idle : state.phase,
+    });
     try {
       set({ check: await backend.check(), checkFailure: null });
     } catch (error) {
@@ -285,10 +267,15 @@ export function createUpdateStore(backend: UpdateBackend): UpdateStore {
   };
 
   const install = async () => {
-    if (!canStart(state.phase)) {
+    if (state.accepted || !canStart(state.phase)) {
       return;
     }
-    set({ phase: { state: 'downloading', downloadedBytes: 0, totalBytes: null } });
+    // Intent is recorded; the phase is *not* moved to `downloading`, because no
+    // byte has been reported yet and claiming one would be the invented stage
+    // this screen exists to avoid. `accepted` with an idle phase is exactly
+    // what `preparing` means. Any earlier failure is cleared here, so a retry
+    // starts from the same place a first attempt does.
+    set({ accepted: true, phase: idle });
 
     if (unlisten === null) {
       try {
@@ -305,10 +292,12 @@ export function createUpdateStore(backend: UpdateBackend): UpdateStore {
       // Reached only where the install returns rather than replacing the
       // process — on Windows the installer takes over and nothing after this
       // line runs.
-      set({ phase: { state: 'installed' } });
+      set({ phase: { state: 'installed' }, accepted: false });
     } catch (error) {
-      set({ phase: { state: 'failed', message: failureMessage(error) } });
+      set({ phase: { state: 'failed', message: failureMessage(error) }, accepted: false });
     }
+    // Both arms clear `accepted`: the request is over either way, and an intent
+    // that outlived its request would leave a retry stuck on `preparing`.
   };
 
   return {
@@ -450,12 +439,11 @@ export type UpdateScreen =
   | { state: 'failed'; message: string; canRetry: boolean };
 
 /**
- * `accepted` is what the store cannot know: whether the user pressed Install.
- * Without it there is no way to tell "an update is available" from "an install
- * has been asked for but no byte has arrived yet", and the screen would sit on
- * the details page for the first seconds of every download.
+ * `accepted` defaults to the store's own flag, which is the only place install
+ * intent lives. The parameter remains overridable so a test can pin one state
+ * without driving a whole install through the store.
  */
-export function screenFor(state: UpdateState, accepted = false): UpdateScreen {
+export function screenFor(state: UpdateState, accepted: boolean = state.accepted): UpdateScreen {
   // The install outranks the check: once bytes are moving, what the last check
   // said is history.
   switch (state.phase.state) {
@@ -531,4 +519,199 @@ export function canClose(screen: UpdateScreen): boolean {
 /** Whether this state is one the user is waiting through. */
 export function isWorking(screen: UpdateScreen): boolean {
   return ['checking', 'preparing', 'downloading', 'verifying', 'installing'].includes(screen.state);
+}
+
+/**
+ * Whether an install is under way, intent included.
+ *
+ * The phase alone is not enough: between the press and the first byte it is
+ * still `idle`, and a caller that asked only the phase would happily start a
+ * second install or run a periodic check straight through the first one.
+ */
+export function installBusy(state: UpdateState): boolean {
+  return state.accepted || isBusy(state.phase);
+}
+
+/**
+ * The screen's own progress, 0–100, or `null` for an indeterminate bar.
+ *
+ * Delegates to `progressPercent` rather than repeating the clamp, so a download
+ * shows one number whichever type it is asked through.
+ */
+export function screenPercent(screen: UpdateScreen): number | null {
+  switch (screen.state) {
+    case 'downloading':
+      return progressPercent({
+        state: 'downloading',
+        downloadedBytes: screen.downloadedBytes,
+        totalBytes: screen.totalBytes,
+      });
+    case 'verifying':
+    case 'installing':
+      // The transfer is done; the bar is full and the stage rail is what moves.
+      return 100;
+    default:
+      return null;
+  }
+}
+
+/** "12.4 MB of 30.1 MB" while downloading, and nothing anywhere else. */
+export function screenCaption(screen: UpdateScreen): string | null {
+  if (screen.state !== 'downloading') return null;
+  return progressCaption({
+    state: 'downloading',
+    downloadedBytes: screen.downloadedBytes,
+    totalBytes: screen.totalBytes,
+  });
+}
+
+// ------------------------------------------------------------- screen copy
+
+export type ScreenTone = 'neutral' | 'accent' | 'ok' | 'danger';
+
+/** The words and the mark for one state. */
+export interface ScreenCopy {
+  title: string;
+  detail: string;
+  icon: IconName;
+  tone: ScreenTone;
+}
+
+/**
+ * What each state says.
+ *
+ * Here rather than in the component so the sentence a user reads at the worst
+ * moment of an update is covered by a test, and so the screen contains no
+ * branch on `screen.state` of its own to fall out of step with this one.
+ */
+export function describeScreen(screen: UpdateScreen): ScreenCopy {
+  switch (screen.state) {
+    case 'idle':
+      return {
+        title: 'Updates',
+        detail: 'Panel Platform has not checked for a new version yet.',
+        icon: 'download',
+        tone: 'neutral',
+      };
+    case 'checking':
+      return {
+        title: 'Checking for updates',
+        detail: 'Asking the release feed for the newest published version.',
+        icon: 'refresh',
+        tone: 'accent',
+      };
+    case 'no_update':
+      return {
+        title: "You're up to date",
+        detail: `Version ${screen.currentVersion} is the newest published release.`,
+        icon: 'check-circle',
+        tone: 'ok',
+      };
+    case 'ahead':
+      return {
+        title: 'Ahead of the published release',
+        detail: `This build is ${screen.currentVersion}, which is newer than the published ${screen.publishedVersion}. There is nothing to install.`,
+        icon: 'info',
+        tone: 'neutral',
+      };
+    case 'available':
+      return {
+        title: `Version ${screen.version} is available`,
+        detail: 'It will be downloaded, checked against the signing key, and installed.',
+        icon: 'download',
+        tone: 'accent',
+      };
+    case 'preparing':
+      return {
+        title: 'Preparing the download',
+        detail: 'Contacting the release server. Nothing has been transferred yet.',
+        icon: 'download',
+        tone: 'accent',
+      };
+    case 'downloading':
+      return {
+        title: 'Downloading the update',
+        detail:
+          screen.totalBytes === null
+            ? 'The server did not report a size, so there is no percentage to show.'
+            : 'You can minimise this window — the download keeps going.',
+        icon: 'download',
+        tone: 'accent',
+      };
+    case 'verifying':
+      return {
+        title: 'Verifying the download',
+        detail: 'Checking its signature against the key built into this application.',
+        icon: 'shield',
+        tone: 'accent',
+      };
+    case 'installing':
+      return {
+        title: 'Installing the update',
+        detail: 'The installer is running. Do not close Panel Platform.',
+        icon: 'container',
+        tone: 'accent',
+      };
+    case 'restart_required':
+      return {
+        title: 'Restart to finish',
+        detail: 'The update is in place. Panel Platform has to restart to run it.',
+        icon: 'restart',
+        tone: 'ok',
+      };
+    case 'completed':
+      return {
+        title: 'Update installed',
+        detail: 'Restart to start the new version.',
+        icon: 'check-circle',
+        tone: 'ok',
+      };
+    case 'failed':
+      return {
+        // The two failures are not the same event, and saying so is the
+        // difference between "try the install again" and "try the network".
+        title: screen.canRetry ? 'The update did not finish' : 'The check did not finish',
+        detail: screen.message,
+        icon: 'alert',
+        tone: 'danger',
+      };
+  }
+}
+
+// ---------------------------------------------------------------- controls
+
+/**
+ * Which controls exist in this state.
+ *
+ * Every field here is backed by a real capability — `restart` by the
+ * `restart_app` command, `minimize` by `minimize_window`, both retries by the
+ * store. There is no pause and no cancel because the updater downloads and
+ * installs in one uninterruptible call, and a button that cannot do what it
+ * says is worse than an absent one.
+ */
+export interface UpdateControls {
+  /** Start the update the check found. */
+  install: boolean;
+  /** Re-enter the install that failed. */
+  retryInstall: boolean;
+  /** Ask the feed again — offered for a failed check, and after a plain answer. */
+  check: boolean;
+  minimize: boolean;
+  restart: boolean;
+  /** Always rendered, so its absence is never mistaken for a missing window. */
+  closeEnabled: boolean;
+}
+
+export function controlsFor(screen: UpdateScreen): UpdateControls {
+  const working = isWorking(screen);
+  return {
+    install: screen.state === 'available',
+    retryInstall: screen.state === 'failed' && screen.canRetry,
+    check: ['idle', 'no_update', 'ahead', 'failed'].includes(screen.state),
+    // Includes `checking`: a check that is waiting on a slow feed is still a
+    // wait, and the window should be able to get out of the way during it.
+    minimize: working,
+    restart: screen.state === 'restart_required' || screen.state === 'completed',
+    closeEnabled: canClose(screen),
+  };
 }

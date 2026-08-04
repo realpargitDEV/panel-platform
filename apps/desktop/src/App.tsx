@@ -26,6 +26,8 @@ import CommandPalette from './shell/CommandPalette';
 import Sidebar, { type View } from './shell/Sidebar';
 import TopBar from './shell/TopBar';
 import { isDeclined, useToolchainGate } from './components/useToolchainGate';
+import UpdateManager from './components/UpdateManager';
+import { installBusy } from './update';
 import { toast, ToastHost } from './ui/toast';
 import { updateStore, useUpdate } from './useUpdate';
 import type { Command } from './workspace/commands';
@@ -112,8 +114,25 @@ export default function App() {
   const [preferences, setPreferences] = useState<Preferences>(loadPreferences);
 
   const update = useUpdate();
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   /** Reported once per session, so a poll failure does not toast every 5s. */
   const reportedFailure = useRef(false);
+
+  /**
+   * Show the update manager whenever an install owns the application.
+   *
+   * An install can be started from four places, and one of them — the editor's
+   * Help menu — is on a screen that has no room to report progress. Rather than
+   * each entry point remembering to open the window, the window opens itself
+   * for the only condition that requires it. A *check* deliberately does not
+   * trigger this: the periodic one runs every six hours and must stay silent.
+   */
+  const updateOwnsApp = installBusy(update) || update.phase.state === 'installed';
+  useEffect(() => {
+    if (updateOwnsApp) setUpdatesOpen(true);
+  }, [updateOwnsApp]);
+
+  const openUpdates = useCallback(() => setUpdatesOpen(true), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -287,7 +306,10 @@ export default function App() {
         id: 'app.update',
         title: 'Check for Updates',
         category: 'Application',
-        run: () => void updateStore.check(),
+        run: () => {
+          openUpdates();
+          void updateStore.check();
+        },
       },
       {
         id: 'project.start',
@@ -401,6 +423,15 @@ export default function App() {
             setOpenProject(null);
             setView('settings');
           }}
+          onOpenUpdates={openUpdates}
+        />
+        {/* Rendered in both shells rather than above them: the editor returns
+            early, and an update started from its Help menu would otherwise have
+            nowhere to report itself. */}
+        <UpdateManager
+          open={updatesOpen}
+          currentVersion={status?.appVersion ?? '—'}
+          onClose={() => setUpdatesOpen(false)}
         />
         <ToastHost />
       </>
@@ -442,12 +473,15 @@ export default function App() {
             setOpenProject(null);
             setView('settings');
           }}
-          onCheckUpdates={() => void updateStore.check()}
+          onCheckUpdates={() => {
+            openUpdates();
+            void updateStore.check();
+          }}
           onOpenActivity={() => {
             setOpenProject(null);
             setView('activity');
           }}
-          onInstallUpdate={() => void updateStore.install()}
+          onInstallUpdate={openUpdates}
         />
 
         {/* Keyed on the destination so React remounts the subtree when the
@@ -523,6 +557,10 @@ export default function App() {
               projects={projects}
               preferences={preferences}
               onPreferences={patchPreferences}
+              onOpenUpdates={() => {
+                openUpdates();
+                void updateStore.check();
+              }}
               onResetLayout={() => {
                 try {
                   window.localStorage.removeItem(PREFERENCES_KEY);
@@ -575,6 +613,12 @@ export default function App() {
       )}
 
       {gate}
+
+      <UpdateManager
+        open={updatesOpen}
+        currentVersion={status?.appVersion ?? '—'}
+        onClose={() => setUpdatesOpen(false)}
+      />
 
       <ToastHost />
     </div>

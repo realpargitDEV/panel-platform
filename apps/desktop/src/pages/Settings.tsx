@@ -24,8 +24,8 @@ import {
   type SystemStatus,
 } from '../api';
 import { formatBytes, formatDuration } from '../lib/format';
-import { buttonLabel, canStart, describeCheck } from '../update';
-import { updateStore, useUpdate } from '../useUpdate';
+import { installBusy } from '../update';
+import { useUpdate } from '../useUpdate';
 import Icon from '../ui/Icon';
 import {
   ACCENTS,
@@ -36,7 +36,6 @@ import {
 } from '../lib/appearance';
 import { ConfirmDialog } from '../ui/overlays';
 import Select from '../ui/Select';
-import UpdateProgress from '../components/UpdateProgress';
 import {
   Badge,
   Button,
@@ -83,18 +82,22 @@ export default function Settings({
   preferences,
   onPreferences,
   onResetLayout,
+  onOpenUpdates,
 }: {
   status: SystemStatus | null;
   projects: ProjectSummary[] | null;
   preferences: Preferences;
   onPreferences: (next: Partial<Preferences>) => void;
   onResetLayout: () => void;
+  /** Opens the update manager and asks the feed. */
+  onOpenUpdates: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('general');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  const { check, checking, checkFailure, phase } = useUpdate();
+  const update = useUpdate();
+  const checking = update.checking;
 
   useEffect(() => {
     appSettings()
@@ -443,6 +446,10 @@ export default function Settings({
           </Card>
         )}
 
+        {/* This tab describes the update *settings*. What an update is doing
+            lives in the update manager, which is the one surface that renders
+            it — three panels each drawing the same install from the same store
+            is what the manager replaced. */}
         {tab === 'updates' && (
           <Card className="max-w-xl">
             <CardHeader
@@ -451,8 +458,9 @@ export default function Settings({
                 <Button
                   size="sm"
                   icon="refresh"
-                  disabled={checking || !canStart(phase)}
-                  onClick={() => void updateStore.check()}
+                  pending={checking}
+                  disabled={installBusy(update)}
+                  onClick={onOpenUpdates}
                 >
                   {checking ? 'Checking…' : 'Check now'}
                 </Button>
@@ -463,33 +471,12 @@ export default function Settings({
               <DataRow label="Release channel" value="stable" />
               <DataRow label="Check on startup" value="on" />
               <DataRow label="Check while running" value="every 6 hours" />
+              <DataRow label="Signature check" value="required" />
             </div>
 
-            {check && <p className="px-4 py-2 text-[13px] text-muted">{describeCheck(check)}</p>}
-            {checkFailure && <p className="px-4 py-2 text-[13px] text-warn">{checkFailure}</p>}
-
-            {check?.state === 'available' && (
-              <div className="mx-4 mb-4 rounded-[10px] border border-accent/40 bg-accent-soft p-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="flex-1 text-[13px] font-medium text-ink">
-                    Version {check.newVersion} is available
-                  </p>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={!canStart(phase)}
-                    onClick={() => void updateStore.install()}
-                  >
-                    {buttonLabel(phase)}
-                  </Button>
-                </div>
-                {check.notes && <p className="mt-1.5 text-[12px] text-muted">{check.notes}</p>}
-                <UpdateProgress phase={phase} tone="panel" />
-              </div>
-            )}
-
             <p className="border-t border-edge px-4 py-2.5 text-[12px] text-muted">
-              The release channel is fixed to stable in this build.
+              Every download is checked against the signing key built into this application before
+              it is installed. The release channel is fixed to stable in this build.
             </p>
           </Card>
         )}
