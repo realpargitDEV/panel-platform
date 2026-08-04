@@ -66,13 +66,13 @@ Five units. The split exists so every decision is a pure function of a value and
 can be tested on a machine with no Linux and no elevated session — which is the
 machine this is written on.
 
-| Unit                              | Responsibility                                          | Depends on                    |
-| --------------------------------- | ------------------------------------------------------- | ----------------------------- |
-| `crates/toolchain/catalog.rs`     | What each runtime needs, per platform. Data only.        | `platform`                    |
-| `crates/toolchain/plan.rs`        | missing set + `SystemSnapshot` → ordered steps or blocker | `catalog`, `platform`         |
-| `crates/toolchain/blocker.rs`     | Why no plan is possible, in concrete values              | nothing                       |
-| `crates/toolchain/execute.rs`     | Runs one step. The only impure file in the crate.        | `plan`                        |
-| `app-core/src/toolchain_flow.rs`  | The step machine the interface drives                    | `toolchain`, `host-runner`    |
+| Unit                             | Responsibility                                            | Depends on                 |
+| -------------------------------- | --------------------------------------------------------- | -------------------------- |
+| `crates/toolchain/catalog.rs`    | What each runtime needs, per platform. Data only.         | `platform`                 |
+| `crates/toolchain/plan.rs`       | missing set + `SystemSnapshot` → ordered steps or blocker | `catalog`, `platform`      |
+| `crates/toolchain/blocker.rs`    | Why no plan is possible, in concrete values               | nothing                    |
+| `crates/toolchain/execute.rs`    | Runs one step. The only impure file in the crate.         | `plan`                     |
+| `app-core/src/toolchain_flow.rs` | The step machine the interface drives                     | `toolchain`, `host-runner` |
 
 `crates/toolchain` depends on `project-host-platform` and nothing else — not
 `docker-manager`, not `api-types` — for the reason the `compatibility` and
@@ -149,7 +149,7 @@ Steps are ordered in three layers:
    absence is the same blocker.
 2. **Prerequisites**, then **the toolchain**. Both elevated.
 3. **The project's own `install_command`** — `npm install`, `pip install -r
-   requirements.txt` — run **unelevated**, in the project directory, through the
+requirements.txt` — run **unelevated**, in the project directory, through the
    existing `host_runner::command` machinery. This is the last step and it is the
    first one that executes anything belonging to the project.
 
@@ -186,8 +186,8 @@ reports that a successful install failed.
 So confirmation re-reads `PATH` from `HKLM\SYSTEM\CurrentControlSet\Control\
 Session Manager\Environment` and `HKCU\Environment` rather than trusting the
 inherited copy, and resolves against that. If the executable is still not found
-after a step that exited zero, the message is *"installed — restart Panel
-Platform to pick it up"*. Reporting a failure there would send the user to
+after a step that exited zero, the message is _"installed — restart Panel
+Platform to pick it up"_. Reporting a failure there would send the user to
 reinstall software they already have.
 
 ---
@@ -224,15 +224,15 @@ by the ACL, which hides the gap behind everything else working.
 because "installation failed" without the package and the exit code is the
 failure mode this design exists to replace.
 
-| Variant                    | Carries                        | Fixable |
-| -------------------------- | ------------------------------ | ------- |
-| `NoPackageManager`         | platform, where to get one     | yes     |
-| `RuntimeUnsupported`       | runtime name                   | no      |
-| `PolyglotUnresolvable`     | —                              | no      |
-| `NotAuthorised`            | the step that was declined     | yes     |
-| `StepFailed`               | program, exit code, last output| yes     |
-| `StillMissingAfterInstall` | executable, packages installed | yes     |
-| `HostUnrecognised`         | —                              | no      |
+| Variant                    | Carries                         | Fixable |
+| -------------------------- | ------------------------------- | ------- |
+| `NoPackageManager`         | platform, where to get one      | yes     |
+| `RuntimeUnsupported`       | runtime name                    | no      |
+| `PolyglotUnresolvable`     | —                               | no      |
+| `NotAuthorised`            | the step that was declined      | yes     |
+| `StepFailed`               | program, exit code, last output | yes     |
+| `StillMissingAfterInstall` | executable, packages installed  | yes     |
+| `HostUnrecognised`         | —                               | no      |
 
 `is_fixable()` drives whether the interface offers a retry, exactly as
 `compatibility::Blocker::is_fixable` does. Offering a retry for an unsupported

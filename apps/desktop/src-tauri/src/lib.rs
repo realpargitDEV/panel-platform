@@ -625,6 +625,167 @@ async fn start_project(
         .map_err(CommandError::from)
 }
 
+/// One command the user is being asked to allow, before anything runs.
+#[derive(Debug, Serialize)]
+pub struct ToolchainStepDto {
+    pub describes: String,
+    pub elevated: bool,
+}
+
+/// What pressing Start should do about the project's language.
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ToolchainReadinessDto {
+    /// Nothing is missing. Start normally.
+    Ready,
+    /// Show these steps and start only if the user agrees.
+    NeedsInstall {
+        display_name: String,
+        steps: Vec<ToolchainStepDto>,
+        /// Whether any step raises an elevation prompt, so the window can say
+        /// so before the prompt appears rather than after.
+        needs_elevation: bool,
+    },
+    /// Nothing can be offered. `fixable` decides whether a retry is shown.
+    Blocked { message: String, fixable: bool },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolchainProgress {
+    pub step: usize,
+    pub of: usize,
+    pub describes: String,
+}
+
+impl ToolchainProgress {
+    const EVENT: &'static str = "toolchain://progress";
+}
+
+/// Read the project's runtime and work out what this machine is missing.
+async fn readiness_for(
+    app: &AppState,
+    project_id: &str,
+) -> CommandResult<(String, project_host_core::Readiness)> {
+    let runtime = project_host_database::projects::find_runtime(app.database(), project_id)
+        .await
+        .map_err(CommandError::from)?
+        .ok_or_else(|| CommandError {
+            message: "This project has no runtime recorded.".to_string(),
+        })?;
+
+    let snapshot = project_host_platform::probe::SystemProbe::snapshot(
+        &project_host_platform::probe::SystemScanner,
+    );
+    let host = project_host_core::host_from_snapshot(
+        &snapshot,
+        project_host_core::toolchain_flow::winget_present(),
+    );
+
+    let install =
+        project_host_core::toolchain_flow::project_install_for(runtime.install_command.as_deref());
+
+    let readiness = project_host_core::assess(
+        &runtime.runtime,
+        &host,
+        &project_host_core::MachineResolver,
+        install.as_ref(),
+    );
+
+    Ok((runtime.runtime, readiness))
+}
+
+/// What the machine is missing for this project, without changing anything.
+#[tauri::command]
+async fn toolchain_readiness(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+) -> CommandResult<ToolchainReadinessDto> {
+    let app: &AppState = &state;
+    let (runtime, readiness) = readiness_for(app, &project_id).await?;
+
+    Ok(match readiness {
+        project_host_core::Readiness::Ready => ToolchainReadinessDto::Ready,
+
+        project_host_core::Readiness::NeedsInstall { steps } => {
+            ToolchainReadinessDto::NeedsInstall {
+                display_name: project_host_toolchain::spec_for(&runtime)
+                    .map(|spec| spec.display_name.to_string())
+                    .unwrap_or(runtime),
+                needs_elevation: steps.iter().any(|step| step.elevated),
+                steps: steps
+                    .iter()
+                    .map(|step| ToolchainStepDto {
+                        describes: step.describes.clone(),
+                        elevated: step.elevated,
+                    })
+                    .collect(),
+            }
+        }
+
+        project_host_core::Readiness::Blocked(blocker) => ToolchainReadinessDto::Blocked {
+            message: blocker.to_string(),
+            fixable: blocker.is_fixable(),
+        },
+    })
+}
+
+/// Install what `toolchain_readiness` reported missing.
+///
+/// The plan is recomputed here rather than taken from the window: a step list
+/// that arrived over the boundary is a command line chosen by the caller, and
+/// this one is run elevated.
+#[tauri::command]
+async fn install_toolchain(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let (runtime, readiness) = readiness_for(app, &project_id).await?;
+
+    let steps = match readiness {
+        project_host_core::Readiness::Ready => return Ok(()),
+        project_host_core::Readiness::Blocked(blocker) => {
+            return Err(CommandError {
+                message: blocker.to_string(),
+            })
+        }
+        project_host_core::Readiness::NeedsInstall { steps } => steps,
+    };
+
+    let snapshot = project_host_platform::probe::SystemProbe::snapshot(
+        &project_host_platform::probe::SystemScanner,
+    );
+    let host = project_host_core::host_from_snapshot(
+        &snapshot,
+        project_host_core::toolchain_flow::winget_present(),
+    );
+
+    // Installing blocks on subprocesses that raise an elevation prompt and
+    // wait for a person, which is far too long to hold the async runtime.
+    tokio::task::spawn_blocking(move || {
+        let mut report = |progress: project_host_core::toolchain_flow::Progress| {
+            let payload = ToolchainProgress {
+                step: progress.step,
+                of: progress.of,
+                describes: progress.describes,
+            };
+            if let Err(error) = app_handle.emit(ToolchainProgress::EVENT, payload) {
+                tracing::warn!(%error, "could not report install progress to the window");
+            }
+        };
+
+        project_host_core::toolchain_flow::install(&runtime, &steps, &host, &mut report)
+    })
+    .await
+    .map_err(|error| CommandError {
+        message: format!("the install could not be started: {error}"),
+    })?
+    .map_err(|blocker| CommandError {
+        message: blocker.to_string(),
+    })
+}
+
 #[tauri::command]
 async fn stop_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
@@ -2228,6 +2389,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_projects,
             create_project,
             start_project,
+            toolchain_readiness,
+            install_toolchain,
             stop_project,
             restart_project,
             kill_project,

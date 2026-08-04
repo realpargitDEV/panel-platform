@@ -214,6 +214,50 @@ export async function stopProject(projectId: string): Promise<void> {
   return invoke('stop_project', { projectId });
 }
 
+// -------------------------------------------------------------- toolchains
+
+/** One command the user is asked to allow, before anything runs. */
+export interface ToolchainStep {
+  describes: string;
+  elevated: boolean;
+}
+
+/**
+ * What starting this project needs from the machine.
+ *
+ * `blocked` is not always a dead end: `fixable` says whether offering a retry
+ * makes sense, so a firmware-style refusal never loops the user forever.
+ */
+export type ToolchainReadiness =
+  | { state: 'ready' }
+  | {
+      state: 'needs_install';
+      display_name: string;
+      steps: ToolchainStep[];
+      needs_elevation: boolean;
+    }
+  | { state: 'blocked'; message: string; fixable: boolean };
+
+export interface ToolchainProgress {
+  step: number;
+  of: number;
+  describes: string;
+}
+
+export async function toolchainReadiness(projectId: string): Promise<ToolchainReadiness> {
+  return invoke('toolchain_readiness', { projectId });
+}
+
+export async function installToolchain(projectId: string): Promise<void> {
+  return invoke('install_toolchain', { projectId });
+}
+
+export async function onToolchainProgress(
+  handler: (progress: ToolchainProgress) => void,
+): Promise<() => void> {
+  return listen<ToolchainProgress>('toolchain://progress', (event) => handler(event.payload));
+}
+
 export async function restartProject(projectId: string): Promise<string> {
   return invoke('restart_project', { projectId });
 }

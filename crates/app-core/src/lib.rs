@@ -31,6 +31,7 @@ pub mod runtime;
 pub mod runtime_plan;
 pub mod shutdown;
 pub mod state;
+pub mod toolchain_flow;
 
 pub use config::{AppConfig, ConfigError, LogLevel, Mode};
 pub use health::{Health, HealthReport};
@@ -42,3 +43,4 @@ pub use runtime::{resolve_paths, Runtime, RuntimeError, APP_VERSION};
 pub use runtime_plan::{plan_detected, plan_named, PlanError, RuntimePlan};
 pub use shutdown::{wait_for_signal, Shutdown};
 pub use state::{AppState, Identity};
+pub use toolchain_flow::{assess, host_from_snapshot, MachineResolver, Readiness};
