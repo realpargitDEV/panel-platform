@@ -214,6 +214,24 @@ export async function stopProject(projectId: string): Promise<void> {
   return invoke('stop_project', { projectId });
 }
 
+// ------------------------------------------------------------ window/app
+
+/**
+ * Relaunch the application so an installed update takes effect.
+ *
+ * Never resolves on success: the process is replaced. A caller must not wait
+ * on it before showing anything, and must still handle a rejection — the
+ * command can fail before the restart happens.
+ */
+export async function restartApp(): Promise<void> {
+  return invoke('restart_app');
+}
+
+/** Put the window aside without cancelling what it is doing. */
+export async function minimizeWindow(): Promise<void> {
+  return invoke('minimize_window');
+}
+
 // -------------------------------------------------------------- toolchains
 
 /** One command the user is asked to allow, before anything runs. */

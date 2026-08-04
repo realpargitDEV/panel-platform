@@ -694,6 +694,34 @@ async fn readiness_for(
     Ok((runtime.runtime, readiness))
 }
 
+/// Relaunch the application, so an installed update can take effect.
+///
+/// The updater writes the new files while this process is still running; the
+/// new version is only on screen after a restart. Until this existed the
+/// finished state could only *tell* the user to close and reopen, which is the
+/// one step of the update it could not perform for them.
+///
+/// Never returns: `restart` replaces the process. Typed as returning
+/// `CommandResult<()>` anyway so the front end can await it like any other
+/// command and report a failure to even reach it.
+#[tauri::command]
+async fn restart_app(app: tauri::AppHandle) -> CommandResult<()> {
+    tracing::info!("restarting to finish an update");
+    app.restart();
+}
+
+/// Minimise the update window.
+///
+/// A long download should be able to get out of the way without being
+/// cancelled — and cancelling is not offered, so this is the only way to put it
+/// aside.
+#[tauri::command]
+async fn minimize_window(window: tauri::Window) -> CommandResult<()> {
+    window.minimize().map_err(|error| CommandError {
+        message: format!("The window could not be minimised: {error}"),
+    })
+}
+
 /// What the machine is missing for this project, without changing anything.
 #[tauri::command]
 async fn toolchain_readiness(
@@ -2397,6 +2425,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             app_settings,
             check_for_update,
             install_update,
+            restart_app,
+            minimize_window,
             supported_runtimes,
             github_cli_status,
             list_project_files,
