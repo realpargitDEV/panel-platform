@@ -11,6 +11,7 @@
  */
 import Icon from './Icon';
 import type { AppSettings, ProjectSummary } from '../api';
+import { useTypewriter } from '../lib/typewriter';
 import { formatTime, type OutputChannel, type OutputLine } from './output';
 import type { Problem } from './problems';
 
@@ -159,6 +160,30 @@ export type RunAction = 'start' | 'restart' | 'stop' | 'kill';
  * it is: there is no interactive shell into a project and no streamed log, so
  * it offers the controls that exist and says what the state actually is.
  */
+/**
+ * One line of the transcript, typed out as it arrives.
+ *
+ * Only ever animates on first mount, which is exactly the behaviour wanted:
+ * lines are appended, so a new line mounts and types itself while everything
+ * above it — already mounted — stays put. Re-opening the panel does not replay
+ * the history, and no "which line is newest" bookkeeping is needed to get that.
+ */
+function TypedLine({ line }: { line: OutputLine }) {
+  const { shown, done } = useTypewriter(line.text);
+
+  return (
+    <p className="whitespace-pre-wrap">
+      <span className="text-vs-dim">[{formatTime(line.at)}] </span>
+      <span className={line.level === 'error' ? 'text-red-400' : 'text-vs-text'}>{shown}</span>
+      {!done && (
+        <span aria-hidden className="animate-caret ml-px inline-block w-[7px] text-vs-text">
+          ▍
+        </span>
+      )}
+    </p>
+  );
+}
+
 export function TerminalPanel({
   project,
   dockerAvailable,
@@ -232,14 +257,7 @@ export function TerminalPanel({
             restart the project.
           </p>
         ) : (
-          lines.map((line) => (
-            <p key={line.id} className="whitespace-pre-wrap">
-              <span className="text-vs-dim">[{formatTime(line.at)}] </span>
-              <span className={line.level === 'error' ? 'text-red-400' : 'text-vs-text'}>
-                {line.text}
-              </span>
-            </p>
-          ))
+          lines.map((line) => <TypedLine key={line.id} line={line} />)
         )}
       </div>
 

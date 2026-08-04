@@ -20,6 +20,7 @@ import NewProjectWizard, { CreatedSummary } from './pages/NewProjectWizard';
 import Overview from './pages/Overview';
 import ProjectDetail from './pages/ProjectDetail';
 import Projects from './pages/Projects';
+import { applyAppearance, defaultAppearance, normaliseAppearance } from './lib/appearance';
 import Settings, { type Preferences } from './pages/Settings';
 import CommandPalette from './shell/CommandPalette';
 import Sidebar, { type View } from './shell/Sidebar';
@@ -38,6 +39,10 @@ const PREFERENCES_KEY = 'panel.preferences.v1';
 const defaultPreferences: Preferences = {
   collapsedSidebar: false,
   confirmDestructive: true,
+  appearance: defaultAppearance,
+  startupView: 'last',
+  notifyStateChanges: true,
+  developerMode: false,
 };
 
 function loadPreferences(): Preferences {
@@ -56,6 +61,24 @@ function loadPreferences(): Preferences {
         typeof stored.confirmDestructive === 'boolean'
           ? stored.confirmDestructive
           : defaultPreferences.confirmDestructive,
+      // Validated rather than trusted: an unknown theme id written to the DOM
+      // would match no token block and leave the window unstyled.
+      appearance: normaliseAppearance(stored.appearance),
+      startupView:
+        stored.startupView === 'overview' ||
+        stored.startupView === 'projects' ||
+        stored.startupView === 'activity' ||
+        stored.startupView === 'last'
+          ? stored.startupView
+          : defaultPreferences.startupView,
+      notifyStateChanges:
+        typeof stored.notifyStateChanges === 'boolean'
+          ? stored.notifyStateChanges
+          : defaultPreferences.notifyStateChanges,
+      developerMode:
+        typeof stored.developerMode === 'boolean'
+          ? stored.developerMode
+          : defaultPreferences.developerMode,
     };
   } catch {
     return defaultPreferences;
@@ -129,6 +152,13 @@ export default function App() {
     // window, and tearing it down here would end checking the first time React
     // remounted this in development.
   }, []);
+
+  // Written to the document rather than threaded through the tree: a theme is
+  // an attribute the token blocks in `styles.css` respond to, so switching one
+  // re-paints without re-rendering anything.
+  useEffect(() => {
+    applyAppearance(document.documentElement, preferences.appearance);
+  }, [preferences.appearance]);
 
   const patchPreferences = useCallback((next: Partial<Preferences>) => {
     setPreferences((current) => {
@@ -356,6 +386,11 @@ export default function App() {
         view={view}
         collapsed={preferences.collapsedSidebar}
         projectCount={projects?.length ?? 0}
+        busyCount={
+          projects?.filter((item) =>
+            ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING', 'DEPLOYING'].includes(item.status),
+          ).length ?? 0
+        }
         dockerAvailable={status?.dockerAvailable ?? false}
         dockerSummary={status?.dockerSummary ?? 'Checking Docker…'}
         onNavigate={(next) => {
@@ -388,7 +423,14 @@ export default function App() {
           onInstallUpdate={() => void updateStore.install()}
         />
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        {/* Keyed on the destination so React remounts the subtree when the
+            view changes, which is what re-runs the enter animation. Keyed on
+            the open project too, or moving between two projects would swap the
+            content with no transition at all. */}
+        <main
+          key={`${view}:${openProject ?? ''}`}
+          className="animate-view min-h-0 flex-1 overflow-y-auto"
+        >
           {failure && (
             <div className="border-b border-danger/30 bg-danger-soft px-8 py-2.5 text-[13px] text-danger">
               {failure}

@@ -35,6 +35,7 @@ export default function Sidebar({
   view,
   collapsed,
   projectCount,
+  busyCount = 0,
   dockerAvailable,
   dockerSummary,
   onNavigate,
@@ -44,6 +45,9 @@ export default function Sidebar({
   view: View;
   collapsed: boolean;
   projectCount: number;
+  /** Projects mid-transition. Drives the mark's pulse, so the motion means
+   *  "something is happening" rather than decorating the header forever. */
+  busyCount?: number;
   dockerAvailable: boolean;
   dockerSummary: string;
   onNavigate: (view: View) => void;
@@ -87,7 +91,12 @@ export default function Sidebar({
             collapsed ? 'mx-auto' : ''
           }`}
         >
-          <Logo size={22} title="Panel Platform" />
+          <span
+            className={busyCount > 0 ? 'animate-mark' : undefined}
+            title={busyCount > 0 ? `${busyCount} project(s) changing state` : undefined}
+          >
+            <Logo size={22} title="Panel Platform" />
+          </span>
         </span>
 
         {!collapsed && (

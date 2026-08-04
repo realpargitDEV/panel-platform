@@ -94,6 +94,143 @@
   --color-vs-badge: #3b82f6;
 }
 
+/* ==========================================================================
+   Themes
+   ==========================================================================
+
+   Each block re-points the same token names the whole interface already uses,
+   so a theme is a palette swap rather than a second set of components. The
+   `@theme` block above is the Dark values; `[data-theme='dark']` is therefore
+   deliberately absent rather than a duplicate that could drift from it.
+
+   Every ramp keeps the same *relationships*: canvas darkest, surface above it,
+   raised above that, and `ink`/`muted`/`faint` in descending contrast. A theme
+   that inverted one of those would break every component at once. */
+
+:root[data-theme='light'] {
+  --color-canvas: #f4f4f6;
+  --color-surface: #ffffff;
+  --color-raised: #ececed;
+  --color-overlay: #ffffff;
+  --color-edge: #dededf;
+  --color-edge-strong: #c3c3c6;
+
+  /* Not pure black: #16161a at 15.6:1 on white is past the point where more
+     contrast reads as harsher rather than clearer. */
+  --color-ink: #16161a;
+  --color-muted: #56565f;
+  --color-faint: #78787f;
+
+  --color-accent-soft: #e3edfd;
+  --color-ok-soft: #e4f7ea;
+  --color-warn-soft: #fbf2da;
+  --color-danger-soft: #fce8e8;
+
+  --color-sidebar-top: #ffffff;
+  --color-sidebar-bottom: #f4f4f6;
+  --color-sidebar-edge: #e2e2e4;
+}
+
+:root[data-theme='amber'] {
+  --color-canvas: #14100b;
+  --color-surface: #1c1710;
+  --color-raised: #241d14;
+  --color-overlay: #2b2318;
+  --color-edge: #33291c;
+  --color-edge-strong: #453725;
+
+  --color-ink: #f0e7d8;
+  --color-muted: #b3a08a;
+  --color-faint: #8a7a63;
+
+  --color-sidebar-top: #1f1810;
+  --color-sidebar-bottom: #16110a;
+  --color-sidebar-edge: #33291c;
+}
+
+:root[data-theme='midnight'] {
+  --color-canvas: #0a0d16;
+  --color-surface: #10141f;
+  --color-raised: #161b2b;
+  --color-overlay: #1c2336;
+  --color-edge: #232b40;
+  --color-edge-strong: #33405c;
+
+  --color-ink: #e6e9f2;
+  --color-muted: #9aa3bd;
+  --color-faint: #6b7593;
+
+  --color-sidebar-top: #121728;
+  --color-sidebar-bottom: #0b0f1a;
+  --color-sidebar-edge: #232b40;
+}
+
+:root[data-theme='nord'] {
+  --color-canvas: #161a21;
+  --color-surface: #1d232c;
+  --color-raised: #232a35;
+  --color-overlay: #2a323f;
+  --color-edge: #333c4a;
+  --color-edge-strong: #465366;
+
+  --color-ink: #e5e9f0;
+  --color-muted: #a7b1c2;
+  --color-faint: #7b8697;
+
+  --color-sidebar-top: #1f2630;
+  --color-sidebar-bottom: #171c24;
+  --color-sidebar-edge: #333c4a;
+}
+
+/* ------------------------------------------------------------------ accents */
+
+/* The accent is independent of the theme: any of the six on any of the five.
+   `accent-soft` is the tinted background behind a selected row, and is mixed
+   from the accent rather than listed per pair — thirty hand-written values
+   would be thirty chances to get one wrong. */
+:root[data-accent='violet'] {
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c47ec;
+}
+:root[data-accent='emerald'] {
+  --color-accent: #10b981;
+  --color-accent-hover: #0ea371;
+}
+:root[data-accent='amber'] {
+  --color-accent: #f59e0b;
+  --color-accent-hover: #dd8c05;
+}
+:root[data-accent='rose'] {
+  --color-accent: #f43f5e;
+  --color-accent-hover: #e02a4a;
+}
+:root[data-accent='cyan'] {
+  --color-accent: #06b6d4;
+  --color-accent-hover: #05a0bb;
+}
+:root[data-accent]:not([data-accent='blue']) {
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, var(--color-canvas));
+}
+
+/* -------------------------------------------------------- density and scale */
+
+html {
+  font-size: var(--font-scale, 100%);
+}
+
+:root {
+  --row-h: 32px;
+  --page-pad: 24px;
+}
+
+/* Compact returns roughly one extra row per ten on a list screen. It changes
+   heights and gutters only — never a font size, which is the `fontScale`
+   control's job and is separate on purpose. */
+:root[data-density='compact'] {
+  --row-h: 28px;
+  --page-pad: 16px;
+}
+
 html,
 body,
 #root {
@@ -292,6 +429,181 @@ textarea,
   .btn-brand:hover:not(:disabled) {
     transform: none;
   }
+}
+
+/* ================================================================== motion */
+
+/* One scale, so a new animation does not invent a sixth duration.
+   `--motion-scale` is what the user's Motion setting multiplies: at `reduced`
+   everything runs at 40%, at `off` it collapses to nothing. Because every
+   keyframe below is expressed in these variables, the setting reaches
+   animations written after it without them opting in. */
+:root {
+  --motion-fast: calc(120ms * var(--motion-scale, 1));
+  --motion-base: calc(180ms * var(--motion-scale, 1));
+  --motion-slow: calc(280ms * var(--motion-scale, 1));
+  --motion-scale: 1;
+}
+
+:root[data-motion='reduced'] {
+  --motion-scale: 0.4;
+}
+
+/* 0.001 rather than 0: a zero-duration animation never fires `animationend`,
+   and anything waiting on that event would hang instead of finishing. */
+:root[data-motion='off'] {
+  --motion-scale: 0.001;
+}
+
+/* The OS preference wins over the app's `full`, never the other way round. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-scale: 0.001;
+  }
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Panels and popovers come from slightly behind rather than sliding, so the
+   eye reads them as arriving on top of the page instead of pushing it. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The caret that follows typed console output. Stepped, not eased: a terminal
+   cursor blinks, it does not fade. */
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The mark pulses only while something is genuinely running, so motion there
+   carries information rather than decorating the header. */
+@keyframes mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+}
+
+.animate-view {
+  animation: view-enter var(--motion-base) var(--ease-ui) both;
+}
+.animate-pop {
+  animation: pop-in var(--motion-fast) var(--ease-ui) both;
+}
+.animate-row {
+  animation: row-enter var(--motion-base) var(--ease-ui) both;
+}
+.animate-spin-slow {
+  animation: spin calc(900ms * var(--motion-scale, 1)) linear infinite;
+}
+.animate-caret {
+  animation: caret-blink calc(1060ms * var(--motion-scale, 1)) step-end infinite;
+}
+.animate-mark {
+  animation: mark-pulse calc(1600ms * var(--motion-scale, 1)) ease-in-out infinite;
+}
+
+/* A list staggers its first rows only. Past about ten the delay stops reading
+   as sequence and starts reading as lag, so everything after lands together. */
+.stagger > * {
+  animation: row-enter var(--motion-base) var(--ease-ui) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: calc(24ms * var(--motion-scale, 1));
+}
+.stagger > *:nth-child(3) {
+  animation-delay: calc(48ms * var(--motion-scale, 1));
+}
+.stagger > *:nth-child(4) {
+  animation-delay: calc(72ms * var(--motion-scale, 1));
+}
+.stagger > *:nth-child(5) {
+  animation-delay: calc(96ms * var(--motion-scale, 1));
+}
+.stagger > *:nth-child(6) {
+  animation-delay: calc(120ms * var(--motion-scale, 1));
+}
+.stagger > *:nth-child(n + 7) {
+  animation-delay: calc(140ms * var(--motion-scale, 1));
+}
+
+/* ================================================================= Discord */
+
+/* Discord's surface is Discord's identity, not this application's, so it opts
+   out of every theme: these are their published brand values, and they hold
+   whether the user is on Light, Amber or Nord. The scope is a class rather
+   than a `data-theme`, so the rail, the header and the toasts around it stay
+   in the user's chosen theme while the panel itself does not. */
+.discord-scope {
+  --color-canvas: #1e1f22;
+  --color-surface: #2b2d31;
+  --color-raised: #313338;
+  --color-overlay: #383a40;
+  --color-edge: #3f4147;
+  --color-edge-strong: #4e5058;
+
+  --color-ink: #f2f3f5;
+  --color-muted: #b5bac1;
+  --color-faint: #949ba4;
+
+  --color-accent: #5865f2;
+  --color-accent-hover: #4752c4;
+  --color-accent-soft: #3c45a5;
+
+  --color-ok: #23a559;
+  --color-warn: #f0b232;
+  --color-danger: #da373c;
+
+  color: var(--color-ink);
 }
 
 /* ------------------------------------------------------------------ toasts */

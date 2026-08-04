@@ -253,7 +253,7 @@ export default function Projects({
 
       {visible.length > 0 &&
         (mode === 'grid' ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {visible.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -267,7 +267,7 @@ export default function Projects({
           </div>
         ) : (
           <Card className="overflow-hidden">
-            <ul>
+            <ul className="stagger">
               {visible.map((project) => (
                 <ProjectRow
                   key={project.id}
