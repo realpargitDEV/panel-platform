@@ -47,6 +47,33 @@
 
   --radius-card: 12px;
   --radius-control: 8px;
+  /* One step softer than a control, for the elements that read as objects
+     rather than as inputs: the workspace mark and the primary action. */
+  --radius-object: 10px;
+
+  /* The navigation rail. Two steps of the same charcoal ramp rather than one
+     flat fill: a top-lit gradient of ~5 values reads as a panel with a light
+     source, where a single colour reads as a cut-out. Its right edge is a
+     shade stronger than `--color-edge`, because it separates two regions
+     rather than two cards. */
+  --color-sidebar-top: #17171c;
+  --color-sidebar-bottom: #121216;
+  --color-sidebar-edge: #23232a;
+
+  /* The primary action's gradient, and the workspace mark's.
+     Deliberately darker than `--color-accent`: white on #3b82f6 is 3.7:1 and
+     fails WCAG AA for 13px text. The lightest stop here is #3070e0 at 4.7:1,
+     so the label clears AA at the button's brightest point, and the hover
+     state brightens only the bottom stop — the text never sits over anything
+     lighter than the value that was measured. */
+  --color-brand-from: #3070e0;
+  --color-brand-to: #1d4ed8;
+  --color-brand-to-hover: #2358e2;
+
+  /* One duration and one curve for interface feedback, inside the 150–200ms
+     band. Named so a new control does not invent a fourth timing. */
+  --duration-ui: 170ms;
+  --ease-ui: cubic-bezier(0.2, 0, 0.2, 1);
 
   /* The editor keeps its own names so the workspace can be reasoned about on
      its own, but they are now points on the same charcoal ramp — the editor
@@ -190,6 +217,78 @@ textarea,
 .skeleton {
   background: var(--color-raised);
   animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* ================================================================= sidebar */
+
+/* The rail itself. The gradient is what stops a 228px column of one colour
+   from reading as a hole beside the canvas. */
+.sidebar-surface {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-sidebar-top) 0%,
+    var(--color-sidebar-bottom) 100%
+  );
+  border-right: 1px solid var(--color-sidebar-edge);
+}
+
+/* The workspace mark. Lit from the top-left, with a hairline highlight along
+   its top edge — the same trick the primary button uses, so the two read as
+   the same material rather than two unrelated blue shapes. */
+.brand-mark {
+  background-image: linear-gradient(145deg, var(--color-brand-from), var(--color-brand-to));
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+/* The primary action.
+   `transform` is listed explicitly because the global transition rule covers
+   colour and shadow only, and the 1px hover lift would otherwise snap. */
+.btn-brand {
+  background-image: linear-gradient(180deg, var(--color-brand-from) 0%, var(--color-brand-to) 100%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 rgb(255 255 255 / 0.16);
+  transition:
+    background-image var(--duration-ui) var(--ease-ui),
+    box-shadow var(--duration-ui) var(--ease-ui),
+    transform var(--duration-ui) var(--ease-ui),
+    opacity var(--duration-ui) var(--ease-ui);
+}
+
+.btn-brand:hover:not(:disabled) {
+  /* Only the bottom stop brightens. The label sits over the top stop, whose
+     contrast was measured — brightening that too would drop it below AA. */
+  background-image: linear-gradient(
+    180deg,
+    var(--color-brand-from) 0%,
+    var(--color-brand-to-hover) 100%
+  );
+  box-shadow:
+    0 3px 8px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.22);
+  transform: translateY(-1px);
+}
+
+/* Pressed returns to the resting plane and loses its drop shadow, so the
+   button reads as going down rather than merely stopping its hover. */
+.btn-brand:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+.btn-brand:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* A lift that survives `prefers-reduced-motion` as a static offset would still
+   be motion on hover, so it is removed rather than shortened. */
+@media (prefers-reduced-motion: reduce) {
+  .btn-brand:hover:not(:disabled) {
+    transform: none;
+  }
 }
 
 /* ------------------------------------------------------------------ toasts */
