@@ -15,7 +15,6 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   errorMessage,
-  installToolchain,
   killProject,
   projectDeployments,
   projectDetails,
@@ -25,8 +24,6 @@ import {
   revealProjectPath,
   startProject,
   stopProject,
-  toolchainReadiness,
-  type ToolchainReadiness,
   type ActivityEntry,
   type ContainerEvent,
   type DeploymentSummary,
@@ -44,7 +41,7 @@ import {
 } from '../lib/format';
 import { runtimeLabel } from '../lib/projectList';
 import { describeAction, healthLook, isRunning, statusLook } from '../lib/projects';
-import ToolchainOffer from '../components/ToolchainOffer';
+import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import Icon from '../ui/Icon';
 import { ConfirmDialog } from '../ui/overlays';
 import {
@@ -84,12 +81,7 @@ export default function ProjectDetail({
   const [activity, setActivity] = useState<ActivityEntry[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmKill, setConfirmKill] = useState(false);
-  /** Set when Start found the machine missing the project's language. */
-  const [offer, setOffer] = useState<Extract<
-    ToolchainReadiness,
-    { state: 'needs_install' }
-  > | null>(null);
-  const [installing, setInstalling] = useState(false);
+  const { gate, guard } = useToolchainGate();
   /** Re-rendered on a timer so the uptime counts up rather than freezing. */
   const [, setTick] = useState(0);
 
@@ -135,57 +127,12 @@ export default function ProjectDetail({
       load();
       toast.success(`${project.displayName} ${verb}`);
     } catch (error) {
-      toast.error(`Could not ${verb.replace(/ed$/, '')} the project`, errorMessage(error));
+      // Declining an install is an answer, not a failure to report.
+      if (!isDeclined(error)) {
+        toast.error(`Could not ${verb.replace(/ed$/, '')} the project`, errorMessage(error));
+      }
     } finally {
       setBusy(false);
-    }
-  }
-
-  /**
-   * Start, but only once the machine can actually run the project.
-   *
-   * The check is deliberately not silent-and-automatic: a missing toolchain
-   * becomes an offer the user answers, and declining leaves the project
-   * stopped with the reason shown rather than failing obscurely at spawn time.
-   */
-  async function startWithToolchain() {
-    setBusy(true);
-    let readiness: ToolchainReadiness;
-    try {
-      readiness = await toolchainReadiness(project.id);
-    } catch (error) {
-      // Stopping here rather than starting anyway: the check failing means we
-      // do not know what the machine has, and a start that then fails deep in
-      // a spawn reports something far less useful than this does.
-      toast.error('Could not check this computer for the project’s language', errorMessage(error));
-      setBusy(false);
-      return;
-    }
-    setBusy(false);
-
-    if (readiness.state === 'blocked') {
-      toast.error(`Cannot start ${project.displayName}`, readiness.message);
-      return;
-    }
-
-    if (readiness.state === 'needs_install') {
-      setOffer(readiness);
-      return;
-    }
-
-    await act('started', startProject);
-  }
-
-  async function acceptOffer() {
-    setInstalling(true);
-    try {
-      await installToolchain(project.id);
-      setOffer(null);
-      await act('started', startProject);
-    } catch (error) {
-      toast.error('The install did not finish', errorMessage(error));
-    } finally {
-      setInstalling(false);
     }
   }
 
@@ -246,7 +193,7 @@ export default function ProjectDetail({
                 icon="restart"
                 disabled={blocked}
                 title={blockedReason ?? 'Restart this project'}
-                onClick={() => void act('restarted', restartProject)}
+                onClick={() => void act('restarted', guard(restartProject))}
               >
                 Restart
               </Button>
@@ -263,7 +210,7 @@ export default function ProjectDetail({
               icon="play"
               disabled={blocked}
               title={blockedReason ?? 'Start this project'}
-              onClick={() => void startWithToolchain()}
+              onClick={() => void act('started', guard(startProject))}
             >
               Start
             </Button>
@@ -327,16 +274,7 @@ export default function ProjectDetail({
         )}
       </div>
 
-      {offer && (
-        <ToolchainOffer
-          displayName={offer.display_name}
-          steps={offer.steps}
-          needsElevation={offer.needs_elevation}
-          installing={installing}
-          onInstall={() => void acceptOffer()}
-          onCancel={() => setOffer(null)}
-        />
-      )}
+      {gate}
 
       {confirmKill && (
         <ConfirmDialog

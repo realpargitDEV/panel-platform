@@ -1,7 +1,8 @@
 # Toolchain provisioning
 
 Date: 2026-08-04
-Status: designed, not implemented
+Status: implemented 2026-08-04 — see `docs/toolchain.md` for what shipped and
+what remains unverified
 
 Before a project starts, find out whether this machine has the language it needs.
 If it does not, say exactly what is missing and exactly what would be installed,

@@ -30,6 +30,7 @@ import {
   type ViewMode,
 } from '../lib/projectList';
 import { isRunning, statusLook } from '../lib/projects';
+import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import Icon from '../ui/Icon';
 import { Menu, useMenu } from '../ui/overlays';
 import Select from '../ui/Select';
@@ -67,6 +68,7 @@ export default function Projects({
       : 'grid',
   );
   const [busy, setBusy] = useState<string | null>(null);
+  const { gate, guard } = useToolchainGate();
 
   useEffect(() => {
     try {
@@ -86,14 +88,23 @@ export default function Projects({
   ) {
     setBusy(project.id);
     try {
-      await action(project.id);
+      // Gated here rather than at each button: the cards, the rows and the
+      // context menu all come through this one function, and a check wired to
+      // some of them would make the same project behave differently depending
+      // on which control was used.
+      const gated = action === startProject || action === restartProject ? guard(action) : action;
+
+      await gated(project.id);
       await onRefresh();
       toast.success(`${project.displayName} ${verb}`);
     } catch (error) {
-      toast.error(
-        `Could not ${verb.replace(/ed$/, '')} ${project.displayName}`,
-        error instanceof Error ? error.message : String(error),
-      );
+      // Declining an install is an answer, not a failure to report.
+      if (!isDeclined(error)) {
+        toast.error(
+          `Could not ${verb.replace(/ed$/, '')} ${project.displayName}`,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     } finally {
       setBusy(null);
     }
@@ -270,6 +281,8 @@ export default function Projects({
             </ul>
           </Card>
         ))}
+
+      {gate}
     </PageShell>
   );
 }
