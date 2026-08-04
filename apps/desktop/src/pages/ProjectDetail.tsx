@@ -41,6 +41,7 @@ import {
 } from '../lib/format';
 import { runtimeLabel } from '../lib/projectList';
 import { describeAction, healthLook, isRunning, statusLook } from '../lib/projects';
+import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import Icon from '../ui/Icon';
 import { ConfirmDialog } from '../ui/overlays';
 import {
@@ -80,6 +81,7 @@ export default function ProjectDetail({
   const [activity, setActivity] = useState<ActivityEntry[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmKill, setConfirmKill] = useState(false);
+  const { gate, guard } = useToolchainGate();
   /** Re-rendered on a timer so the uptime counts up rather than freezing. */
   const [, setTick] = useState(0);
 
@@ -125,7 +127,10 @@ export default function ProjectDetail({
       load();
       toast.success(`${project.displayName} ${verb}`);
     } catch (error) {
-      toast.error(`Could not ${verb.replace(/ed$/, '')} the project`, errorMessage(error));
+      // Declining an install is an answer, not a failure to report.
+      if (!isDeclined(error)) {
+        toast.error(`Could not ${verb.replace(/ed$/, '')} the project`, errorMessage(error));
+      }
     } finally {
       setBusy(false);
     }
@@ -188,7 +193,7 @@ export default function ProjectDetail({
                 icon="restart"
                 disabled={blocked}
                 title={blockedReason ?? 'Restart this project'}
-                onClick={() => void act('restarted', restartProject)}
+                onClick={() => void act('restarted', guard(restartProject))}
               >
                 Restart
               </Button>
@@ -205,7 +210,7 @@ export default function ProjectDetail({
               icon="play"
               disabled={blocked}
               title={blockedReason ?? 'Start this project'}
-              onClick={() => void act('started', startProject)}
+              onClick={() => void act('started', guard(startProject))}
             >
               Start
             </Button>
@@ -268,6 +273,8 @@ export default function ProjectDetail({
           <Settings detail={detail} />
         )}
       </div>
+
+      {gate}
 
       {confirmKill && (
         <ConfirmDialog

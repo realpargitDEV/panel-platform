@@ -8,6 +8,13 @@ repository.workspace = true
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
+# Pure safe Rust with no FFI of our own, which is the only option compatible
+# with the workspace's `unsafe_code = "forbid"`. Only the two feature groups the
+# scan actually reads are enabled; network and user enumeration are not wanted.
+sysinfo = { version = "0.36.1", default-features = false, features = [
+    "system",
+    "disk",
+] }
 thiserror = "2.0.19"
 
 [lints]

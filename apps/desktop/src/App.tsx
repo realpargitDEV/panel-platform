@@ -24,6 +24,7 @@ import Settings, { type Preferences } from './pages/Settings';
 import CommandPalette from './shell/CommandPalette';
 import Sidebar, { type View } from './shell/Sidebar';
 import TopBar from './shell/TopBar';
+import { isDeclined, useToolchainGate } from './components/useToolchainGate';
 import { toast, ToastHost } from './ui/toast';
 import { updateStore, useUpdate } from './useUpdate';
 import type { Command } from './workspace/commands';
@@ -155,6 +156,8 @@ export default function App() {
       (item) => item.desiredState.toUpperCase() === 'RUNNING' && !isRunning(item.status),
     ).length ?? 0;
 
+  const { gate, guard } = useToolchainGate();
+
   /** Everything the palette can run. Each one is a real action of the shell. */
   const commands = useMemo<Command[]>(() => {
     const target = project ?? null;
@@ -236,7 +239,7 @@ export default function App() {
         enabled: target !== null && !isRunning(target.status) && (status?.dockerAvailable ?? false),
         reason: target === null ? 'No project is open' : 'Not available right now',
         run: () => {
-          if (target) void runAction(target, 'started', startProject);
+          if (target) void runAction(target, 'started', guard(startProject));
         },
       },
       {
@@ -256,7 +259,7 @@ export default function App() {
         enabled: target !== null && isRunning(target.status),
         reason: target === null ? 'No project is open' : 'The project is not running',
         run: () => {
-          if (target) void runAction(target, 'restarted', restartProject);
+          if (target) void runAction(target, 'restarted', guard(restartProject));
         },
       },
       {
@@ -279,13 +282,22 @@ export default function App() {
         await refresh();
         toast.success(`${item.displayName} ${verb}`);
       } catch (error) {
+        // Declining an install is an answer, not a failure to report.
+        if (isDeclined(error)) return;
         toast.error(
           `Could not ${verb.replace(/ed$/, '')} ${item.displayName}`,
           errorMessage(error),
         );
       }
     }
-  }, [patchPreferences, preferences.collapsedSidebar, project, refresh, status?.dockerAvailable]);
+  }, [
+    guard,
+    patchPreferences,
+    preferences.collapsedSidebar,
+    project,
+    refresh,
+    status?.dockerAvailable,
+  ]);
 
   // The shortcuts that belong to the shell. The editor registers its own while
   // it is mounted, and takes Ctrl+B for its side bar — so these stand down
@@ -469,12 +481,15 @@ export default function App() {
             setRecentIds(recordRecent(window.localStorage, result.id));
             toast.success(`${result.displayName} created`);
             if (startNow) {
-              startProject(result.id)
+              // A project created on a machine that lacks its language is the
+              // most likely place to meet this offer, not the least.
+              guard(startProject)(result.id)
                 .then(() => refresh())
                 .then(() => toast.success(`${result.displayName} started`))
-                .catch((error: unknown) =>
-                  toast.error('Could not start the project', errorMessage(error)),
-                );
+                .catch((error: unknown) => {
+                  if (isDeclined(error)) return;
+                  toast.error('Could not start the project', errorMessage(error));
+                });
             }
           }}
         />
@@ -488,6 +503,8 @@ export default function App() {
           onClose={() => setPaletteOpen(false)}
         />
       )}
+
+      {gate}
 
       <ToastHost />
     </div>

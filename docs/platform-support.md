@@ -7,6 +7,10 @@ makes that sustainable: **operating-system differences live behind traits in the
 business rule needs to know which OS it is on, the design is wrong — it needs a
 capability from an adapter instead.
 
+What the `platform` crate reads _about_ a machine, and what is concluded from
+it, is `docs/compatibility.md`. The `probe` module there follows the same rule:
+every `#[cfg]` in the scan lives in `probe/platform_specific.rs`.
+
 ---
 
 ## 1. Adapter traits

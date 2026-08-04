@@ -4171,6 +4171,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4786,17 +4796,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-host-compatibility"
+version = "0.1.10"
+dependencies = [
+ "project-host-platform",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "project-host-core"
 version = "0.1.10"
 dependencies = [
  "project-host-api-types",
+ "project-host-compatibility",
  "project-host-database",
  "project-host-discord",
  "project-host-docker-manager",
  "project-host-file-manager",
+ "project-host-host-runner",
  "project-host-platform",
  "project-host-project-manager",
  "project-host-security",
+ "project-host-toolchain",
  "serde",
  "serde_json",
  "sqlx",
@@ -4836,11 +4859,12 @@ dependencies = [
  "project-host-platform",
  "project-host-project-manager",
  "project-host-security",
+ "project-host-toolchain",
  "project-host-updater",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sysinfo",
+ "sysinfo 0.33.1",
  "tauri",
  "tauri-build",
  "tauri-plugin-updater",
@@ -4907,6 +4931,7 @@ version = "0.1.10"
 dependencies = [
  "serde",
  "serde_json",
+ "sysinfo 0.36.1",
  "tempfile",
  "thiserror 2.0.19",
 ]
@@ -4933,6 +4958,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "zeroize",
+]
+
+[[package]]
+name = "project-host-toolchain"
+version = "0.1.10"
+dependencies = [
+ "project-host-platform",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -6384,6 +6419,20 @@ dependencies = [
  "memchr",
  "ntapi",
  "windows 0.57.0",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.36.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "252800745060e7b9ffb7b2badbd8b31cfa4aa2e61af879d0a3bf2a317c20217d"
+dependencies = [
+ "libc",
+ "memchr",
+ "ntapi",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "windows 0.61.3",
 ]
 
 [[package]]

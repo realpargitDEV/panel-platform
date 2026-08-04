@@ -103,11 +103,26 @@ impl Runtime {
         tracing::info!(docker = %docker_status.summary(), "docker probe complete");
         queries::record_heartbeat(&database, docker_status.available).await?;
 
+        // Scanned once, here: the hardware does not change while the process
+        // runs. The scan has no failure case, so this cannot make startup fail.
+        let assessment = {
+            use project_host_platform::SystemProbe;
+            project_host_compatibility::assess(&project_host_platform::SystemScanner.snapshot())
+        };
+        tracing::info!(
+            tier = assessment.tier.as_str(),
+            memory_limit_mb = assessment.defaults.memory_limit_mb,
+            cpu_limit_cores = assessment.defaults.cpu_limit_cores,
+            process_limit = assessment.defaults.process_limit,
+            "assessed this machine"
+        );
+
         let state = AppState::new(
             config,
             database,
             probe,
             docker_status,
+            assessment,
             Identity {
                 instance_id,
                 app_version: APP_VERSION.to_string(),

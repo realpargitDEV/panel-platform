@@ -148,6 +148,7 @@ import {
   SourceControlPanel,
   useFileSearch,
 } from './SidebarSections';
+import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import StatusBar from './StatusBar';
 import {
   activeBuffer,
@@ -284,6 +285,7 @@ export default function ProjectWorkspace({
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [outputChannel, setOutputChannel] = useState<OutputChannel | 'all'>('all');
   const [busyAction, setBusyAction] = useState<RunAction | null>(null);
+  const { gate, guard } = useToolchainGate();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [projectRoot, setProjectRoot] = useState<string | null>(null);
 
@@ -1916,9 +1918,11 @@ export default function ProjectWorkspace({
       };
       say('Project', `${verbs[action]} ${project.slug}…`);
 
+      // Starting is gated on the machine having the project's language;
+      // stopping and killing never are, because neither needs it.
       const call = {
-        start: startProject,
-        restart: restartProject,
+        start: guard(startProject),
+        restart: guard(restartProject),
         stop: stopProject,
         kill: killProject,
       }[action];
@@ -1928,12 +1932,14 @@ export default function ProjectWorkspace({
         await onRefreshProjects();
         say('Project', `${project.slug}: ${action} finished.`);
       } catch (error) {
-        report('Project', error);
+        // Declining an install is an answer, not a failure to report.
+        if (isDeclined(error)) say('Project', `${project.slug}: ${action} cancelled.`);
+        else report('Project', error);
       } finally {
         setBusyAction(null);
       }
     },
-    [onRefreshProjects, project.id, project.slug, report, say, showPanel],
+    [guard, onRefreshProjects, project.id, project.slug, report, say, showPanel],
   );
 
   // --------------------------------------------------------------- searching
@@ -3211,6 +3217,8 @@ export default function ProjectWorkspace({
           onCancel={() => setConfirm(null)}
         />
       )}
+
+      {gate}
     </div>
   );
 }

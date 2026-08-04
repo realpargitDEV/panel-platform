@@ -87,7 +87,11 @@ pub fn start_command(inputs: CommandInputs<'_>) -> Result<ProcessCommand, Comman
 /// no redirection: a start command that needs those is asking for a shell, and
 /// handing one an unquoted project path is how a directory with a space in it
 /// becomes two arguments — or worse.
-fn split_command(command: &str) -> Result<Vec<String>, CommandError> {
+///
+/// Public because a project's `install_command` needs the same treatment
+/// before it can be planned as a step, and a second implementation of this
+/// would be a second thing to get wrong.
+pub fn split_command(command: &str) -> Result<Vec<String>, CommandError> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut started = false;

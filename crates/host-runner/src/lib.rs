@@ -24,5 +24,5 @@
 pub mod command;
 pub mod probe;
 
-pub use command::{start_command, CommandError, CommandInputs, ProcessCommand};
+pub use command::{split_command, start_command, CommandError, CommandInputs, ProcessCommand};
 pub use probe::{candidates_for, probe, ExecutableResolver, Toolchain};

@@ -22,12 +22,19 @@ pub mod docker;
 pub mod error;
 pub mod info;
 pub mod paths;
+pub mod probe;
 pub mod secure_storage;
+pub mod snapshot;
 
 pub use docker::{DockerEndpoint, DockerInstallHint, DockerProvider, SystemDockerProvider};
 pub use error::PlatformError;
 pub use info::{Capabilities, PlatformInfo};
 pub use paths::{platform_paths, PathProvider, StandardPaths};
+pub use probe::{FixedProbe, SystemProbe, SystemScanner};
 pub use secure_storage::{
     open_secure_storage, FileStorage, SecureStorageProvider, StorageBackend, StorageError,
+};
+pub use snapshot::{
+    Architecture, CpuInfo, GpuInfo, LinuxInfo, MemoryInfo, OsInfo, PackageManager, StorageKind,
+    SystemSnapshot, VirtualizationInfo, VolumeInfo, WindowsInfo,
 };
