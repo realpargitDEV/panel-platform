@@ -20,11 +20,14 @@ import NewProjectWizard, { CreatedSummary } from './pages/NewProjectWizard';
 import Overview from './pages/Overview';
 import ProjectDetail from './pages/ProjectDetail';
 import Projects from './pages/Projects';
+import { applyAppearance, defaultAppearance, normaliseAppearance } from './lib/appearance';
 import Settings, { type Preferences } from './pages/Settings';
 import CommandPalette from './shell/CommandPalette';
 import Sidebar, { type View } from './shell/Sidebar';
 import TopBar from './shell/TopBar';
 import { isDeclined, useToolchainGate } from './components/useToolchainGate';
+import UpdateManager from './components/UpdateManager';
+import { installBusy } from './update';
 import { toast, ToastHost } from './ui/toast';
 import { updateStore, useUpdate } from './useUpdate';
 import type { Command } from './workspace/commands';
@@ -38,6 +41,10 @@ const PREFERENCES_KEY = 'panel.preferences.v1';
 const defaultPreferences: Preferences = {
   collapsedSidebar: false,
   confirmDestructive: true,
+  appearance: defaultAppearance,
+  startupView: 'last',
+  notifyStateChanges: true,
+  developerMode: false,
 };
 
 function loadPreferences(): Preferences {
@@ -56,6 +63,24 @@ function loadPreferences(): Preferences {
         typeof stored.confirmDestructive === 'boolean'
           ? stored.confirmDestructive
           : defaultPreferences.confirmDestructive,
+      // Validated rather than trusted: an unknown theme id written to the DOM
+      // would match no token block and leave the window unstyled.
+      appearance: normaliseAppearance(stored.appearance),
+      startupView:
+        stored.startupView === 'overview' ||
+        stored.startupView === 'projects' ||
+        stored.startupView === 'activity' ||
+        stored.startupView === 'last'
+          ? stored.startupView
+          : defaultPreferences.startupView,
+      notifyStateChanges:
+        typeof stored.notifyStateChanges === 'boolean'
+          ? stored.notifyStateChanges
+          : defaultPreferences.notifyStateChanges,
+      developerMode:
+        typeof stored.developerMode === 'boolean'
+          ? stored.developerMode
+          : defaultPreferences.developerMode,
     };
   } catch {
     return defaultPreferences;
@@ -89,8 +114,25 @@ export default function App() {
   const [preferences, setPreferences] = useState<Preferences>(loadPreferences);
 
   const update = useUpdate();
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   /** Reported once per session, so a poll failure does not toast every 5s. */
   const reportedFailure = useRef(false);
+
+  /**
+   * Show the update manager whenever an install owns the application.
+   *
+   * An install can be started from four places, and one of them — the editor's
+   * Help menu — is on a screen that has no room to report progress. Rather than
+   * each entry point remembering to open the window, the window opens itself
+   * for the only condition that requires it. A *check* deliberately does not
+   * trigger this: the periodic one runs every six hours and must stay silent.
+   */
+  const updateOwnsApp = installBusy(update) || update.phase.state === 'installed';
+  useEffect(() => {
+    if (updateOwnsApp) setUpdatesOpen(true);
+  }, [updateOwnsApp]);
+
+  const openUpdates = useCallback(() => setUpdatesOpen(true), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -129,6 +171,40 @@ export default function App() {
     // window, and tearing it down here would end checking the first time React
     // remounted this in development.
   }, []);
+
+  // Announce a project that changed state on its own — a container that fell
+  // over, or one Docker restarted. Only transitions are reported, never the
+  // first load, or opening the window would toast once per running project.
+  const lastStatuses = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (!projects) return;
+
+    const current = new Map(projects.map((item) => [item.id, item.status]));
+    const previous = lastStatuses.current;
+    lastStatuses.current = current;
+
+    if (!previous || !preferences.notifyStateChanges) return;
+
+    for (const [id, status] of current) {
+      const before = previous.get(id);
+      if (before === undefined || before === status) continue;
+
+      const project = projects.find((item) => item.id === id);
+      if (!project) continue;
+
+      const label = `${project.displayName} is now ${status.toLowerCase()}`;
+      if (status === 'FAILED') toast.error(label, 'It stopped without being asked to.');
+      else if (isRunning(status)) toast.success(label);
+      else toast.info(label);
+    }
+  }, [projects, preferences.notifyStateChanges]);
+
+  // Written to the document rather than threaded through the tree: a theme is
+  // an attribute the token blocks in `styles.css` respond to, so switching one
+  // re-paints without re-rendering anything.
+  useEffect(() => {
+    applyAppearance(document.documentElement, preferences.appearance);
+  }, [preferences.appearance]);
 
   const patchPreferences = useCallback((next: Partial<Preferences>) => {
     setPreferences((current) => {
@@ -230,7 +306,10 @@ export default function App() {
         id: 'app.update',
         title: 'Check for Updates',
         category: 'Application',
-        run: () => void updateStore.check(),
+        run: () => {
+          openUpdates();
+          void updateStore.check();
+        },
       },
       {
         id: 'project.start',
@@ -344,6 +423,15 @@ export default function App() {
             setOpenProject(null);
             setView('settings');
           }}
+          onOpenUpdates={openUpdates}
+        />
+        {/* Rendered in both shells rather than above them: the editor returns
+            early, and an update started from its Help menu would otherwise have
+            nowhere to report itself. */}
+        <UpdateManager
+          open={updatesOpen}
+          currentVersion={status?.appVersion ?? '—'}
+          onClose={() => setUpdatesOpen(false)}
         />
         <ToastHost />
       </>
@@ -356,6 +444,11 @@ export default function App() {
         view={view}
         collapsed={preferences.collapsedSidebar}
         projectCount={projects?.length ?? 0}
+        busyCount={
+          projects?.filter((item) =>
+            ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING', 'DEPLOYING'].includes(item.status),
+          ).length ?? 0
+        }
         dockerAvailable={status?.dockerAvailable ?? false}
         dockerSummary={status?.dockerSummary ?? 'Checking Docker…'}
         onNavigate={(next) => {
@@ -380,15 +473,25 @@ export default function App() {
             setOpenProject(null);
             setView('settings');
           }}
-          onCheckUpdates={() => void updateStore.check()}
+          onCheckUpdates={() => {
+            openUpdates();
+            void updateStore.check();
+          }}
           onOpenActivity={() => {
             setOpenProject(null);
             setView('activity');
           }}
-          onInstallUpdate={() => void updateStore.install()}
+          onInstallUpdate={openUpdates}
         />
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        {/* Keyed on the destination so React remounts the subtree when the
+            view changes, which is what re-runs the enter animation. Keyed on
+            the open project too, or moving between two projects would swap the
+            content with no transition at all. */}
+        <main
+          key={`${view}:${openProject ?? ''}`}
+          className="animate-view min-h-0 flex-1 overflow-y-auto"
+        >
           {failure && (
             <div className="border-b border-danger/30 bg-danger-soft px-8 py-2.5 text-[13px] text-danger">
               {failure}
@@ -414,6 +517,7 @@ export default function App() {
               key={project.id}
               project={project}
               dockerAvailable={status?.dockerAvailable ?? false}
+              developerMode={preferences.developerMode}
               onRefreshProjects={refresh}
               onBack={() => setOpenProject(null)}
               onOpenFiles={() => setEditing(true)}
@@ -453,6 +557,10 @@ export default function App() {
               projects={projects}
               preferences={preferences}
               onPreferences={patchPreferences}
+              onOpenUpdates={() => {
+                openUpdates();
+                void updateStore.check();
+              }}
               onResetLayout={() => {
                 try {
                   window.localStorage.removeItem(PREFERENCES_KEY);
@@ -505,6 +613,12 @@ export default function App() {
       )}
 
       {gate}
+
+      <UpdateManager
+        open={updatesOpen}
+        currentVersion={status?.appVersion ?? '—'}
+        onClose={() => setUpdatesOpen(false)}
+      />
 
       <ToastHost />
     </div>

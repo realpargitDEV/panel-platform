@@ -24,11 +24,18 @@ import {
   type SystemStatus,
 } from '../api';
 import { formatBytes, formatDuration } from '../lib/format';
-import { buttonLabel, canStart, describeCheck } from '../update';
-import { updateStore, useUpdate } from '../useUpdate';
+import { installBusy } from '../update';
+import { useUpdate } from '../useUpdate';
 import Icon from '../ui/Icon';
+import {
+  ACCENTS,
+  THEMES,
+  type Appearance,
+  type Density,
+  type MotionLevel,
+} from '../lib/appearance';
 import { ConfirmDialog } from '../ui/overlays';
-import UpdateProgress from '../components/UpdateProgress';
+import Select from '../ui/Select';
 import {
   Badge,
   Button,
@@ -42,12 +49,31 @@ import {
 } from '../ui/primitives';
 import { toast } from '../ui/toast';
 
-type TabId = 'general' | 'docker' | 'storage' | 'networking' | 'updates' | 'logging' | 'about';
+type TabId =
+  | 'general'
+  | 'appearance'
+  | 'preferences'
+  | 'advanced'
+  | 'docker'
+  | 'storage'
+  | 'networking'
+  | 'updates'
+  | 'logging'
+  | 'about';
+
+/** Where the application opens. `last` restores whatever was on screen. */
+export type StartupView = 'overview' | 'projects' | 'activity' | 'last';
 
 /** This window's own preferences — the settings that genuinely are writable. */
 export interface Preferences {
   collapsedSidebar: boolean;
   confirmDestructive: boolean;
+  appearance: Appearance;
+  startupView: StartupView;
+  /** Show a toast when a project changes state on its own. */
+  notifyStateChanges: boolean;
+  /** Reveals internal ids, raw errors and timing in the interface. */
+  developerMode: boolean;
 }
 
 export default function Settings({
@@ -56,18 +82,22 @@ export default function Settings({
   preferences,
   onPreferences,
   onResetLayout,
+  onOpenUpdates,
 }: {
   status: SystemStatus | null;
   projects: ProjectSummary[] | null;
   preferences: Preferences;
   onPreferences: (next: Partial<Preferences>) => void;
   onResetLayout: () => void;
+  /** Opens the update manager and asks the feed. */
+  onOpenUpdates: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('general');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  const { check, checking, checkFailure, phase } = useUpdate();
+  const update = useUpdate();
+  const checking = update.checking;
 
   useEffect(() => {
     appSettings()
@@ -125,6 +155,9 @@ export default function Settings({
         onSelect={setTab}
         tabs={[
           { id: 'general', label: 'General' },
+          { id: 'appearance', label: 'Appearance' },
+          { id: 'preferences', label: 'Preferences' },
+          { id: 'advanced', label: 'Advanced' },
           { id: 'docker', label: 'Docker' },
           { id: 'storage', label: 'Storage' },
           { id: 'networking', label: 'Networking' },
@@ -183,6 +216,93 @@ export default function Settings({
                   label="Largest upload"
                   value={settings ? formatBytes(settings.maxUploadBytes) : '—'}
                 />
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === 'appearance' && (
+          <AppearancePanel
+            appearance={preferences.appearance}
+            onChange={(next) =>
+              onPreferences({ appearance: { ...preferences.appearance, ...next } })
+            }
+          />
+        )}
+
+        {tab === 'preferences' && (
+          <div className="animate-view grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="On startup" subtitle="Where the window opens" />
+              <div className="px-4 pb-4">
+                <Select<StartupView>
+                  value={preferences.startupView}
+                  onChange={(startupView) => onPreferences({ startupView })}
+                  options={[
+                    { value: 'last', label: 'Where I left off' },
+                    { value: 'overview', label: 'Overview' },
+                    { value: 'projects', label: 'Projects' },
+                    { value: 'activity', label: 'Activity' },
+                  ]}
+                />
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader title="Behaviour" />
+              <div className="px-4 py-1">
+                <Toggle
+                  checked={preferences.confirmDestructive}
+                  onChange={(confirmDestructive) => onPreferences({ confirmDestructive })}
+                  label="Confirm destructive actions"
+                  description="Ask before deleting a project or force-killing a container."
+                />
+                <Toggle
+                  checked={preferences.collapsedSidebar}
+                  onChange={(collapsedSidebar) => onPreferences({ collapsedSidebar })}
+                  label="Start with the sidebar collapsed"
+                  description="The rail shows icons only until you expand it."
+                />
+                <Toggle
+                  checked={preferences.notifyStateChanges}
+                  onChange={(notifyStateChanges) => onPreferences({ notifyStateChanges })}
+                  label="Notify when a project changes state"
+                  description="A toast when something starts, stops or fails on its own."
+                />
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === 'advanced' && (
+          <div className="animate-view grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader
+                title="Developer mode"
+                subtitle="For diagnosing this application, not your projects"
+              />
+              <div className="px-4 py-1">
+                <Toggle
+                  checked={preferences.developerMode}
+                  onChange={(developerMode) => onPreferences({ developerMode })}
+                  label="Show internal detail"
+                  description="Project and container ids, raw error text, and how long each call took."
+                />
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader title="Reset" subtitle="Only this window's settings — never a project" />
+              <div className="flex flex-col gap-2 px-4 pb-4">
+                <p className="text-[13px] text-muted">
+                  Returns the theme, layout and behaviour on this machine to their defaults.
+                  Projects, files, containers and credentials are untouched.
+                </p>
+                <div>
+                  <Button icon="refresh" onClick={() => setConfirmReset(true)}>
+                    Reset this window
+                  </Button>
+                </div>
               </div>
             </Card>
           </div>
@@ -326,6 +446,10 @@ export default function Settings({
           </Card>
         )}
 
+        {/* This tab describes the update *settings*. What an update is doing
+            lives in the update manager, which is the one surface that renders
+            it — three panels each drawing the same install from the same store
+            is what the manager replaced. */}
         {tab === 'updates' && (
           <Card className="max-w-xl">
             <CardHeader
@@ -334,8 +458,9 @@ export default function Settings({
                 <Button
                   size="sm"
                   icon="refresh"
-                  disabled={checking || !canStart(phase)}
-                  onClick={() => void updateStore.check()}
+                  pending={checking}
+                  disabled={installBusy(update)}
+                  onClick={onOpenUpdates}
                 >
                   {checking ? 'Checking…' : 'Check now'}
                 </Button>
@@ -346,33 +471,12 @@ export default function Settings({
               <DataRow label="Release channel" value="stable" />
               <DataRow label="Check on startup" value="on" />
               <DataRow label="Check while running" value="every 6 hours" />
+              <DataRow label="Signature check" value="required" />
             </div>
 
-            {check && <p className="px-4 py-2 text-[13px] text-muted">{describeCheck(check)}</p>}
-            {checkFailure && <p className="px-4 py-2 text-[13px] text-warn">{checkFailure}</p>}
-
-            {check?.state === 'available' && (
-              <div className="mx-4 mb-4 rounded-[10px] border border-accent/40 bg-accent-soft p-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="flex-1 text-[13px] font-medium text-ink">
-                    Version {check.newVersion} is available
-                  </p>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={!canStart(phase)}
-                    onClick={() => void updateStore.install()}
-                  >
-                    {buttonLabel(phase)}
-                  </Button>
-                </div>
-                {check.notes && <p className="mt-1.5 text-[12px] text-muted">{check.notes}</p>}
-                <UpdateProgress phase={phase} tone="panel" />
-              </div>
-            )}
-
             <p className="border-t border-edge px-4 py-2.5 text-[12px] text-muted">
-              The release channel is fixed to stable in this build.
+              Every download is checked against the signing key built into this application before
+              it is installed. The release channel is fixed to stable in this build.
             </p>
           </Card>
         )}
@@ -456,5 +560,178 @@ export default function Settings({
         />
       )}
     </PageShell>
+  );
+}
+
+// --------------------------------------------------------------- appearance
+
+/**
+ * The Appearance tab.
+ *
+ * Every control here writes a token and takes effect immediately — there is no
+ * Apply button, because a theme you cannot see until you confirm it is a theme
+ * you have to confirm twice. The swatches are the real values from the theme
+ * table, so a card can never advertise a colour the theme does not use.
+ */
+function AppearancePanel({
+  appearance,
+  onChange,
+}: {
+  appearance: Appearance;
+  onChange: (next: Partial<Appearance>) => void;
+}) {
+  return (
+    <div className="animate-view flex flex-col gap-4">
+      <Card>
+        <CardHeader title="Theme" subtitle="Applies everywhere except the Discord panel" />
+        <div className="stagger grid gap-3 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-3">
+          {THEMES.map((theme) => {
+            const active = appearance.theme === theme.id;
+            return (
+              <button
+                key={theme.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onChange({ theme: theme.id })}
+                className={`flex items-center gap-3 rounded-[10px] border p-3 text-left ${
+                  active
+                    ? 'border-accent bg-accent-soft'
+                    : 'border-edge bg-raised hover:border-edge-strong'
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className="flex h-9 w-9 shrink-0 overflow-hidden rounded-[8px] border border-edge"
+                >
+                  {theme.swatch.map((colour) => (
+                    <span key={colour} className="flex-1" style={{ background: colour }} />
+                  ))}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                    {theme.label}
+                    {active && <Icon name="check" size={13} />}
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-muted">
+                    {theme.detail}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Accent" subtitle="The primary action, links and the active item" />
+          <div className="flex flex-wrap gap-2 px-4 pb-4">
+            {ACCENTS.map((accent) => {
+              const active = appearance.accent === accent.id;
+              return (
+                <button
+                  key={accent.id}
+                  type="button"
+                  aria-pressed={active}
+                  aria-label={accent.label}
+                  title={accent.label}
+                  onClick={() => onChange({ accent: accent.id })}
+                  className={`grid h-9 w-9 place-items-center rounded-full border-2 ${
+                    active ? 'border-ink' : 'border-transparent hover:border-edge-strong'
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className="grid h-6 w-6 place-items-center rounded-full text-white"
+                    style={{ background: accent.value }}
+                  >
+                    {active && <Icon name="check" size={12} />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Density" subtitle="Row heights and page gutters, not text size" />
+          <div className="flex gap-2 px-4 pb-4">
+            {(
+              [
+                ['comfortable', 'Comfortable'],
+                ['compact', 'Compact'],
+              ] as [Density, string][]
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={appearance.density === id}
+                onClick={() => onChange({ density: id })}
+                className={`h-9 flex-1 rounded-[8px] border text-[13px] ${
+                  appearance.density === id
+                    ? 'border-accent bg-accent-soft text-ink'
+                    : 'border-edge bg-raised text-muted hover:text-ink'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Text size" subtitle={`${appearance.fontScale}% of the default`} />
+          <div className="px-4 pb-4">
+            <input
+              type="range"
+              min={90}
+              max={120}
+              step={5}
+              value={appearance.fontScale}
+              aria-label="Text size"
+              onChange={(event) => onChange({ fontScale: Number(event.target.value) })}
+              className="w-full accent-[var(--color-accent)]"
+            />
+            <div className="mt-1 flex justify-between text-[11px] text-faint">
+              <span>90%</span>
+              <span>120%</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Motion" subtitle="How much the interface animates" />
+          <div className="flex flex-col gap-2 px-4 pb-4">
+            <div className="flex gap-2">
+              {(
+                [
+                  ['full', 'Full'],
+                  ['reduced', 'Reduced'],
+                  ['off', 'Off'],
+                ] as [MotionLevel, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={appearance.motion === id}
+                  onClick={() => onChange({ motion: id })}
+                  className={`h-9 flex-1 rounded-[8px] border text-[13px] ${
+                    appearance.motion === id
+                      ? 'border-accent bg-accent-soft text-ink'
+                      : 'border-edge bg-raised text-muted hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[12px] leading-snug text-muted">
+              If your system asks for reduced motion, that wins over Full — the setting here can
+              only ever remove animation, never force it on.
+            </p>
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }

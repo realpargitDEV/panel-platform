@@ -42,6 +42,7 @@ import {
 import { runtimeLabel } from '../lib/projectList';
 import { describeAction, healthLook, isRunning, statusLook } from '../lib/projects';
 import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
+import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
 import { ConfirmDialog } from '../ui/overlays';
 import {
@@ -63,12 +64,15 @@ type TabId =
 export default function ProjectDetail({
   project,
   dockerAvailable,
+  developerMode = false,
   onRefreshProjects,
   onBack,
   onOpenFiles,
 }: {
   project: ProjectSummary;
   dockerAvailable: boolean;
+  /** Shows the internal identifiers a bug report needs. */
+  developerMode?: boolean;
   onRefreshProjects: () => Promise<void>;
   onBack: () => void;
   onOpenFiles: () => void;
@@ -151,13 +155,7 @@ export default function ProjectDetail({
 
       <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span
-            aria-hidden
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold text-white"
-            style={{ background: project.color ?? '#3b82f6' }}
-          >
-            {project.displayName.slice(0, 1).toUpperCase()}
-          </span>
+          <ProjectMark projectId={project.id} runtime={project.projectType} size={40} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-[20px] leading-tight font-semibold tracking-tight">
@@ -175,6 +173,11 @@ export default function ProjectDetail({
             <p className="mt-1 truncate text-[13px] text-muted">
               {project.description || project.slug}
             </p>
+            {developerMode && (
+              <p className="mt-1 font-mono text-[11px] text-faint select-text">
+                {project.id} · {project.projectType}
+              </p>
+            )}
           </div>
         </div>
 

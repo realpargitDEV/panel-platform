@@ -31,6 +31,7 @@ import {
 } from '../lib/projectList';
 import { isRunning, statusLook } from '../lib/projects';
 import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
+import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
 import { Menu, useMenu } from '../ui/overlays';
 import Select from '../ui/Select';
@@ -253,7 +254,7 @@ export default function Projects({
 
       {visible.length > 0 &&
         (mode === 'grid' ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {visible.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -267,7 +268,7 @@ export default function Projects({
           </div>
         ) : (
           <Card className="overflow-hidden">
-            <ul>
+            <ul className="stagger">
               {visible.map((project) => (
                 <ProjectRow
                   key={project.id}
@@ -329,13 +330,7 @@ function ProjectCard({
   return (
     <Card interactive className="flex flex-col">
       <div className="flex items-start gap-3 p-4">
-        <span
-          aria-hidden
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] text-[13px] font-semibold text-white"
-          style={{ background: project.color ?? '#3b82f6' }}
-        >
-          {project.displayName.slice(0, 1).toUpperCase()}
-        </span>
+        <ProjectMark projectId={project.id} runtime={project.projectType} size={32} />
 
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <span className="block truncate text-[14px] font-medium text-ink hover:text-accent">
@@ -431,13 +426,7 @@ function ProjectRow({
 
   return (
     <li className="flex items-center gap-3 border-b border-edge px-3 py-2 last:border-b-0 hover:bg-raised/50">
-      <span
-        aria-hidden
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[12px] font-semibold text-white"
-        style={{ background: project.color ?? '#3b82f6' }}
-      >
-        {project.displayName.slice(0, 1).toUpperCase()}
-      </span>
+      <ProjectMark projectId={project.id} runtime={project.projectType} size={28} />
 
       <button type="button" onClick={onOpen} className="min-w-0 flex-[2] text-left">
         <span className="block truncate text-[13px] font-medium text-ink hover:text-accent">

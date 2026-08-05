@@ -131,6 +131,7 @@ export function Button({
   type = 'button',
   icon,
   full,
+  pending,
 }: {
   children?: ReactNode;
   onClick?: () => void;
@@ -141,6 +142,9 @@ export function Button({
   type?: 'button' | 'submit';
   icon?: IconName;
   full?: boolean;
+  /** In flight. Swaps the icon for a spinner and blocks a second press —
+   *  the button reports the wait rather than looking ignored. */
+  pending?: boolean;
 }) {
   const variants: Record<ButtonVariant, string> = {
     primary: 'bg-accent text-white hover:bg-accent-hover',
@@ -153,13 +157,18 @@ export function Button({
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || pending}
       title={title}
-      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[8px] font-medium disabled:pointer-events-none disabled:opacity-40 ${
+      aria-busy={pending}
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[8px] font-medium transition-transform active:translate-y-px disabled:pointer-events-none disabled:opacity-40 ${
         size === 'sm' ? 'h-7 px-2.5 text-[12px]' : 'h-8 px-3 text-[13px]'
       } ${full ? 'w-full' : ''} ${variants[variant]}`}
     >
-      {icon && <Icon name={icon} size={size === 'sm' ? 13 : 14} />}
+      {pending ? (
+        <Icon name="refresh" size={size === 'sm' ? 13 : 14} className="animate-spin-slow" />
+      ) : (
+        icon && <Icon name={icon} size={size === 'sm' ? 13 : 14} />
+      )}
       {children}
     </button>
   );

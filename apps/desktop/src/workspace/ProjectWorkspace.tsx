@@ -36,7 +36,6 @@ import {
   type ProjectSummary,
   type SystemStatus,
 } from '../api';
-import { buttonLabel, canStart } from '../update';
 import { updateStore, useUpdate } from '../useUpdate';
 import ActivityBar from './ActivityBar';
 import BottomPanel from './BottomPanel';
@@ -209,6 +208,7 @@ export default function ProjectWorkspace({
   onRefreshProjects,
   onLeave,
   onOpenSettings,
+  onOpenUpdates,
 }: {
   project: ProjectSummary;
   status: SystemStatus | null;
@@ -216,6 +216,8 @@ export default function ProjectWorkspace({
   onRefreshProjects: () => Promise<void>;
   onLeave: () => void;
   onOpenSettings: () => void;
+  /** Opens the update manager, which is rendered by the shell above this one. */
+  onOpenUpdates: () => void;
 }) {
   // ------------------------------------------------------------------ state
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({});
@@ -2530,8 +2532,10 @@ export default function ProjectWorkspace({
               ? `Install update ${update.check.newVersion}`
               : 'Check for updates',
           run: () => {
-            if (update.check?.state === 'available') void updateStore.install();
-            else void updateStore.check();
+            // Always opens the manager: an install started from a menu with no
+            // window to report it is an install that appears to do nothing.
+            onOpenUpdates();
+            if (update.check?.state !== 'available') void updateStore.check();
           },
         },
       ],
@@ -2822,11 +2826,7 @@ export default function ProjectWorkspace({
         onOpenPalette={() => setPalette('files')}
         update={
           update.check?.state === 'available'
-            ? {
-                label: buttonLabel(update.phase),
-                busy: !canStart(update.phase),
-                onInstall: () => void updateStore.install(),
-              }
+            ? { label: `Update ${update.check.newVersion}`, onOpen: onOpenUpdates }
             : null
         }
         sidebarVisible={layout.sidebarVisible}

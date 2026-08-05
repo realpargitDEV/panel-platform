@@ -32,7 +32,10 @@ export default function TitleBar({
   onForward: () => void;
   onOpenPalette: () => void;
   /** Present only when a release is actually offered. */
-  update: { label: string; busy: boolean; onInstall: () => void } | null;
+  /** An available update, and the way to the window that installs it. This is
+   *  an entry point, not a progress display: the update manager reports the
+   *  install, so the title bar has no state of its own to keep in step. */
+  update: { label: string; onOpen: () => void } | null;
   sidebarVisible: boolean;
   panelVisible: boolean;
   onToggleSidebar: () => void;
@@ -72,10 +75,9 @@ export default function TitleBar({
         {update && (
           <button
             type="button"
-            onClick={update.onInstall}
-            disabled={update.busy}
-            title="Install the available update and restart"
-            className="flex items-center gap-1.5 rounded-[3px] bg-accent px-2 py-0.5 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            onClick={update.onOpen}
+            title="Open the update manager"
+            className="flex items-center gap-1.5 rounded-[3px] bg-accent px-2 py-0.5 text-[12px] font-medium text-white hover:brightness-110"
           >
             <Icon name="refresh" size={13} />
             {update.label}
