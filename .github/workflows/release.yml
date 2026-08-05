@@ -105,6 +105,82 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.12
+
+            **The interface has been designed rather than assembled.** The
+            sidebar head is rebuilt around the real Panel Platform mark, with
+            the workspace name, an overflow menu and a primary action on its
+            own band. The blue is not the old accent: white on that accent
+            measured 3.68:1 and failed WCAG AA at 13px, so the gradient used
+            here was chosen against the measurement.
+
+            **Themes, accents, density, text size and motion.** Five themes and
+            six accents driven by a `data-theme` attribute over the token set,
+            so switching one re-paints without re-rendering and no component
+            knows which theme is on. Motion runs off a single scale variable —
+            reduced is 40%, off collapses to near-zero — and the operating
+            system's reduced-motion preference can veto full motion but can
+            never force motion on.
+
+            **Every project has a designed mark instead of a letter in a box.**
+            The glyph says what the project is, so the shape becomes learnable
+            across every Node project; the colour says which project it is,
+            derived from the id so the same project is the same colour in the
+            list, the header and the switcher — on every machine, after every
+            reinstall, with nothing stored and nothing to migrate.
+
+            **47 icons redrawn as one set**, against one live area and one
+            stroke weight, with fill reserved for the two transport controls
+            whose state has to read instantly.
+
+            **The two settings that remembered their position and did nothing
+            now do something.** Project state changes are announced only on
+            transition, never on first load, so opening the window does not
+            toast once per running project. Developer mode shows the
+            identifiers a bug report needs, selectable.
+
+            **The update manager is one window.** The update used to be drawn
+            in three places — a banner, a panel in Settings and a button in the
+            editor title bar — each with its own idea of the same install. It
+            is now a single window with a stage rail (Download, Verify,
+            Install, Finish), and percentage, size, transfer rate and time
+            remaining beside it. Every figure is derived from bytes the core
+            actually reported, and each shows nothing rather than a guess when
+            the data cannot support one. Restart and Minimise are real commands
+            now, so a long download can be put aside and the new version can
+            start itself.
+
+            **There is still no pause and no cancel, and that is not an
+            oversight.** The updater downloads, verifies and installs in one
+            uninterruptible call. Offering either button would mean replacing
+            it with a downloader of our own that re-implements signature
+            verification against the compiled-in key — a weaker security path
+            bought for a button. Close is disabled, rather than hidden, while
+            closing would cost the download or leave a half-written
+            application.
+
+            The new update window has not been exercised against a real
+            download from a published release; that needs this release to
+            exist first.
+
+            This release also carries everything in 0.1.11, below.
+
+            ## What changed in 0.1.11
+
+            **The application looks at the machine it was installed on.** A
+            compatibility scan probes CPU, memory, storage volumes, operating
+            system identity, virtualization, WSL and GPU, tiers the machine
+            from what it found, and derives resource defaults for new projects
+            from that tier rather than from a fixed guess. Where no Docker
+            artefact applies to a machine, it says which one and why instead of
+            offering a download that cannot work.
+
+            **A missing language runtime is now offered rather than reported.**
+            Starting a project checks the toolchain it needs — on every start
+            path, not one — and offers to install what is missing.
+
+            This release also carries everything in 0.1.10, below.
+
             ## What changed in 0.1.10
 
             **Imports now handle real project-shaped drops.** When files,
