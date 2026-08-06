@@ -1,0 +1,5123 @@
+/*
+ * GENERATED FILE — do not edit.
+ *
+ * Every block here is rendered from the theme catalogue in
+ * `src/lib/themes/catalogue/`. Editing a colour here would be undone the
+ * next time it is regenerated, and the swatch shown in Settings would
+ * disagree with the theme.
+ *
+ * Regenerate:  pnpm test:themes:update
+ */
+/* Pure Dark — The default charcoal. Neutral, so project colours stay readable. */
+:root[data-theme='pure-dark'] {
+  --color-canvas: #0e0e10;
+  --color-surface: #16161a;
+  --color-raised: #1c1c21;
+  --color-overlay: #212127;
+  --color-edge: #26262d;
+  --color-edge-strong: #35353e;
+  --color-ink: #e8e8ec;
+  --color-muted: #9d9da8;
+  --color-faint: #6e6e79;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #3575dd;
+  --color-accent-soft: #162339;
+  --color-ok: #22c55e;
+  --color-ok-soft: #112b1c;
+  --color-warn: #eab308;
+  --color-warn-soft: #31280f;
+  --color-danger: #ef4444;
+  --color-danger-soft: #321718;
+  --color-sidebar-top: #141417;
+  --color-sidebar-bottom: #0d0d0f;
+  --color-sidebar-edge: #26262d;
+  --color-brand-from: #3472d8;
+  --color-brand-to: #2959a8;
+  --color-brand-to-hover: #2f67c2;
+  --color-vs-titlebar: #111114;
+  --color-vs-activity: #0e0e10;
+  --color-vs-sidebar: #131316;
+  --color-vs-editor: #16161a;
+  --color-vs-tabbar: #111114;
+  --color-vs-panel: #131316;
+  --color-vs-status: #2959a8;
+  --color-vs-status-idle: #35353e;
+  --color-vs-border: #26262d;
+  --color-vs-selected: #1d2942;
+  --color-vs-active: #203458;
+  --color-vs-text: #e8e8ec;
+  --color-vs-dim: #9d9da8;
+  --color-vs-badge: #3b82f6;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Pure Light — For bright rooms and screen sharing. */
+:root[data-theme='pure-light'] {
+  --color-canvas: #f4f4f6;
+  --color-surface: #ffffff;
+  --color-raised: #ececed;
+  --color-overlay: #ffffff;
+  --color-edge: #dededf;
+  --color-edge-strong: #c3c3c6;
+  --color-ink: #16161a;
+  --color-muted: #56565f;
+  --color-faint: #71717a;
+  --color-accent: #2563eb;
+  --color-accent-hover: #2157cf;
+  --color-accent-soft: #cfdaf4;
+  --color-ok: #22c55e;
+  --color-ok-soft: #d2ecde;
+  --color-warn: #eab308;
+  --color-warn-soft: #f2ead0;
+  --color-danger: #ef4444;
+  --color-danger-soft: #f3d8da;
+  --color-sidebar-top: #fcfcfc;
+  --color-sidebar-bottom: #e5e5e7;
+  --color-sidebar-edge: #dededf;
+  --color-brand-from: #2563eb;
+  --color-brand-to: #1d4db7;
+  --color-brand-to-hover: #2159d4;
+  --color-vs-titlebar: #f8f8fa;
+  --color-vs-activity: #f4f4f6;
+  --color-vs-sidebar: #fbfbfb;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f8f8fa;
+  --color-vs-panel: #fbfbfb;
+  --color-vs-status: #1d4db7;
+  --color-vs-status-idle: #c3c3c6;
+  --color-vs-border: #dededf;
+  --color-vs-selected: #d8e3fb;
+  --color-vs-active: #c2d3f9;
+  --color-vs-text: #16161a;
+  --color-vs-dim: #56565f;
+  --color-vs-badge: #2563eb;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Midnight — Deep blue-black with more contrast between layers. */
+:root[data-theme='midnight'] {
+  --color-canvas: #0a0d16;
+  --color-surface: #10141f;
+  --color-raised: #161b2b;
+  --color-overlay: #1c2336;
+  --color-edge: #232b40;
+  --color-edge-strong: #33405c;
+  --color-ink: #e6e9f2;
+  --color-muted: #9aa3bd;
+  --color-faint: #6b7593;
+  --color-accent: #6366f1;
+  --color-accent-hover: #595cd9;
+  --color-accent-soft: #1a1d3d;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e2a22;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e2814;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f161d;
+  --color-sidebar-top: #0e121c;
+  --color-sidebar-bottom: #090c15;
+  --color-sidebar-edge: #232b40;
+  --color-brand-from: #6164ec;
+  --color-brand-to: #4c4eb8;
+  --color-brand-to-hover: #575ad4;
+  --color-vs-titlebar: #0c101a;
+  --color-vs-activity: #0a0d16;
+  --color-vs-sidebar: #0e111b;
+  --color-vs-editor: #10141f;
+  --color-vs-tabbar: #0c101a;
+  --color-vs-panel: #0e111b;
+  --color-vs-status: #4c4eb8;
+  --color-vs-status-idle: #33405c;
+  --color-vs-border: #232b40;
+  --color-vs-selected: #1f2345;
+  --color-vs-active: #272b5a;
+  --color-vs-text: #e6e9f2;
+  --color-vs-dim: #9aa3bd;
+  --color-vs-badge: #6366f1;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Amber — Warm greys with a low-blue cast, for long evenings. */
+:root[data-theme='amber'] {
+  --color-canvas: #14100b;
+  --color-surface: #1c1710;
+  --color-raised: #241d14;
+  --color-overlay: #2b2318;
+  --color-edge: #33291c;
+  --color-edge-strong: #453725;
+  --color-ink: #f0e7d8;
+  --color-muted: #b8a58f;
+  --color-faint: #8a7a63;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #dd8e0a;
+  --color-accent-soft: #3d2a0b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #162d18;
+  --color-warn: #eab308;
+  --color-warn-soft: #362a0b;
+  --color-danger: #ef4444;
+  --color-danger-soft: #371814;
+  --color-sidebar-top: #1a150f;
+  --color-sidebar-bottom: #130f0a;
+  --color-sidebar-edge: #33291c;
+  --color-brand-from: #a26807;
+  --color-brand-to: #7e5105;
+  --color-brand-to-hover: #925e06;
+  --color-vs-titlebar: #17130d;
+  --color-vs-activity: #14100b;
+  --color-vs-sidebar: #19140e;
+  --color-vs-editor: #1c1710;
+  --color-vs-tabbar: #17130d;
+  --color-vs-panel: #19140e;
+  --color-vs-status: #7e5105;
+  --color-vs-status-idle: #453725;
+  --color-vs-border: #33291c;
+  --color-vs-selected: #432f0f;
+  --color-vs-active: #593d0f;
+  --color-vs-text: #f0e7d8;
+  --color-vs-dim: #b8a58f;
+  --color-vs-badge: #f59e0b;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Graphite — Neutral grey with no colour at all, including the accent. */
+:root[data-theme='graphite'] {
+  --color-canvas: #131315;
+  --color-surface: #1a1a1d;
+  --color-raised: #202024;
+  --color-overlay: #26262b;
+  --color-edge: #2f2f35;
+  --color-edge-strong: #46464d;
+  --color-ink: #e9e9ea;
+  --color-muted: #a6a6ab;
+  --color-faint: #737377;
+  --color-accent: #a1a1aa;
+  --color-accent-hover: #919199;
+  --color-accent-soft: #2d2d30;
+  --color-ok: #22c55e;
+  --color-ok-soft: #152f21;
+  --color-warn: #eab308;
+  --color-warn-soft: #352d13;
+  --color-danger: #ef4444;
+  --color-danger-soft: #361b1d;
+  --color-sidebar-top: #18181b;
+  --color-sidebar-bottom: #121214;
+  --color-sidebar-edge: #2f2f35;
+  --color-brand-from: #74747a;
+  --color-brand-to: #5a5a5f;
+  --color-brand-to-hover: #68686e;
+  --color-vs-titlebar: #161618;
+  --color-vs-activity: #131315;
+  --color-vs-sidebar: #17171a;
+  --color-vs-editor: #1a1a1d;
+  --color-vs-tabbar: #161618;
+  --color-vs-panel: #17171a;
+  --color-vs-status: #5a5a5f;
+  --color-vs-status-idle: #46464d;
+  --color-vs-border: #2f2f35;
+  --color-vs-selected: #323236;
+  --color-vs-active: #404044;
+  --color-vs-text: #e9e9ea;
+  --color-vs-dim: #a6a6ab;
+  --color-vs-badge: #a1a1aa;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Corporate Blue — White panels and a navy accent. Safe in any meeting. */
+:root[data-theme='corporate-blue'] {
+  --color-canvas: #f1f4f8;
+  --color-surface: #ffffff;
+  --color-raised: #e9eef5;
+  --color-overlay: #ffffff;
+  --color-edge: #d7dfe9;
+  --color-edge-strong: #aebbca;
+  --color-ink: #0f1b2a;
+  --color-muted: #48586b;
+  --color-faint: #808c99;
+  --color-accent: #1d4ed8;
+  --color-accent-hover: #1a45be;
+  --color-accent-soft: #cbd6f2;
+  --color-ok: #22c55e;
+  --color-ok-soft: #d0ecdf;
+  --color-warn: #eab308;
+  --color-warn-soft: #f0ead2;
+  --color-danger: #ef4444;
+  --color-danger-soft: #f1d8db;
+  --color-sidebar-top: #fbfcfd;
+  --color-sidebar-bottom: #e3e5e9;
+  --color-sidebar-edge: #d7dfe9;
+  --color-brand-from: #1d4ed8;
+  --color-brand-to: #173da8;
+  --color-brand-to-hover: #1a46c2;
+  --color-vs-titlebar: #f7f8fb;
+  --color-vs-activity: #f1f4f8;
+  --color-vs-sidebar: #f9fbfc;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f7f8fb;
+  --color-vs-panel: #f9fbfc;
+  --color-vs-status: #173da8;
+  --color-vs-status-idle: #aebbca;
+  --color-vs-border: #d7dfe9;
+  --color-vs-selected: #d6dff8;
+  --color-vs-active: #c0cdf4;
+  --color-vs-text: #0f1b2a;
+  --color-vs-dim: #48586b;
+  --color-vs-badge: #1d4ed8;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Executive Black — Black and graphite with a restrained gold and a serif face. */
+:root[data-theme='executive-black'] {
+  --color-canvas: #0a0a0a;
+  --color-surface: #121212;
+  --color-raised: #191919;
+  --color-overlay: #1f1f1f;
+  --color-edge: #272727;
+  --color-edge-strong: #3d3d3d;
+  --color-ink: #ececec;
+  --color-muted: #a8a8a8;
+  --color-faint: #717171;
+  --color-accent: #c9a227;
+  --color-accent-hover: #b59223;
+  --color-accent-soft: #2c250f;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e2817;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e250a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1313;
+  --color-sidebar-top: #101010;
+  --color-sidebar-bottom: #090909;
+  --color-sidebar-edge: #272727;
+  --color-brand-from: #8d711b;
+  --color-brand-to: #6e5815;
+  --color-brand-to-hover: #7f6618;
+  --color-vs-titlebar: #0d0d0d;
+  --color-vs-activity: #0a0a0a;
+  --color-vs-sidebar: #0f0f0f;
+  --color-vs-editor: #121212;
+  --color-vs-tabbar: #0d0d0d;
+  --color-vs-panel: #0f0f0f;
+  --color-vs-status: #6e5815;
+  --color-vs-status-idle: #3d3d3d;
+  --color-vs-border: #272727;
+  --color-vs-selected: #332c16;
+  --color-vs-active: #453a18;
+  --color-vs-text: #ececec;
+  --color-vs-dim: #a8a8a8;
+  --color-vs-badge: #c9a227;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --radius-card: 4.2px;
+  --radius-control: 2.8px;
+  --radius-object: 3.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Paper — Off-white stock, ink-dark text, hairline rules. */
+:root[data-theme='paper'] {
+  --color-canvas: #f6f3ec;
+  --color-surface: #fffdf8;
+  --color-raised: #efeade;
+  --color-overlay: #fffdf8;
+  --color-edge: #ddd7c8;
+  --color-edge-strong: #b5ad9a;
+  --color-ink: #1c1a16;
+  --color-muted: #575147;
+  --color-faint: #8f8a81;
+  --color-accent: #2f5f8f;
+  --color-accent-hover: #29547e;
+  --color-accent-soft: #d2d8db;
+  --color-ok: #22c55e;
+  --color-ok-soft: #d4ecd5;
+  --color-warn: #eab308;
+  --color-warn-soft: #f4e9c8;
+  --color-danger: #ef4444;
+  --color-danger-soft: #f5d7d1;
+  --color-sidebar-top: #fcfaf4;
+  --color-sidebar-bottom: #e7e4de;
+  --color-sidebar-edge: #ddd7c8;
+  --color-brand-from: #2f5f8f;
+  --color-brand-to: #254a70;
+  --color-brand-to-hover: #2a5681;
+  --color-vs-titlebar: #faf7f1;
+  --color-vs-activity: #f6f3ec;
+  --color-vs-sidebar: #fbf9f3;
+  --color-vs-editor: #fffdf8;
+  --color-vs-tabbar: #faf7f1;
+  --color-vs-panel: #fbf9f3;
+  --color-vs-status: #254a70;
+  --color-vs-status-idle: #b5ad9a;
+  --color-vs-border: #ddd7c8;
+  --color-vs-selected: #dae1e5;
+  --color-vs-active: #c5d1db;
+  --color-vs-text: #1c1a16;
+  --color-vs-dim: #575147;
+  --color-vs-badge: #2f5f8f;
+  --font-ui: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --shadow-card: 0 1px 1px rgb(28 26 22 / 0.05);
+  --radius-card: 3px;
+  --radius-control: 2px;
+  --radius-object: 2.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Glass Minimal — Translucent cards over a blurred background. Very soft edges. */
+:root[data-theme='glass-minimal'] {
+  --color-canvas: #101318;
+  --color-surface: #171b23;
+  --color-raised: #1d222b;
+  --color-overlay: #242a35;
+  --color-edge: #2a3140;
+  --color-edge-strong: #404a5d;
+  --color-ink: #eaeef5;
+  --color-muted: #acb5c4;
+  --color-faint: #757c88;
+  --color-accent: #60a5fa;
+  --color-accent-hover: #5695e1;
+  --color-accent-soft: #1e2d41;
+  --color-ok: #22c55e;
+  --color-ok-soft: #132f23;
+  --color-warn: #eab308;
+  --color-warn-soft: #332d15;
+  --color-danger: #ef4444;
+  --color-danger-soft: #341b1f;
+  --color-sidebar-top: #151920;
+  --color-sidebar-bottom: #0f1217;
+  --color-sidebar-edge: #2a3140;
+  --color-brand-from: #4577b4;
+  --color-brand-to: #365d8c;
+  --color-brand-to-hover: #3e6ba2;
+  --color-vs-titlebar: #13161c;
+  --color-vs-activity: #101318;
+  --color-vs-sidebar: #14181f;
+  --color-vs-editor: #171b23;
+  --color-vs-tabbar: #13161c;
+  --color-vs-panel: #14181f;
+  --color-vs-status: #365d8c;
+  --color-vs-status-idle: #404a5d;
+  --color-vs-border: #2a3140;
+  --color-vs-selected: #24344a;
+  --color-vs-active: #2b425f;
+  --color-vs-text: #eaeef5;
+  --color-vs-dim: #acb5c4;
+  --color-vs-badge: #60a5fa;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px rgb(0 0 0 / 0.35);
+  --blur: 18px;
+  --radius-card: 16.8px;
+  --radius-control: 11.2px;
+  --radius-object: 14px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='glass-minimal'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='glass-minimal'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='glass-minimal'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+
+/* Soft Gray — Calm mid-grey surfaces with a muted slate accent. */
+:root[data-theme='soft-gray'] {
+  --color-canvas: #1a1a1c;
+  --color-surface: #212124;
+  --color-raised: #27272b;
+  --color-overlay: #2e2e33;
+  --color-edge: #37373d;
+  --color-edge-strong: #4e4e56;
+  --color-ink: #e6e6e8;
+  --color-muted: #aeaeb5;
+  --color-faint: #7a7a7f;
+  --color-accent: #8fa8c6;
+  --color-accent-hover: #8197b2;
+  --color-accent-soft: #2f343b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #1b3527;
+  --color-warn: #eab308;
+  --color-warn-soft: #3b3219;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3c2122;
+  --color-sidebar-top: #1f1f22;
+  --color-sidebar-bottom: #18181a;
+  --color-sidebar-edge: #37373d;
+  --color-brand-from: #64768b;
+  --color-brand-to: #4e5c6c;
+  --color-brand-to-hover: #5a6a7d;
+  --color-vs-titlebar: #1d1d1f;
+  --color-vs-activity: #1a1a1c;
+  --color-vs-sidebar: #1e1e21;
+  --color-vs-editor: #212124;
+  --color-vs-tabbar: #1d1d1f;
+  --color-vs-panel: #1e1e21;
+  --color-vs-status: #4e5c6c;
+  --color-vs-status-idle: #4e4e56;
+  --color-vs-border: #37373d;
+  --color-vs-selected: #353941;
+  --color-vs-active: #404751;
+  --color-vs-text: #e6e6e8;
+  --color-vs-dim: #aeaeb5;
+  --color-vs-badge: #8fa8c6;
+  --radius-card: 14.4px;
+  --radius-control: 9.6px;
+  --radius-object: 12px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* High Contrast — Black, white and yellow, held to 7:1 rather than 4.5:1. */
+:root[data-theme='high-contrast'] {
+  --color-canvas: #000000;
+  --color-surface: #0a0a0a;
+  --color-raised: #141414;
+  --color-overlay: #1c1c1c;
+  --color-edge: #6a6a6a;
+  --color-edge-strong: #ffffff;
+  --color-ink: #ffffff;
+  --color-muted: #e6e6e6;
+  --color-faint: #c4c4c4;
+  --color-accent: #ffff00;
+  --color-accent-hover: #e6e600;
+  --color-accent-soft: #2e2e00;
+  --color-ok: #00ff7f;
+  --color-ok-soft: #002914;
+  --color-warn: #ffd400;
+  --color-warn-soft: #292200;
+  --color-danger: #ff5c5c;
+  --color-danger-soft: #290f0f;
+  --color-sidebar-top: #070707;
+  --color-sidebar-bottom: #000000;
+  --color-sidebar-edge: #6a6a6a;
+  --color-brand-from: #7a7a00;
+  --color-brand-to: #5f5f00;
+  --color-brand-to-hover: #6e6e00;
+  --color-vs-titlebar: #040404;
+  --color-vs-activity: #000000;
+  --color-vs-sidebar: #060606;
+  --color-vs-editor: #0a0a0a;
+  --color-vs-tabbar: #040404;
+  --color-vs-panel: #060606;
+  --color-vs-status: #5f5f00;
+  --color-vs-status-idle: #ffffff;
+  --color-vs-border: #6a6a6a;
+  --color-vs-selected: #363608;
+  --color-vs-active: #4f4f07;
+  --color-vs-text: #ffffff;
+  --color-vs-dim: #e6e6e6;
+  --color-vs-badge: #ffff00;
+  --border-w: 2px;
+  --radius-card: 3px;
+  --radius-control: 2px;
+  --radius-object: 2.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='high-contrast'] .border {
+  border-width: var(--border-w);
+}
+
+/* Editor Dark — The familiar blue-grey editor dark. Neutral and unsurprising. */
+:root[data-theme='editor-dark'] {
+  --color-canvas: #1e1e1e;
+  --color-surface: #252526;
+  --color-raised: #2d2d30;
+  --color-overlay: #333337;
+  --color-edge: #3c3c40;
+  --color-edge-strong: #4d4d52;
+  --color-ink: #e4e4e4;
+  --color-muted: #a8a8a8;
+  --color-faint: #787878;
+  --color-accent: #3794ff;
+  --color-accent-hover: #3285e6;
+  --color-accent-soft: #233347;
+  --color-ok: #22c55e;
+  --color-ok-soft: #1f3928;
+  --color-warn: #eab308;
+  --color-warn-soft: #3f361a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3f2424;
+  --color-sidebar-top: #232324;
+  --color-sidebar-bottom: #1c1c1c;
+  --color-sidebar-edge: #3c3c40;
+  --color-brand-from: #2c76cc;
+  --color-brand-to: #225c9f;
+  --color-brand-to-hover: #286ab8;
+  --color-vs-titlebar: #212121;
+  --color-vs-activity: #1e1e1e;
+  --color-vs-sidebar: #222223;
+  --color-vs-editor: #252526;
+  --color-vs-tabbar: #212121;
+  --color-vs-panel: #222223;
+  --color-vs-status: #225c9f;
+  --color-vs-status-idle: #4d4d52;
+  --color-vs-border: #3c3c40;
+  --color-vs-selected: #28394d;
+  --color-vs-active: #2a4463;
+  --color-vs-text: #e4e4e4;
+  --color-vs-dim: #a8a8a8;
+  --color-vs-badge: #3794ff;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Repo Dark — Charcoal panels and a clear blue. Very little chrome. */
+:root[data-theme='repo-dark'] {
+  --color-canvas: #0d1117;
+  --color-surface: #161b22;
+  --color-raised: #1c2129;
+  --color-overlay: #22272f;
+  --color-edge: #30363d;
+  --color-edge-strong: #444c56;
+  --color-ink: #e6edf3;
+  --color-muted: #9aa5b1;
+  --color-faint: #69717b;
+  --color-accent: #58a6ff;
+  --color-accent-hover: #4f95e6;
+  --color-accent-soft: #1b2c41;
+  --color-ok: #22c55e;
+  --color-ok-soft: #102e22;
+  --color-warn: #eab308;
+  --color-warn-soft: #302b15;
+  --color-danger: #ef4444;
+  --color-danger-soft: #31191e;
+  --color-sidebar-top: #13181f;
+  --color-sidebar-bottom: #0c1016;
+  --color-sidebar-edge: #30363d;
+  --color-brand-from: #3f78b8;
+  --color-brand-to: #315e90;
+  --color-brand-to-hover: #396ca6;
+  --color-vs-titlebar: #11151b;
+  --color-vs-activity: #0d1117;
+  --color-vs-sidebar: #12171e;
+  --color-vs-editor: #161b22;
+  --color-vs-tabbar: #11151b;
+  --color-vs-panel: #12171e;
+  --color-vs-status: #315e90;
+  --color-vs-status-idle: #444c56;
+  --color-vs-border: #30363d;
+  --color-vs-selected: #22344a;
+  --color-vs-active: #284260;
+  --color-vs-text: #e6edf3;
+  --color-vs-dim: #9aa5b1;
+  --color-vs-badge: #58a6ff;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Dracula — Dark violet with pink, cyan and green. The comment blue is lifted to stay readable. */
+/* Palette: Dracula by Zeno Rocha and contributors (MIT) */
+:root[data-theme='dracula'] {
+  --color-canvas: #21222c;
+  --color-surface: #282a36;
+  --color-raised: #343746;
+  --color-overlay: #3d4051;
+  --color-edge: #44475a;
+  --color-edge-strong: #565a71;
+  --color-ink: #f8f8f2;
+  --color-muted: #a3add4;
+  --color-faint: #767c99;
+  --color-accent: #bd93f9;
+  --color-accent-hover: #aa84e0;
+  --color-accent-soft: #3d3651;
+  --color-ok: #50fa7b;
+  --color-ok-soft: #294539;
+  --color-warn: #f1fa8c;
+  --color-warn-soft: #42453b;
+  --color-danger: #ff5555;
+  --color-danger-soft: #452a33;
+  --color-sidebar-top: #262833;
+  --color-sidebar-bottom: #1f2029;
+  --color-sidebar-edge: #44475a;
+  --color-brand-from: #8467ae;
+  --color-brand-to: #675088;
+  --color-brand-to-hover: #775d9d;
+  --color-vs-titlebar: #242530;
+  --color-vs-activity: #21222c;
+  --color-vs-sidebar: #252732;
+  --color-vs-editor: #282a36;
+  --color-vs-tabbar: #242530;
+  --color-vs-panel: #252732;
+  --color-vs-status: #675088;
+  --color-vs-status-idle: #565a71;
+  --color-vs-border: #44475a;
+  --color-vs-selected: #433d59;
+  --color-vs-active: #52476d;
+  --color-vs-text: #f8f8f2;
+  --color-vs-dim: #a3add4;
+  --color-vs-badge: #bd93f9;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Monokai — Warm dark grey with lime, magenta and orange. */
+/* Palette: Monokai by Wimer Hazenberg (Original colour scheme — credited, not affiliated) */
+:root[data-theme='monokai'] {
+  --color-canvas: #1e1f1c;
+  --color-surface: #272822;
+  --color-raised: #31322b;
+  --color-overlay: #3a3b33;
+  --color-edge: #49483e;
+  --color-edge-strong: #5f5e52;
+  --color-ink: #f8f8f2;
+  --color-muted: #bab8a6;
+  --color-faint: #838276;
+  --color-accent: #a6e22e;
+  --color-accent-hover: #95cb29;
+  --color-accent-soft: #36421f;
+  --color-ok: #a6e22e;
+  --color-ok-soft: #343e1f;
+  --color-warn: #e6db74;
+  --color-warn-soft: #3e3d2a;
+  --color-danger: #f92672;
+  --color-danger-soft: #41202a;
+  --color-sidebar-top: #242520;
+  --color-sidebar-bottom: #1c1d1a;
+  --color-sidebar-edge: #49483e;
+  --color-brand-from: #5d7f1a;
+  --color-brand-to: #496314;
+  --color-brand-to-hover: #547217;
+  --color-vs-titlebar: #22231e;
+  --color-vs-activity: #1e1f1c;
+  --color-vs-sidebar: #232420;
+  --color-vs-editor: #272822;
+  --color-vs-tabbar: #22231e;
+  --color-vs-panel: #232420;
+  --color-vs-status: #496314;
+  --color-vs-status-idle: #5f5e52;
+  --color-vs-border: #49483e;
+  --color-vs-selected: #3e4924;
+  --color-vs-active: #4b5c25;
+  --color-vs-text: #f8f8f2;
+  --color-vs-dim: #bab8a6;
+  --color-vs-badge: #a6e22e;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* One Dark — Soft slate with balanced syntax colours. Easy for long sessions. */
+/* Palette: One Dark by Atom contributors (MIT) */
+:root[data-theme='one-dark'] {
+  --color-canvas: #21252b;
+  --color-surface: #282c34;
+  --color-raised: #2f343d;
+  --color-overlay: #363c46;
+  --color-edge: #3e4451;
+  --color-edge-strong: #515869;
+  --color-ink: #dfe3ea;
+  --color-muted: #a7b1c2;
+  --color-faint: #78808d;
+  --color-accent: #61afef;
+  --color-accent-hover: #579ed7;
+  --color-accent-soft: #2d3e4e;
+  --color-ok: #98c379;
+  --color-ok-soft: #343e37;
+  --color-warn: #e5c07b;
+  --color-warn-soft: #403e38;
+  --color-danger: #e06c75;
+  --color-danger-soft: #403037;
+  --color-sidebar-top: #262a31;
+  --color-sidebar-bottom: #1f2328;
+  --color-sidebar-edge: #3e4451;
+  --color-brand-from: #447ba7;
+  --color-brand-to: #356082;
+  --color-brand-to-hover: #3d6f96;
+  --color-vs-titlebar: #24282f;
+  --color-vs-activity: #21252b;
+  --color-vs-sidebar: #252930;
+  --color-vs-editor: #282c34;
+  --color-vs-tabbar: #24282f;
+  --color-vs-panel: #252930;
+  --color-vs-status: #356082;
+  --color-vs-status-idle: #515869;
+  --color-vs-border: #3e4451;
+  --color-vs-selected: #324456;
+  --color-vs-active: #385168;
+  --color-vs-text: #dfe3ea;
+  --color-vs-dim: #a7b1c2;
+  --color-vs-badge: #61afef;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Nord — Arctic blue-grey with frost accents. Low contrast by design. */
+/* Palette: Nord by Sven Greb / Arctic Ice Studio (MIT) */
+:root[data-theme='nord'] {
+  --color-canvas: #2e3440;
+  --color-surface: #3b4252;
+  --color-raised: #434c5e;
+  --color-overlay: #4c566a;
+  --color-edge: #4c566a;
+  --color-edge-strong: #66738c;
+  --color-ink: #eceff4;
+  --color-muted: #c3ccda;
+  --color-faint: #8f97a4;
+  --color-accent: #88c0d0;
+  --color-accent-hover: #7aadbb;
+  --color-accent-soft: #3e4d5a;
+  --color-ok: #a3be8c;
+  --color-ok-soft: #414a4c;
+  --color-warn: #ebcb8b;
+  --color-warn-soft: #4c4c4c;
+  --color-danger: #bf616a;
+  --color-danger-soft: #453b47;
+  --color-sidebar-top: #373e4d;
+  --color-sidebar-bottom: #2b313c;
+  --color-sidebar-edge: #4c566a;
+  --color-brand-from: #577b85;
+  --color-brand-to: #446068;
+  --color-brand-to-hover: #4e6f78;
+  --color-vs-titlebar: #333a47;
+  --color-vs-activity: #2e3440;
+  --color-vs-sidebar: #363c4b;
+  --color-vs-editor: #3b4252;
+  --color-vs-tabbar: #333a47;
+  --color-vs-panel: #363c4b;
+  --color-vs-status: #446068;
+  --color-vs-status-idle: #66738c;
+  --color-vs-border: #4c566a;
+  --color-vs-selected: #495969;
+  --color-vs-active: #516575;
+  --color-vs-text: #eceff4;
+  --color-vs-dim: #c3ccda;
+  --color-vs-badge: #88c0d0;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Solarized Dark — Deep teal with a palette tuned for equal contrast either way up. */
+/* Palette: Solarized by Ethan Schoonover (MIT) */
+:root[data-theme='solarized-dark'] {
+  --color-canvas: #002b36;
+  --color-surface: #073642;
+  --color-raised: #0c4351;
+  --color-overlay: #124f5e;
+  --color-edge: #14505c;
+  --color-edge-strong: #2f6b78;
+  --color-ink: #eee8d5;
+  --color-muted: #a3b1b1;
+  --color-faint: #6a8286;
+  --color-accent: #2aa198;
+  --color-accent-hover: #269189;
+  --color-accent-soft: #084048;
+  --color-ok: #859900;
+  --color-ok-soft: #153d2d;
+  --color-warn: #b58900;
+  --color-warn-soft: #1d3a2d;
+  --color-danger: #dc322f;
+  --color-danger-soft: #232c35;
+  --color-sidebar-top: #05333e;
+  --color-sidebar-bottom: #002833;
+  --color-sidebar-edge: #14505c;
+  --color-brand-from: #22847d;
+  --color-brand-to: #1b6762;
+  --color-brand-to-hover: #1f7771;
+  --color-vs-titlebar: #032f3b;
+  --color-vs-activity: #002b36;
+  --color-vs-sidebar: #04323d;
+  --color-vs-editor: #073642;
+  --color-vs-tabbar: #032f3b;
+  --color-vs-panel: #04323d;
+  --color-vs-status: #1b6762;
+  --color-vs-status-idle: #2f6b78;
+  --color-vs-border: #14505c;
+  --color-vs-selected: #0d4951;
+  --color-vs-active: #11545a;
+  --color-vs-text: #eee8d5;
+  --color-vs-dim: #a3b1b1;
+  --color-vs-badge: #2aa198;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Solarized Light — The same palette the other way up: warm paper, same relationships. */
+/* Palette: Solarized by Ethan Schoonover (MIT) */
+:root[data-theme='solarized-light'] {
+  --color-canvas: #eee8d5;
+  --color-surface: #fdf6e3;
+  --color-raised: #f6efdc;
+  --color-overlay: #fffdf6;
+  --color-edge: #ded7c1;
+  --color-edge-strong: #b8b199;
+  --color-ink: #073642;
+  --color-muted: #4e6165;
+  --color-faint: #7e8784;
+  --color-accent: #1c6a94;
+  --color-accent-hover: #195d82;
+  --color-accent-soft: #c8d1c9;
+  --color-ok: #5f7000;
+  --color-ok-soft: #d7d5b3;
+  --color-warn: #8a6800;
+  --color-warn-soft: #ded4b3;
+  --color-danger: #c02b28;
+  --color-danger-soft: #e7cab9;
+  --color-sidebar-top: #f9f2df;
+  --color-sidebar-bottom: #e0dac8;
+  --color-sidebar-edge: #ded7c1;
+  --color-brand-from: #1c6a94;
+  --color-brand-to: #165373;
+  --color-brand-to-hover: #195f85;
+  --color-vs-titlebar: #f4eedb;
+  --color-vs-activity: #eee8d5;
+  --color-vs-sidebar: #f7f0dd;
+  --color-vs-editor: #fdf6e3;
+  --color-vs-tabbar: #f4eedb;
+  --color-vs-panel: #f7f0dd;
+  --color-vs-status: #165373;
+  --color-vs-status-idle: #b8b199;
+  --color-vs-border: #ded7c1;
+  --color-vs-selected: #d5ddd5;
+  --color-vs-active: #becfcd;
+  --color-vs-text: #073642;
+  --color-vs-dim: #4e6165;
+  --color-vs-badge: #1c6a94;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Tokyo Night — Dark navy with violet and soft blue. Quiet at night. */
+/* Palette: Tokyo Night by enkia (MIT) */
+:root[data-theme='tokyo-night'] {
+  --color-canvas: #16161e;
+  --color-surface: #1a1b26;
+  --color-raised: #21222f;
+  --color-overlay: #292e42;
+  --color-edge: #2f3549;
+  --color-edge-strong: #414868;
+  --color-ink: #c0caf5;
+  --color-muted: #9aa5ce;
+  --color-faint: #6c7390;
+  --color-accent: #7aa2f7;
+  --color-accent-hover: #6e92de;
+  --color-accent-soft: #282f45;
+  --color-ok: #9ece6a;
+  --color-ok-soft: #2c332a;
+  --color-warn: #e0af68;
+  --color-warn-soft: #362e2a;
+  --color-danger: #f7768e;
+  --color-danger-soft: #3a2530;
+  --color-sidebar-top: #191a24;
+  --color-sidebar-bottom: #15151c;
+  --color-sidebar-edge: #2f3549;
+  --color-brand-from: #5875b2;
+  --color-brand-to: #455b8b;
+  --color-brand-to-hover: #4f69a0;
+  --color-vs-titlebar: #181821;
+  --color-vs-activity: #16161e;
+  --color-vs-sidebar: #181923;
+  --color-vs-editor: #1a1b26;
+  --color-vs-tabbar: #181821;
+  --color-vs-panel: #181923;
+  --color-vs-status: #455b8b;
+  --color-vs-status-idle: #414868;
+  --color-vs-border: #2f3549;
+  --color-vs-selected: #2b334c;
+  --color-vs-active: #354161;
+  --color-vs-text: #c0caf5;
+  --color-vs-dim: #9aa5ce;
+  --color-vs-badge: #7aa2f7;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Catppuccin Mocha — Pastels over a muted dark base. The gentlest of the developer set. */
+/* Palette: Catppuccin by Catppuccin contributors (MIT) */
+:root[data-theme='catppuccin'] {
+  --color-canvas: #181825;
+  --color-surface: #1e1e2e;
+  --color-raised: #26263a;
+  --color-overlay: #313244;
+  --color-edge: #313244;
+  --color-edge-strong: #45475a;
+  --color-ink: #cdd6f4;
+  --color-muted: #a6adc8;
+  --color-faint: #74798f;
+  --color-accent: #cba6f7;
+  --color-accent-hover: #b795de;
+  --color-accent-soft: #38324b;
+  --color-ok: #a6e3a1;
+  --color-ok-soft: #2f3839;
+  --color-warn: #f9e2af;
+  --color-warn-soft: #3c383b;
+  --color-danger: #f38ba8;
+  --color-danger-soft: #3b2a3a;
+  --color-sidebar-top: #1c1c2b;
+  --color-sidebar-bottom: #171723;
+  --color-sidebar-edge: #313244;
+  --color-brand-from: #826a9e;
+  --color-brand-to: #65537b;
+  --color-brand-to-hover: #755f8e;
+  --color-vs-titlebar: #1a1a29;
+  --color-vs-activity: #181825;
+  --color-vs-sidebar: #1c1c2a;
+  --color-vs-editor: #1e1e2e;
+  --color-vs-tabbar: #1a1a29;
+  --color-vs-panel: #1c1c2a;
+  --color-vs-status: #65537b;
+  --color-vs-status-idle: #45475a;
+  --color-vs-border: #313244;
+  --color-vs-selected: #3d3652;
+  --color-vs-active: #4e4466;
+  --color-vs-text: #cdd6f4;
+  --color-vs-dim: #a6adc8;
+  --color-vs-badge: #cba6f7;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Matrix Rain — Black, phosphor green, and code falling behind the interface. */
+:root[data-theme='matrix-rain'] {
+  --color-canvas: #000603;
+  --color-surface: #04120a;
+  --color-raised: #071a0e;
+  --color-overlay: #0a2113;
+  --color-edge: #10331c;
+  --color-edge-strong: #1a5230;
+  --color-ink: #d7ffe4;
+  --color-muted: #7fd8a1;
+  --color-faint: #538f6a;
+  --color-accent: #22ff88;
+  --color-accent-hover: #1fe67a;
+  --color-accent-soft: #06331b;
+  --color-ok: #22ff88;
+  --color-ok-soft: #052e18;
+  --color-warn: #eab308;
+  --color-warn-soft: #252204;
+  --color-danger: #ef4444;
+  --color-danger-soft: #26100d;
+  --color-sidebar-top: #030e08;
+  --color-sidebar-bottom: #000603;
+  --color-sidebar-edge: #10331c;
+  --color-brand-from: #128547;
+  --color-brand-to: #0e6837;
+  --color-brand-to-hover: #107840;
+  --color-vs-titlebar: #020b06;
+  --color-vs-activity: #000603;
+  --color-vs-sidebar: #020d07;
+  --color-vs-editor: #04120a;
+  --color-vs-tabbar: #020b06;
+  --color-vs-panel: #020d07;
+  --color-vs-status: #0e6837;
+  --color-vs-status-idle: #1a5230;
+  --color-vs-border: #10331c;
+  --color-vs-selected: #093d21;
+  --color-vs-active: #0c542d;
+  --color-vs-text: #d7ffe4;
+  --color-vs-dim: #7fd8a1;
+  --color-vs-badge: #22ff88;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --glow: #22ff88;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='matrix-rain'] .btn-brand,
+:root[data-theme='matrix-rain'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Hacker Terminal — Monospace everywhere, a hard green cursor, and scan lines. */
+:root[data-theme='hacker-terminal'] {
+  --color-canvas: #08090a;
+  --color-surface: #0d0f10;
+  --color-raised: #121517;
+  --color-overlay: #171b1d;
+  --color-edge: #1e2427;
+  --color-edge-strong: #2b3438;
+  --color-ink: #c9f7d6;
+  --color-muted: #8bbd9d;
+  --color-faint: #5d7e6a;
+  --color-accent: #33d17a;
+  --color-accent-hover: #2ebc6e;
+  --color-accent-soft: #102d1e;
+  --color-ok: #33d17a;
+  --color-ok-soft: #0f291c;
+  --color-warn: #eab308;
+  --color-warn-soft: #2c240a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2d1213;
+  --color-sidebar-top: #0c0d0e;
+  --color-sidebar-bottom: #080809;
+  --color-sidebar-edge: #1e2427;
+  --color-brand-from: #21864e;
+  --color-brand-to: #1a693d;
+  --color-brand-to-hover: #1e7946;
+  --color-vs-titlebar: #0a0b0c;
+  --color-vs-activity: #08090a;
+  --color-vs-sidebar: #0b0d0e;
+  --color-vs-editor: #0d0f10;
+  --color-vs-tabbar: #0a0b0c;
+  --color-vs-panel: #0b0d0e;
+  --color-vs-status: #1a693d;
+  --color-vs-status-idle: #2b3438;
+  --color-vs-border: #1e2427;
+  --color-vs-selected: #143223;
+  --color-vs-active: #18452e;
+  --color-vs-text: #c9f7d6;
+  --color-vs-dim: #8bbd9d;
+  --color-vs-badge: #33d17a;
+  --font-ui: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --font-mono-theme: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='hacker-terminal'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* Red Team — Offensive security: near-black, alert red, everything urgent. */
+:root[data-theme='red-team'] {
+  --color-canvas: #0b0708;
+  --color-surface: #140a0c;
+  --color-raised: #1b0e11;
+  --color-overlay: #221216;
+  --color-edge: #2c161a;
+  --color-edge-strong: #43222a;
+  --color-ink: #f3dee1;
+  --color-muted: #c69ba3;
+  --color-faint: #85676d;
+  --color-accent: #ff3b47;
+  --color-accent-hover: #e63540;
+  --color-accent-soft: #371013;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0f2516;
+  --color-warn: #ff9f1c;
+  --color-warn-soft: #321f0b;
+  --color-danger: #ff3b47;
+  --color-danger-soft: #320f12;
+  --color-sidebar-top: #11090b;
+  --color-sidebar-bottom: #0a0708;
+  --color-sidebar-edge: #2c161a;
+  --color-brand-from: #db333d;
+  --color-brand-to: #ab2830;
+  --color-brand-to-hover: #c52e37;
+  --color-vs-titlebar: #0f080a;
+  --color-vs-activity: #0b0708;
+  --color-vs-sidebar: #10090a;
+  --color-vs-editor: #140a0c;
+  --color-vs-tabbar: #0f080a;
+  --color-vs-panel: #10090a;
+  --color-vs-status: #ab2830;
+  --color-vs-status-idle: #43222a;
+  --color-vs-border: #2c161a;
+  --color-vs-selected: #3e1317;
+  --color-vs-active: #56181d;
+  --color-vs-text: #f3dee1;
+  --color-vs-dim: #c69ba3;
+  --color-vs-badge: #ff3b47;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --glow: #ff3b47;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='red-team'] .btn-brand,
+:root[data-theme='red-team'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Blue Team — Defensive navy with a cyan grid, for watching rather than breaking. */
+:root[data-theme='blue-team'] {
+  --color-canvas: #050a12;
+  --color-surface: #0a1220;
+  --color-raised: #0e1a2c;
+  --color-overlay: #132238;
+  --color-edge: #1a2c46;
+  --color-edge-strong: #294263;
+  --color-ink: #dce9f7;
+  --color-muted: #98b5d4;
+  --color-faint: #657990;
+  --color-accent: #38bdf8;
+  --color-accent-hover: #32aadf;
+  --color-accent-soft: #0e2a3b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0a281e;
+  --color-warn: #eab308;
+  --color-warn-soft: #2a2510;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a131a;
+  --color-sidebar-top: #09101c;
+  --color-sidebar-bottom: #050911;
+  --color-sidebar-edge: #1a2c46;
+  --color-brand-from: #257da4;
+  --color-brand-to: #1d6280;
+  --color-brand-to-hover: #217194;
+  --color-vs-titlebar: #070d18;
+  --color-vs-activity: #050a12;
+  --color-vs-sidebar: #080f1a;
+  --color-vs-editor: #0a1220;
+  --color-vs-tabbar: #070d18;
+  --color-vs-panel: #080f1a;
+  --color-vs-status: #1d6280;
+  --color-vs-status-idle: #294263;
+  --color-vs-border: #1a2c46;
+  --color-vs-selected: #123147;
+  --color-vs-active: #17425c;
+  --color-vs-text: #dce9f7;
+  --color-vs-dim: #98b5d4;
+  --color-vs-badge: #38bdf8;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Cyberpunk Neon — Violet dark, magenta accent, and a gradient that will not sit still. */
+:root[data-theme='cyberpunk-neon'] {
+  --color-canvas: #0a0512;
+  --color-surface: #120a1f;
+  --color-raised: #180e29;
+  --color-overlay: #1f1234;
+  --color-edge: #2a1846;
+  --color-edge-strong: #402467;
+  --color-ink: #f4e9ff;
+  --color-muted: #bda2d8;
+  --color-faint: #7e6b93;
+  --color-accent: #ff2fd0;
+  --color-accent-hover: #e62abb;
+  --color-accent-soft: #360d34;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e241e;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e2110;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f0f1a;
+  --color-sidebar-top: #10091b;
+  --color-sidebar-bottom: #090511;
+  --color-sidebar-edge: #2a1846;
+  --color-brand-from: #d127ab;
+  --color-brand-to: #a31e85;
+  --color-brand-to-hover: #bc239a;
+  --color-vs-titlebar: #0d0717;
+  --color-vs-activity: #0a0512;
+  --color-vs-sidebar: #0f081a;
+  --color-vs-editor: #120a1f;
+  --color-vs-tabbar: #0d0717;
+  --color-vs-panel: #0f081a;
+  --color-vs-status: #a31e85;
+  --color-vs-status-idle: #402467;
+  --color-vs-border: #2a1846;
+  --color-vs-selected: #3d113f;
+  --color-vs-active: #541451;
+  --color-vs-text: #f4e9ff;
+  --color-vs-dim: #bda2d8;
+  --color-vs-badge: #ff2fd0;
+  --glow: #ff2fd0;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='cyberpunk-neon'] .btn-brand,
+:root[data-theme='cyberpunk-neon'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Digital Underground — Concrete grey, acid green, and a layer of grain over everything. */
+:root[data-theme='digital-underground'] {
+  --color-canvas: #0d0f0d;
+  --color-surface: #141814;
+  --color-raised: #1a1f19;
+  --color-overlay: #202620;
+  --color-edge: #283028;
+  --color-edge-strong: #3a463a;
+  --color-ink: #e6ede4;
+  --color-muted: #a5b6a2;
+  --color-faint: #707c6e;
+  --color-accent: #a3e635;
+  --color-accent-hover: #93cf30;
+  --color-accent-soft: #283614;
+  --color-ok: #a3e635;
+  --color-ok-soft: #253113;
+  --color-warn: #eab308;
+  --color-warn-soft: #30290c;
+  --color-danger: #ef4444;
+  --color-danger-soft: #311716;
+  --color-sidebar-top: #121512;
+  --color-sidebar-bottom: #0c0e0c;
+  --color-sidebar-edge: #283028;
+  --color-brand-from: #5b811e;
+  --color-brand-to: #476517;
+  --color-brand-to-hover: #52741b;
+  --color-vs-titlebar: #101310;
+  --color-vs-activity: #0d0f0d;
+  --color-vs-sidebar: #111411;
+  --color-vs-editor: #141814;
+  --color-vs-tabbar: #101310;
+  --color-vs-panel: #111411;
+  --color-vs-status: #476517;
+  --color-vs-status-idle: #3a463a;
+  --color-vs-border: #283028;
+  --color-vs-selected: #2e3d1a;
+  --color-vs-active: #3c521d;
+  --color-vs-text: #e6ede4;
+  --color-vs-dim: #a5b6a2;
+  --color-vs-badge: #a3e635;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Zero Day — Neutral black with a single hazard orange. Nothing else competes. */
+:root[data-theme='zero-day'] {
+  --color-canvas: #0a0a0b;
+  --color-surface: #121213;
+  --color-raised: #18181a;
+  --color-overlay: #1f1f21;
+  --color-edge: #292a2c;
+  --color-edge-strong: #3c3d40;
+  --color-ink: #f0ede8;
+  --color-muted: #aca69d;
+  --color-faint: #736f6a;
+  --color-accent: #ff7a00;
+  --color-accent-hover: #e66e00;
+  --color-accent-soft: #361e09;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e2818;
+  --color-warn: #ff7a00;
+  --color-warn-soft: #311c09;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1314;
+  --color-sidebar-top: #101011;
+  --color-sidebar-bottom: #09090a;
+  --color-sidebar-edge: #292a2c;
+  --color-brand-from: #bd5a00;
+  --color-brand-to: #934600;
+  --color-brand-to-hover: #aa5100;
+  --color-vs-titlebar: #0d0d0e;
+  --color-vs-activity: #0a0a0b;
+  --color-vs-sidebar: #0f0f10;
+  --color-vs-editor: #121213;
+  --color-vs-tabbar: #0d0d0e;
+  --color-vs-panel: #0f0f10;
+  --color-vs-status: #934600;
+  --color-vs-status-idle: #3c3d40;
+  --color-vs-border: #292a2c;
+  --color-vs-selected: #3d2510;
+  --color-vs-active: #542f0e;
+  --color-vs-text: #f0ede8;
+  --color-vs-dim: #aca69d;
+  --color-vs-badge: #ff7a00;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Dark Web — Almost no light, muted violet, deliberately low key. */
+:root[data-theme='dark-web'] {
+  --color-canvas: #060507;
+  --color-surface: #0c0a0f;
+  --color-raised: #110e16;
+  --color-overlay: #16121d;
+  --color-edge: #1d1826;
+  --color-edge-strong: #2c2439;
+  --color-ink: #ded7e7;
+  --color-muted: #a094b1;
+  --color-faint: #6a6276;
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7d53dd;
+  --color-accent-soft: #1e1532;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0a2415;
+  --color-warn: #eab308;
+  --color-warn-soft: #2a2107;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2b0f11;
+  --color-sidebar-top: #0a090d;
+  --color-sidebar-bottom: #060507;
+  --color-sidebar-edge: #1d1826;
+  --color-brand-from: #8558ec;
+  --color-brand-to: #6845b8;
+  --color-brand-to-hover: #784fd4;
+  --color-vs-titlebar: #08070a;
+  --color-vs-activity: #060507;
+  --color-vs-sidebar: #0a080c;
+  --color-vs-editor: #0c0a0f;
+  --color-vs-tabbar: #08070a;
+  --color-vs-panel: #0a080c;
+  --color-vs-status: #6845b8;
+  --color-vs-status-idle: #2c2439;
+  --color-vs-border: #1d1826;
+  --color-vs-selected: #231939;
+  --color-vs-active: #302150;
+  --color-vs-text: #ded7e7;
+  --color-vs-dim: #a094b1;
+  --color-vs-badge: #8b5cf6;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Anonymous — Pure greyscale with one green. Terminal overlay, no colour opinions. */
+:root[data-theme='anonymous'] {
+  --color-canvas: #070707;
+  --color-surface: #0e0e0e;
+  --color-raised: #141414;
+  --color-overlay: #1a1a1a;
+  --color-edge: #232323;
+  --color-edge-strong: #343434;
+  --color-ink: #ededed;
+  --color-muted: #a8a8a8;
+  --color-faint: #707070;
+  --color-accent: #3ddc84;
+  --color-accent-hover: #37c677;
+  --color-accent-soft: #112d1e;
+  --color-ok: #3ddc84;
+  --color-ok-soft: #10291b;
+  --color-warn: #eab308;
+  --color-warn-soft: #2b2307;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2c1111;
+  --color-sidebar-top: #0c0c0c;
+  --color-sidebar-bottom: #070707;
+  --color-sidebar-edge: #232323;
+  --color-brand-from: #25844f;
+  --color-brand-to: #1d673e;
+  --color-brand-to-hover: #217747;
+  --color-vs-titlebar: #0a0a0a;
+  --color-vs-activity: #070707;
+  --color-vs-sidebar: #0b0b0b;
+  --color-vs-editor: #0e0e0e;
+  --color-vs-tabbar: #0a0a0a;
+  --color-vs-panel: #0b0b0b;
+  --color-vs-status: #1d673e;
+  --color-vs-status-idle: #343434;
+  --color-vs-border: #232323;
+  --color-vs-selected: #163323;
+  --color-vs-active: #1b482f;
+  --color-vs-text: #ededed;
+  --color-vs-dim: #a8a8a8;
+  --color-vs-badge: #3ddc84;
+  --font-ui: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Root Access — Command-line black with red permissions. Square, plain, unfriendly. */
+:root[data-theme='root-access'] {
+  --color-canvas: #050505;
+  --color-surface: #0c0b0b;
+  --color-raised: #121010;
+  --color-overlay: #181515;
+  --color-edge: #221d1d;
+  --color-edge-strong: #352c2c;
+  --color-ink: #ececec;
+  --color-muted: #a69e9e;
+  --color-faint: #6e6868;
+  --color-accent: #ef4444;
+  --color-accent-hover: #d73d3d;
+  --color-accent-soft: #2f1010;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0a2413;
+  --color-warn: #eab308;
+  --color-warn-soft: #2a2105;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a0f0f;
+  --color-sidebar-top: #0a0909;
+  --color-sidebar-bottom: #050505;
+  --color-sidebar-edge: #221d1d;
+  --color-brand-from: #d73d3d;
+  --color-brand-to: #a83030;
+  --color-brand-to-hover: #c23737;
+  --color-vs-titlebar: #080707;
+  --color-vs-activity: #050505;
+  --color-vs-sidebar: #090909;
+  --color-vs-editor: #0c0b0b;
+  --color-vs-tabbar: #080707;
+  --color-vs-panel: #090909;
+  --color-vs-status: #a83030;
+  --color-vs-status-idle: #352c2c;
+  --color-vs-border: #221d1d;
+  --color-vs-selected: #351515;
+  --color-vs-active: #4c1b1b;
+  --color-vs-text: #ececec;
+  --color-vs-dim: #a69e9e;
+  --color-vs-badge: #ef4444;
+  --font-ui: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --font-mono-theme: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='root-access'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* AI Core — White and silver with a blue glow, and a slow drift of connected points. */
+:root[data-theme='ai-core'] {
+  --color-canvas: #eef2f7;
+  --color-surface: #ffffff;
+  --color-raised: #f4f7fb;
+  --color-overlay: #ffffff;
+  --color-edge: #d8e0ea;
+  --color-edge-strong: #b0bccb;
+  --color-ink: #101822;
+  --color-muted: #4d5a6b;
+  --color-faint: #828c99;
+  --color-accent: #2563eb;
+  --color-accent-hover: #2157cf;
+  --color-accent-soft: #cad8f5;
+  --color-ok: #22c55e;
+  --color-ok-soft: #cdebdf;
+  --color-warn: #eab308;
+  --color-warn-soft: #ede8d1;
+  --color-danger: #ef4444;
+  --color-danger-soft: #eed6da;
+  --color-sidebar-top: #fafbfd;
+  --color-sidebar-bottom: #e0e3e8;
+  --color-sidebar-edge: #d8e0ea;
+  --color-brand-from: #2563eb;
+  --color-brand-to: #1d4db7;
+  --color-brand-to-hover: #2159d4;
+  --color-vs-titlebar: #f5f7fa;
+  --color-vs-activity: #eef2f7;
+  --color-vs-sidebar: #f8fafc;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f5f7fa;
+  --color-vs-panel: #f8fafc;
+  --color-vs-status: #1d4db7;
+  --color-vs-status-idle: #b0bccb;
+  --color-vs-border: #d8e0ea;
+  --color-vs-selected: #d8e3fb;
+  --color-vs-active: #c2d3f9;
+  --color-vs-text: #101822;
+  --color-vs-dim: #4d5a6b;
+  --color-vs-badge: #2563eb;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --shadow-card: 0 1px 2px rgb(16 24 34 / 0.06), 0 8px 24px rgb(37 99 235 / 0.07);
+  --glow: #2563eb;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='ai-core'] .btn-brand,
+:root[data-theme='ai-core'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Quantum Interface — Deep blue with violet particles behind translucent panels. */
+:root[data-theme='quantum-interface'] {
+  --color-canvas: #070b1a;
+  --color-surface: #0d1226;
+  --color-raised: #131a33;
+  --color-overlay: #1a2242;
+  --color-edge: #212a4d;
+  --color-edge-strong: #38457a;
+  --color-ink: #e6eaff;
+  --color-muted: #a9b4e2;
+  --color-faint: #70799c;
+  --color-accent: #a78bfa;
+  --color-accent-hover: #967de1;
+  --color-accent-soft: #242242;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0b2925;
+  --color-warn: #eab308;
+  --color-warn-soft: #2b2617;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2c1421;
+  --color-sidebar-top: #0b1022;
+  --color-sidebar-bottom: #070a18;
+  --color-sidebar-edge: #212a4d;
+  --color-brand-from: #7c67b9;
+  --color-brand-to: #615090;
+  --color-brand-to-hover: #705da7;
+  --color-vs-titlebar: #090e1f;
+  --color-vs-activity: #070b1a;
+  --color-vs-sidebar: #0b0f21;
+  --color-vs-editor: #0d1226;
+  --color-vs-tabbar: #090e1f;
+  --color-vs-panel: #0b0f21;
+  --color-vs-status: #615090;
+  --color-vs-status-idle: #38457a;
+  --color-vs-border: #212a4d;
+  --color-vs-selected: #29284c;
+  --color-vs-active: #383461;
+  --color-vs-text: #e6eaff;
+  --color-vs-dim: #a9b4e2;
+  --color-vs-badge: #a78bfa;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --glow: #a78bfa;
+  --blur: 14px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='quantum-interface'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='quantum-interface'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='quantum-interface'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='quantum-interface'] .btn-brand,
+:root[data-theme='quantum-interface'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Hologram — Projected cyan, scan lines, and panels that look lit from behind. */
+:root[data-theme='hologram'] {
+  --color-canvas: #041014;
+  --color-surface: #071a20;
+  --color-raised: #0a222a;
+  --color-overlay: #0e2b35;
+  --color-edge: #123640;
+  --color-edge-strong: #1f5c6c;
+  --color-ink: #dcfcff;
+  --color-muted: #93d8e5;
+  --color-faint: #61929c;
+  --color-accent: #22d3ee;
+  --color-accent-hover: #1fbed6;
+  --color-accent-soft: #09333b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #092d20;
+  --color-warn: #eab308;
+  --color-warn-soft: #292a12;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a181c;
+  --color-sidebar-top: #06171c;
+  --color-sidebar-bottom: #040f13;
+  --color-sidebar-edge: #123640;
+  --color-brand-from: #147f8f;
+  --color-brand-to: #106370;
+  --color-brand-to-hover: #127281;
+  --color-vs-titlebar: #051419;
+  --color-vs-activity: #041014;
+  --color-vs-sidebar: #06161b;
+  --color-vs-editor: #071a20;
+  --color-vs-tabbar: #051419;
+  --color-vs-panel: #06161b;
+  --color-vs-status: #106370;
+  --color-vs-status-idle: #1f5c6c;
+  --color-vs-border: #123640;
+  --color-vs-selected: #0c3b45;
+  --color-vs-active: #0f4e5a;
+  --color-vs-text: #dcfcff;
+  --color-vs-dim: #93d8e5;
+  --color-vs-badge: #22d3ee;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --glow: #22d3ee;
+  --blur: 10px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='hologram'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='hologram'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='hologram'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='hologram'] .btn-brand,
+:root[data-theme='hologram'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Spaceship Control — Metallic panels, amber status lights and squared-off readouts. */
+:root[data-theme='spaceship-control'] {
+  --color-canvas: #0c0e10;
+  --color-surface: #141719;
+  --color-raised: #1a1e21;
+  --color-overlay: #212629;
+  --color-edge: #2a2f33;
+  --color-edge-strong: #3f464b;
+  --color-ink: #e7ecef;
+  --color-muted: #a9b2b9;
+  --color-faint: #72797e;
+  --color-accent: #ffb020;
+  --color-accent-hover: #e69e1d;
+  --color-accent-soft: #382b13;
+  --color-ok: #22c55e;
+  --color-ok-soft: #102b1c;
+  --color-warn: #ffb020;
+  --color-warn-soft: #332813;
+  --color-danger: #ef4444;
+  --color-danger-soft: #301718;
+  --color-sidebar-top: #121416;
+  --color-sidebar-bottom: #0b0d0f;
+  --color-sidebar-edge: #2a2f33;
+  --color-brand-from: #9e6d14;
+  --color-brand-to: #7b5510;
+  --color-brand-to-hover: #8e6212;
+  --color-vs-titlebar: #0f1214;
+  --color-vs-activity: #0c0e10;
+  --color-vs-sidebar: #111315;
+  --color-vs-editor: #141719;
+  --color-vs-tabbar: #0f1214;
+  --color-vs-panel: #111315;
+  --color-vs-status: #7b5510;
+  --color-vs-status-idle: #3f464b;
+  --color-vs-border: #2a2f33;
+  --color-vs-selected: #3e331a;
+  --color-vs-active: #56421b;
+  --color-vs-text: #e7ecef;
+  --color-vs-dim: #a9b2b9;
+  --color-vs-badge: #ffb020;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 4.2px;
+  --radius-control: 2.8px;
+  --radius-object: 3.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Mars Station — Rust, sand and black. Industrial, dusty, warm. */
+:root[data-theme='mars-station'] {
+  --color-canvas: #14100e;
+  --color-surface: #1d1714;
+  --color-raised: #251d19;
+  --color-overlay: #2d241f;
+  --color-edge: #382c25;
+  --color-edge-strong: #57402f;
+  --color-ink: #f4e6da;
+  --color-muted: #c6a794;
+  --color-faint: #887265;
+  --color-accent: #e2703a;
+  --color-accent-hover: #cb6534;
+  --color-accent-soft: #392116;
+  --color-ok: #22c55e;
+  --color-ok-soft: #162d1b;
+  --color-warn: #eab308;
+  --color-warn-soft: #362a0d;
+  --color-danger: #ef4444;
+  --color-danger-soft: #371817;
+  --color-sidebar-top: #1a1512;
+  --color-sidebar-bottom: #130f0d;
+  --color-sidebar-edge: #382c25;
+  --color-brand-from: #b95c30;
+  --color-brand-to: #904825;
+  --color-brand-to-hover: #a7532b;
+  --color-vs-titlebar: #181310;
+  --color-vs-activity: #14100e;
+  --color-vs-sidebar: #191412;
+  --color-vs-editor: #1d1714;
+  --color-vs-tabbar: #181310;
+  --color-vs-panel: #191412;
+  --color-vs-status: #904825;
+  --color-vs-status-idle: #57402f;
+  --color-vs-border: #382c25;
+  --color-vs-selected: #40271b;
+  --color-vs-active: #54301f;
+  --color-vs-text: #f4e6da;
+  --color-vs-dim: #c6a794;
+  --color-vs-badge: #e2703a;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Lunar Base — Station white and grey with blue indicators. Bright and clinical. */
+:root[data-theme='lunar-base'] {
+  --color-canvas: #e9ecf1;
+  --color-surface: #f8fafc;
+  --color-raised: #eff2f6;
+  --color-overlay: #ffffff;
+  --color-edge: #d2d8e0;
+  --color-edge-strong: #a9b3c0;
+  --color-ink: #12161c;
+  --color-muted: #4f5866;
+  --color-faint: #808691;
+  --color-accent: #2b7fd4;
+  --color-accent-hover: #2670bb;
+  --color-accent-soft: #c7d8ec;
+  --color-ok: #22c55e;
+  --color-ok-soft: #c9e6d9;
+  --color-warn: #eab308;
+  --color-warn-soft: #e9e3cc;
+  --color-danger: #ef4444;
+  --color-danger-soft: #ead1d5;
+  --color-sidebar-top: #f4f6f9;
+  --color-sidebar-bottom: #dbdee3;
+  --color-sidebar-edge: #d2d8e0;
+  --color-brand-from: #2877c7;
+  --color-brand-to: #1f5d9b;
+  --color-brand-to-hover: #246bb3;
+  --color-vs-titlebar: #eff2f5;
+  --color-vs-activity: #e9ecf1;
+  --color-vs-sidebar: #f2f4f8;
+  --color-vs-editor: #f8fafc;
+  --color-vs-tabbar: #eff2f5;
+  --color-vs-panel: #f2f4f8;
+  --color-vs-status: #1f5d9b;
+  --color-vs-status-idle: #a9b3c0;
+  --color-vs-border: #d2d8e0;
+  --color-vs-selected: #d3e4f5;
+  --color-vs-active: #bfd8f1;
+  --color-vs-text: #12161c;
+  --color-vs-dim: #4f5866;
+  --color-vs-badge: #2b7fd4;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 9px;
+  --radius-control: 6px;
+  --radius-object: 7.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Deep Space — Black with a field of stars and a nebula glow at the edges. */
+:root[data-theme='deep-space'] {
+  --color-canvas: #01030a;
+  --color-surface: #070b17;
+  --color-raised: #0b1020;
+  --color-overlay: #101729;
+  --color-edge: #161d33;
+  --color-edge-strong: #2a3557;
+  --color-ink: #e2e9f7;
+  --color-muted: #9dabc9;
+  --color-faint: #667086;
+  --color-accent: #6366f1;
+  --color-accent-hover: #595cd9;
+  --color-accent-soft: #131534;
+  --color-ok: #22c55e;
+  --color-ok-soft: #062217;
+  --color-warn: #eab308;
+  --color-warn-soft: #261f0a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #270d13;
+  --color-sidebar-top: #050913;
+  --color-sidebar-bottom: #010309;
+  --color-sidebar-edge: #161d33;
+  --color-brand-from: #6164ec;
+  --color-brand-to: #4c4eb8;
+  --color-brand-to-hover: #575ad4;
+  --color-vs-titlebar: #03060f;
+  --color-vs-activity: #01030a;
+  --color-vs-sidebar: #050812;
+  --color-vs-editor: #070b17;
+  --color-vs-tabbar: #03060f;
+  --color-vs-panel: #050812;
+  --color-vs-status: #4c4eb8;
+  --color-vs-status-idle: #2a3557;
+  --color-vs-border: #161d33;
+  --color-vs-selected: #181b3e;
+  --color-vs-active: #212454;
+  --color-vs-text: #e2e9f7;
+  --color-vs-dim: #9dabc9;
+  --color-vs-badge: #6366f1;
+  --glow: #6366f1;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='deep-space'] .btn-brand,
+:root[data-theme='deep-space'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Alien Technology — Black and emerald, with corners rounded further than anything human. */
+:root[data-theme='alien-technology'] {
+  --color-canvas: #030806;
+  --color-surface: #06120d;
+  --color-raised: #0a1a13;
+  --color-overlay: #0e2219;
+  --color-edge: #122c20;
+  --color-edge-strong: #1f4d38;
+  --color-ink: #ddf9eb;
+  --color-muted: #92cfb3;
+  --color-faint: #608976;
+  --color-accent: #10d9a0;
+  --color-accent-hover: #0ec390;
+  --color-accent-soft: #052e22;
+  --color-ok: #10d9a0;
+  --color-ok-soft: #05291f;
+  --color-warn: #eab308;
+  --color-warn-soft: #282306;
+  --color-danger: #ef4444;
+  --color-danger-soft: #291210;
+  --color-sidebar-top: #050f0b;
+  --color-sidebar-bottom: #030806;
+  --color-sidebar-edge: #122c20;
+  --color-brand-from: #0a8763;
+  --color-brand-to: #08694d;
+  --color-brand-to-hover: #097a59;
+  --color-vs-titlebar: #040c09;
+  --color-vs-activity: #030806;
+  --color-vs-sidebar: #050e0a;
+  --color-vs-editor: #06120d;
+  --color-vs-tabbar: #040c09;
+  --color-vs-panel: #050e0a;
+  --color-vs-status: #08694d;
+  --color-vs-status-idle: #1f4d38;
+  --color-vs-border: #122c20;
+  --color-vs-selected: #083627;
+  --color-vs-active: #094a36;
+  --color-vs-text: #ddf9eb;
+  --color-vs-dim: #92cfb3;
+  --color-vs-badge: #10d9a0;
+  --glow: #10d9a0;
+  --radius-card: 21.6px;
+  --radius-control: 14.4px;
+  --radius-object: 18px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='alien-technology'] .btn-brand,
+:root[data-theme='alien-technology'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Time Machine — Brass and dark wood with a cyan charge running through it. */
+:root[data-theme='time-machine'] {
+  --color-canvas: #100d08;
+  --color-surface: #1a150d;
+  --color-raised: #221b11;
+  --color-overlay: #2a2216;
+  --color-edge: #35291a;
+  --color-edge-strong: #57422a;
+  --color-ink: #f6ecd6;
+  --color-muted: #c9b087;
+  --color-faint: #88775b;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #29bfac;
+  --color-accent-soft: #153129;
+  --color-ok: #22c55e;
+  --color-ok-soft: #132a16;
+  --color-warn: #d4a53a;
+  --color-warn-soft: #2f2510;
+  --color-danger: #ef4444;
+  --color-danger-soft: #341612;
+  --color-sidebar-top: #17130c;
+  --color-sidebar-bottom: #0f0c08;
+  --color-sidebar-edge: #35291a;
+  --color-brand-from: #1c8376;
+  --color-brand-to: #16665c;
+  --color-brand-to-hover: #19766a;
+  --color-vs-titlebar: #14100a;
+  --color-vs-activity: #100d08;
+  --color-vs-sidebar: #16120b;
+  --color-vs-editor: #1a150d;
+  --color-vs-tabbar: #14100a;
+  --color-vs-panel: #16120b;
+  --color-vs-status: #16665c;
+  --color-vs-status-idle: #57422a;
+  --color-vs-border: #35291a;
+  --color-vs-selected: #1d372d;
+  --color-vs-active: #1f4a3f;
+  --color-vs-text: #f6ecd6;
+  --color-vs-dim: #c9b087;
+  --color-vs-badge: #2dd4bf;
+  --glow: #2dd4bf;
+  --radius-card: 16.8px;
+  --radius-control: 11.2px;
+  --radius-object: 14px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='time-machine'] .btn-brand,
+:root[data-theme='time-machine'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Synthetic Future — White surfaces, chrome edges and one electric violet. */
+:root[data-theme='synthetic-future'] {
+  --color-canvas: #f2f4f7;
+  --color-surface: #ffffff;
+  --color-raised: #e9edf2;
+  --color-overlay: #ffffff;
+  --color-edge: #dfe4ea;
+  --color-edge-strong: #b4bcc7;
+  --color-ink: #0d1117;
+  --color-muted: #4a525e;
+  --color-faint: #858b94;
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d33d1;
+  --color-accent-soft: #ddd3f5;
+  --color-ok: #22c55e;
+  --color-ok-soft: #d1ecdf;
+  --color-warn: #eab308;
+  --color-warn-soft: #f1ead1;
+  --color-danger: #ef4444;
+  --color-danger-soft: #f2d8da;
+  --color-sidebar-top: #fbfcfd;
+  --color-sidebar-bottom: #e3e5e8;
+  --color-sidebar-edge: #dfe4ea;
+  --color-brand-from: #7c3aed;
+  --color-brand-to: #612db9;
+  --color-brand-to-hover: #7034d5;
+  --color-vs-titlebar: #f7f8fa;
+  --color-vs-activity: #f2f4f7;
+  --color-vs-sidebar: #fafbfc;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f7f8fa;
+  --color-vs-panel: #fafbfc;
+  --color-vs-status: #612db9;
+  --color-vs-status-idle: #b4bcc7;
+  --color-vs-border: #dfe4ea;
+  --color-vs-selected: #e7dcfc;
+  --color-vs-active: #dac8fa;
+  --color-vs-text: #0d1117;
+  --color-vs-dim: #4a525e;
+  --color-vs-badge: #7c3aed;
+  --shadow-card: 0 1px 2px rgb(13 17 23 / 0.05), 0 10px 30px rgb(124 58 237 / 0.08);
+  --glow: #7c3aed;
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --radius-object: 15px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='synthetic-future'] .btn-brand,
+:root[data-theme='synthetic-future'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* RGB Gaming — Black hardware with a colour cycle running around the edges. */
+:root[data-theme='rgb-gaming'] {
+  --color-canvas: #08080a;
+  --color-surface: #101014;
+  --color-raised: #16161c;
+  --color-overlay: #1c1c23;
+  --color-edge: #26262f;
+  --color-edge-strong: #3d3d4a;
+  --color-ink: #eeeef3;
+  --color-muted: #acacba;
+  --color-faint: #73737c;
+  --color-accent: #b829ff;
+  --color-accent-hover: #a625e6;
+  --color-accent-soft: #280e36;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0c2617;
+  --color-warn: #eab308;
+  --color-warn-soft: #2c230a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2d1213;
+  --color-sidebar-top: #0e0e11;
+  --color-sidebar-bottom: #080809;
+  --color-sidebar-edge: #26262f;
+  --color-brand-from: #b428fa;
+  --color-brand-to: #8c1fc3;
+  --color-brand-to-hover: #a224e1;
+  --color-vs-titlebar: #0b0b0e;
+  --color-vs-activity: #08080a;
+  --color-vs-sidebar: #0d0d10;
+  --color-vs-editor: #101014;
+  --color-vs-tabbar: #0b0b0e;
+  --color-vs-panel: #0d0d10;
+  --color-vs-status: #8c1fc3;
+  --color-vs-status-idle: #3d3d4a;
+  --color-vs-border: #26262f;
+  --color-vs-selected: #2e153e;
+  --color-vs-active: #3f1756;
+  --color-vs-text: #eeeef3;
+  --color-vs-dim: #acacba;
+  --color-vs-badge: #b829ff;
+  --glow: #b829ff;
+  --radius-card: 7.2px;
+  --radius-control: 4.8px;
+  --radius-object: 6px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='rgb-gaming'] .btn-brand,
+:root[data-theme='rgb-gaming'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Retro Arcade — Cabinet purple, coin-op yellow, and scan lines over the glass. */
+:root[data-theme='retro-arcade'] {
+  --color-canvas: #0a0618;
+  --color-surface: #140a28;
+  --color-raised: #1b0f35;
+  --color-overlay: #221443;
+  --color-edge: #2c1a55;
+  --color-edge-strong: #4b2f88;
+  --color-ink: #ffe9f7;
+  --color-muted: #c8abdd;
+  --color-faint: #867198;
+  --color-accent: #ffcc00;
+  --color-accent-hover: #e6b800;
+  --color-accent-soft: #362a14;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e2523;
+  --color-warn: #ffcc00;
+  --color-warn-soft: #312614;
+  --color-danger: #ff3860;
+  --color-danger-soft: #310e24;
+  --color-sidebar-top: #110923;
+  --color-sidebar-bottom: #090617;
+  --color-sidebar-edge: #2c1a55;
+  --color-brand-from: #8f7200;
+  --color-brand-to: #705900;
+  --color-brand-to-hover: #816700;
+  --color-vs-titlebar: #0e081e;
+  --color-vs-activity: #0a0618;
+  --color-vs-sidebar: #100822;
+  --color-vs-editor: #140a28;
+  --color-vs-tabbar: #0e081e;
+  --color-vs-panel: #100822;
+  --color-vs-status: #705900;
+  --color-vs-status-idle: #4b2f88;
+  --color-vs-border: #2c1a55;
+  --color-vs-selected: #3e2d21;
+  --color-vs-active: #56401d;
+  --color-vs-text: #ffe9f7;
+  --color-vs-dim: #c8abdd;
+  --color-vs-badge: #ffcc00;
+  --font-ui: 'Impact', 'Haettenschweiler', 'Arial Black', system-ui, sans-serif;
+  --glow: #ffcc00;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='retro-arcade'] [class*='rounded'] {
+  border-radius: 0;
+}
+:root[data-theme='retro-arcade'] .btn-brand,
+:root[data-theme='retro-arcade'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* 8-Bit Console — Four shades of handheld green and nothing else. Square corners. */
+:root[data-theme='8-bit-console'] {
+  --color-canvas: #0f2b10;
+  --color-surface: #17401a;
+  --color-raised: #1e5222;
+  --color-overlay: #266528;
+  --color-edge: #2f7a30;
+  --color-edge-strong: #54a343;
+  --color-ink: #e8f5c8;
+  --color-muted: #bcd992;
+  --color-faint: #7f9c65;
+  --color-accent: #9bbc0f;
+  --color-accent-hover: #8ca90e;
+  --color-accent-soft: #284510;
+  --color-ok: #9bbc0f;
+  --color-ok-soft: #254210;
+  --color-warn: #eab308;
+  --color-warn-soft: #32410f;
+  --color-danger: #ef4444;
+  --color-danger-soft: #332f18;
+  --color-sidebar-top: #153a17;
+  --color-sidebar-bottom: #0e280f;
+  --color-sidebar-edge: #2f7a30;
+  --color-brand-from: #667c0a;
+  --color-brand-to: #506108;
+  --color-brand-to-hover: #5c7009;
+  --color-vs-titlebar: #123314;
+  --color-vs-activity: #0f2b10;
+  --color-vs-sidebar: #143816;
+  --color-vs-editor: #17401a;
+  --color-vs-tabbar: #123314;
+  --color-vs-panel: #143816;
+  --color-vs-status: #506108;
+  --color-vs-status-idle: #54a343;
+  --color-vs-border: #2f7a30;
+  --color-vs-selected: #2f5618;
+  --color-vs-active: #3c6317;
+  --color-vs-text: #e8f5c8;
+  --color-vs-dim: #bcd992;
+  --color-vs-badge: #9bbc0f;
+  --font-ui: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --font-mono-theme: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --border-w: 2px;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='8-bit-console'] [class*='rounded'] {
+  border-radius: 0;
+}
+:root[data-theme='8-bit-console'] .border {
+  border-width: var(--border-w);
+}
+
+/* Achievement Hunter — Trophy gold on gunmetal. Everything looks like it unlocks something. */
+:root[data-theme='achievement-hunter'] {
+  --color-canvas: #101012;
+  --color-surface: #18181b;
+  --color-raised: #1f1f23;
+  --color-overlay: #26262b;
+  --color-edge: #303036;
+  --color-edge-strong: #4a4a53;
+  --color-ink: #f3f0e7;
+  --color-muted: #b6ae97;
+  --color-faint: #7c7768;
+  --color-accent: #f5c542;
+  --color-accent-hover: #ddb13b;
+  --color-accent-soft: #39311b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #132d1e;
+  --color-warn: #f5c542;
+  --color-warn-soft: #352d1a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #34181a;
+  --color-sidebar-top: #161618;
+  --color-sidebar-bottom: #0f0f11;
+  --color-sidebar-edge: #303036;
+  --color-brand-from: #8e7226;
+  --color-brand-to: #6f591e;
+  --color-brand-to-hover: #806722;
+  --color-vs-titlebar: #131316;
+  --color-vs-activity: #101012;
+  --color-vs-sidebar: #151517;
+  --color-vs-editor: #18181b;
+  --color-vs-tabbar: #131316;
+  --color-vs-panel: #151517;
+  --color-vs-status: #6f591e;
+  --color-vs-status-idle: #4a4a53;
+  --color-vs-border: #303036;
+  --color-vs-selected: #403722;
+  --color-vs-active: #564826;
+  --color-vs-text: #f3f0e7;
+  --color-vs-dim: #b6ae97;
+  --color-vs-badge: #f5c542;
+  --glow: #f5c542;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='achievement-hunter'] .btn-brand,
+:root[data-theme='achievement-hunter'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Battle Royale — Olive drab and blaze orange. Built for reading at a glance. */
+:root[data-theme='battle-royale'] {
+  --color-canvas: #14150f;
+  --color-surface: #1c1e16;
+  --color-raised: #23261c;
+  --color-overlay: #2a2e22;
+  --color-edge: #343829;
+  --color-edge-strong: #4f5640;
+  --color-ink: #eff1e5;
+  --color-muted: #b7bda5;
+  --color-faint: #7e8271;
+  --color-accent: #ff6b1a;
+  --color-accent-hover: #e66017;
+  --color-accent-soft: #3e2411;
+  --color-ok: #22c55e;
+  --color-ok-soft: #16311c;
+  --color-warn: #eab308;
+  --color-warn-soft: #362e0e;
+  --color-danger: #e03a1f;
+  --color-danger-soft: #351b12;
+  --color-sidebar-top: #1a1b14;
+  --color-sidebar-bottom: #13140e;
+  --color-sidebar-edge: #343829;
+  --color-brand-from: #c25114;
+  --color-brand-to: #973f10;
+  --color-brand-to-hover: #af4912;
+  --color-vs-titlebar: #171912;
+  --color-vs-activity: #14150f;
+  --color-vs-sidebar: #191a13;
+  --color-vs-editor: #1c1e16;
+  --color-vs-tabbar: #171912;
+  --color-vs-panel: #191a13;
+  --color-vs-status: #973f10;
+  --color-vs-status-idle: #4f5640;
+  --color-vs-border: #343829;
+  --color-vs-selected: #452c17;
+  --color-vs-active: #5c3417;
+  --color-vs-text: #eff1e5;
+  --color-vs-dim: #b7bda5;
+  --color-vs-badge: #ff6b1a;
+  --font-ui: 'Impact', 'Haettenschweiler', 'Arial Black', system-ui, sans-serif;
+  --radius-card: 3px;
+  --radius-control: 2px;
+  --radius-object: 2.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Fantasy RPG — Stone and parchment with gold rules. Serif throughout. */
+:root[data-theme='fantasy-rpg'] {
+  --color-canvas: #17130f;
+  --color-surface: #211b15;
+  --color-raised: #2a221a;
+  --color-overlay: #332a20;
+  --color-edge: #3f3426;
+  --color-edge-strong: #61503a;
+  --color-ink: #f2e6ce;
+  --color-muted: #c7b18f;
+  --color-faint: #897a62;
+  --color-accent: #d4a34a;
+  --color-accent-hover: #bf9343;
+  --color-accent-soft: #392d1a;
+  --color-ok: #22c55e;
+  --color-ok-soft: #192f1c;
+  --color-warn: #eab308;
+  --color-warn-soft: #392d0e;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a1b17;
+  --color-sidebar-top: #1e1913;
+  --color-sidebar-bottom: #16120e;
+  --color-sidebar-edge: #3f3426;
+  --color-brand-from: #906f32;
+  --color-brand-to: #705727;
+  --color-brand-to-hover: #82642d;
+  --color-vs-titlebar: #1b1611;
+  --color-vs-activity: #17130f;
+  --color-vs-sidebar: #1d1813;
+  --color-vs-editor: #211b15;
+  --color-vs-tabbar: #1b1611;
+  --color-vs-panel: #1d1813;
+  --color-vs-status: #705727;
+  --color-vs-status-idle: #61503a;
+  --color-vs-border: #3f3426;
+  --color-vs-selected: #41331f;
+  --color-vs-active: #534124;
+  --color-vs-text: #f2e6ce;
+  --color-vs-dim: #c7b18f;
+  --color-vs-badge: #d4a34a;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Ashen — Ash grey and faded gold, with embers drifting up behind it. */
+:root[data-theme='ashen'] {
+  --color-canvas: #0b0a09;
+  --color-surface: #131211;
+  --color-raised: #1a1817;
+  --color-overlay: #21201e;
+  --color-edge: #2a2825;
+  --color-edge-strong: #453f39;
+  --color-ink: #e8e3da;
+  --color-muted: #aea596;
+  --color-faint: #756f65;
+  --color-accent: #c8a24a;
+  --color-accent-hover: #b49243;
+  --color-accent-soft: #2d2515;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0f2817;
+  --color-warn: #eab308;
+  --color-warn-soft: #2f2509;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1312;
+  --color-sidebar-top: #11100f;
+  --color-sidebar-bottom: #0a0908;
+  --color-sidebar-edge: #2a2825;
+  --color-brand-from: #8c7134;
+  --color-brand-to: #6d5829;
+  --color-brand-to-hover: #7e662f;
+  --color-vs-titlebar: #0e0d0c;
+  --color-vs-activity: #0b0a09;
+  --color-vs-sidebar: #100f0e;
+  --color-vs-editor: #131211;
+  --color-vs-tabbar: #0e0d0c;
+  --color-vs-panel: #100f0e;
+  --color-vs-status: #6d5829;
+  --color-vs-status-idle: #453f39;
+  --color-vs-border: #2a2825;
+  --color-vs-selected: #342c1b;
+  --color-vs-active: #463a21;
+  --color-vs-text: #e8e3da;
+  --color-vs-dim: #aea596;
+  --color-vs-badge: #c8a24a;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --radius-card: 4.8px;
+  --radius-control: 3.2px;
+  --radius-object: 4px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Blockcraft — Grass green and dirt brown, in hard-edged blocks with thick borders. */
+:root[data-theme='blockcraft'] {
+  --color-canvas: #171a14;
+  --color-surface: #20241b;
+  --color-raised: #282d21;
+  --color-overlay: #303628;
+  --color-edge: #3b422f;
+  --color-edge-strong: #5a6749;
+  --color-ink: #eaeee0;
+  --color-muted: #b5c0a2;
+  --color-faint: #7e8670;
+  --color-accent: #5cba3c;
+  --color-accent-hover: #53a736;
+  --color-accent-soft: #23371b;
+  --color-ok: #5cba3c;
+  --color-ok-soft: #22341a;
+  --color-warn: #eab308;
+  --color-warn-soft: #393212;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a211c;
+  --color-sidebar-top: #1d2119;
+  --color-sidebar-bottom: #161813;
+  --color-sidebar-edge: #3b422f;
+  --color-brand-from: #40822a;
+  --color-brand-to: #326521;
+  --color-brand-to-hover: #3a7526;
+  --color-vs-titlebar: #1b1e17;
+  --color-vs-activity: #171a14;
+  --color-vs-sidebar: #1c2018;
+  --color-vs-editor: #20241b;
+  --color-vs-tabbar: #1b1e17;
+  --color-vs-panel: #1c2018;
+  --color-vs-status: #326521;
+  --color-vs-status-idle: #5a6749;
+  --color-vs-border: #3b422f;
+  --color-vs-selected: #2b3f21;
+  --color-vs-active: #314e24;
+  --color-vs-text: #eaeee0;
+  --color-vs-dim: #b5c0a2;
+  --color-vs-badge: #5cba3c;
+  --border-w: 3px;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='blockcraft'] [class*='rounded'] {
+  border-radius: 0;
+}
+:root[data-theme='blockcraft'] .border {
+  border-width: var(--border-w);
+}
+
+/* Sci-Fi Shooter — Gunmetal blue with orange targeting marks and a faint HUD grid. */
+:root[data-theme='sci-fi-shooter'] {
+  --color-canvas: #080d12;
+  --color-surface: #0e151c;
+  --color-raised: #131c25;
+  --color-overlay: #18232e;
+  --color-edge: #1f2d3a;
+  --color-edge-strong: #365064;
+  --color-ink: #e4edf5;
+  --color-muted: #a4b8c9;
+  --color-faint: #6d7c89;
+  --color-accent: #ff7a1a;
+  --color-accent-hover: #e66e17;
+  --color-accent-soft: #342113;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0c2a1e;
+  --color-warn: #ff7a1a;
+  --color-warn-soft: #301e13;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2d161a;
+  --color-sidebar-top: #0c1319;
+  --color-sidebar-bottom: #080c11;
+  --color-sidebar-edge: #1f2d3a;
+  --color-brand-from: #bd5a13;
+  --color-brand-to: #93460f;
+  --color-brand-to-hover: #aa5111;
+  --color-vs-titlebar: #0a1016;
+  --color-vs-activity: #080d12;
+  --color-vs-sidebar: #0c1218;
+  --color-vs-editor: #0e151c;
+  --color-vs-tabbar: #0a1016;
+  --color-vs-panel: #0c1218;
+  --color-vs-status: #93460f;
+  --color-vs-status-idle: #365064;
+  --color-vs-border: #1f2d3a;
+  --color-vs-selected: #39271c;
+  --color-vs-active: #51311b;
+  --color-vs-text: #e4edf5;
+  --color-vs-dim: #a4b8c9;
+  --color-vs-badge: #ff7a1a;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 3.6px;
+  --radius-control: 2.4px;
+  --radius-object: 3px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Esports Arena — Broadcast black and electric cyan, with hard-edged panels. */
+:root[data-theme='esports-arena'] {
+  --color-canvas: #0a0b10;
+  --color-surface: #111319;
+  --color-raised: #171a22;
+  --color-overlay: #1d212b;
+  --color-edge: #262b37;
+  --color-edge-strong: #3e4658;
+  --color-ink: #eff2f8;
+  --color-muted: #adb6c7;
+  --color-faint: #747a87;
+  --color-accent: #00e5ff;
+  --color-accent-hover: #00cee6;
+  --color-accent-soft: #08323b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e291c;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e260f;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1418;
+  --color-sidebar-top: #0f1116;
+  --color-sidebar-bottom: #090a0f;
+  --color-sidebar-edge: #262b37;
+  --color-brand-from: #00808f;
+  --color-brand-to: #006470;
+  --color-brand-to-hover: #007381;
+  --color-vs-titlebar: #0d0e14;
+  --color-vs-activity: #0a0b10;
+  --color-vs-sidebar: #0e1015;
+  --color-vs-editor: #111319;
+  --color-vs-tabbar: #0d0e14;
+  --color-vs-panel: #0e1015;
+  --color-vs-status: #006470;
+  --color-vs-status-idle: #3e4658;
+  --color-vs-border: #262b37;
+  --color-vs-selected: #0e3942;
+  --color-vs-active: #0c4e59;
+  --color-vs-text: #eff2f8;
+  --color-vs-dim: #adb6c7;
+  --color-vs-badge: #00e5ff;
+  --font-ui: 'Impact', 'Haettenschweiler', 'Arial Black', system-ui, sans-serif;
+  --glow: #00e5ff;
+  --radius-card: 2.4px;
+  --radius-control: 1.6px;
+  --radius-object: 2px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='esports-arena'] .btn-brand,
+:root[data-theme='esports-arena'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Forest — Deep green under canopy, with moss and bark in the surfaces. */
+:root[data-theme='forest'] {
+  --color-canvas: #0d140f;
+  --color-surface: #141d16;
+  --color-raised: #1a251c;
+  --color-overlay: #202d22;
+  --color-edge: #28372a;
+  --color-edge-strong: #405644;
+  --color-ink: #e7f1e7;
+  --color-muted: #acc3ad;
+  --color-faint: #748676;
+  --color-accent: #4ade80;
+  --color-accent-hover: #43c873;
+  --color-accent-soft: #183823;
+  --color-ok: #4ade80;
+  --color-ok-soft: #173421;
+  --color-warn: #eab308;
+  --color-warn-soft: #302d0e;
+  --color-danger: #ef4444;
+  --color-danger-soft: #311c17;
+  --color-sidebar-top: #121a14;
+  --color-sidebar-bottom: #0c130e;
+  --color-sidebar-edge: #28372a;
+  --color-brand-from: #2c854d;
+  --color-brand-to: #22683c;
+  --color-brand-to-hover: #287845;
+  --color-vs-titlebar: #101812;
+  --color-vs-activity: #0d140f;
+  --color-vs-sidebar: #111913;
+  --color-vs-editor: #141d16;
+  --color-vs-tabbar: #101812;
+  --color-vs-panel: #111913;
+  --color-vs-status: #22683c;
+  --color-vs-status-idle: #405644;
+  --color-vs-border: #28372a;
+  --color-vs-selected: #1e4029;
+  --color-vs-active: #235334;
+  --color-vs-text: #e7f1e7;
+  --color-vs-dim: #acc3ad;
+  --color-vs-badge: #4ade80;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Ocean — Deep water blue with a turquoise surface light. */
+:root[data-theme='ocean'] {
+  --color-canvas: #04121c;
+  --color-surface: #071c2b;
+  --color-raised: #0a2436;
+  --color-overlay: #0e2d42;
+  --color-edge: #123950;
+  --color-edge-strong: #215d7d;
+  --color-ink: #e0f1fb;
+  --color-muted: #9ec3d8;
+  --color-faint: #688596;
+  --color-accent: #22d3ee;
+  --color-accent-hover: #1fbed6;
+  --color-accent-soft: #093542;
+  --color-ok: #22c55e;
+  --color-ok-soft: #092f27;
+  --color-warn: #eab308;
+  --color-warn-soft: #292c19;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a1a22;
+  --color-sidebar-top: #061927;
+  --color-sidebar-bottom: #04111a;
+  --color-sidebar-edge: #123950;
+  --color-brand-from: #147f8f;
+  --color-brand-to: #106370;
+  --color-brand-to-hover: #127281;
+  --color-vs-titlebar: #051622;
+  --color-vs-activity: #04121c;
+  --color-vs-sidebar: #061825;
+  --color-vs-editor: #071c2b;
+  --color-vs-tabbar: #051622;
+  --color-vs-panel: #061825;
+  --color-vs-status: #106370;
+  --color-vs-status-idle: #215d7d;
+  --color-vs-border: #123950;
+  --color-vs-selected: #0c3d4e;
+  --color-vs-active: #0f4f62;
+  --color-vs-text: #e0f1fb;
+  --color-vs-dim: #9ec3d8;
+  --color-vs-badge: #22d3ee;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Arctic — Ice white and pale blue, with frosted panels. */
+:root[data-theme='arctic'] {
+  --color-canvas: #eef4f8;
+  --color-surface: #ffffff;
+  --color-raised: #e4eef4;
+  --color-overlay: #ffffff;
+  --color-edge: #d0e0ea;
+  --color-edge-strong: #a3bccc;
+  --color-ink: #0e1c24;
+  --color-muted: #42606e;
+  --color-faint: #798e98;
+  --color-accent: #0e7490;
+  --color-accent-hover: #0c667f;
+  --color-accent-soft: #c6dde5;
+  --color-ok: #22c55e;
+  --color-ok-soft: #cdecdf;
+  --color-warn: #eab308;
+  --color-warn-soft: #edead2;
+  --color-danger: #ef4444;
+  --color-danger-soft: #eed8db;
+  --color-sidebar-top: #fafcfd;
+  --color-sidebar-bottom: #e0e5e9;
+  --color-sidebar-edge: #d0e0ea;
+  --color-brand-from: #0e7490;
+  --color-brand-to: #0b5a70;
+  --color-brand-to-hover: #0d6882;
+  --color-vs-titlebar: #f5f8fb;
+  --color-vs-activity: #eef4f8;
+  --color-vs-sidebar: #f8fbfc;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f5f8fb;
+  --color-vs-panel: #f8fbfc;
+  --color-vs-status: #0b5a70;
+  --color-vs-status-idle: #a3bccc;
+  --color-vs-border: #d0e0ea;
+  --color-vs-selected: #d4e6eb;
+  --color-vs-active: #bcd8e0;
+  --color-vs-text: #0e1c24;
+  --color-vs-dim: #42606e;
+  --color-vs-badge: #0e7490;
+  --blur: 12px;
+  --radius-card: 15.6px;
+  --radius-control: 10.4px;
+  --radius-object: 13px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='arctic'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='arctic'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='arctic'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+
+/* Volcano — Cooled black rock with lava in the accent and embers rising. */
+:root[data-theme='volcano'] {
+  --color-canvas: #0d0908;
+  --color-surface: #150e0c;
+  --color-raised: #1c1310;
+  --color-overlay: #241814;
+  --color-edge: #2e1e19;
+  --color-edge-strong: #4e3128;
+  --color-ink: #f6e5de;
+  --color-muted: #c8a294;
+  --color-faint: #876c63;
+  --color-accent: #ff5722;
+  --color-accent-hover: #e64e1f;
+  --color-accent-soft: #39170d;
+  --color-ok: #22c55e;
+  --color-ok-soft: #102716;
+  --color-warn: #eab308;
+  --color-warn-soft: #302408;
+  --color-danger: #ff3b30;
+  --color-danger-soft: #34110e;
+  --color-sidebar-top: #130d0b;
+  --color-sidebar-bottom: #0c0808;
+  --color-sidebar-edge: #2e1e19;
+  --color-brand-from: #d1471c;
+  --color-brand-to: #a33716;
+  --color-brand-to-hover: #bc4019;
+  --color-vs-titlebar: #100b0a;
+  --color-vs-activity: #0d0908;
+  --color-vs-sidebar: #120c0a;
+  --color-vs-editor: #150e0c;
+  --color-vs-tabbar: #100b0a;
+  --color-vs-panel: #120c0a;
+  --color-vs-status: #a33716;
+  --color-vs-status-idle: #4e3128;
+  --color-vs-border: #2e1e19;
+  --color-vs-selected: #3f1b10;
+  --color-vs-active: #572212;
+  --color-vs-text: #f6e5de;
+  --color-vs-dim: #c8a294;
+  --color-vs-badge: #ff5722;
+  --glow: #ff5722;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='volcano'] .btn-brand,
+:root[data-theme='volcano'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Desert — Sand, dark earth and low evening sun. */
+:root[data-theme='desert'] {
+  --color-canvas: #171208;
+  --color-surface: #21190c;
+  --color-raised: #292010;
+  --color-overlay: #322714;
+  --color-edge: #3d301a;
+  --color-edge-strong: #614c29;
+  --color-ink: #f7ecd4;
+  --color-muted: #cdb188;
+  --color-faint: #8d795b;
+  --color-accent: #e9a13b;
+  --color-accent-hover: #d29135;
+  --color-accent-soft: #3d2c11;
+  --color-ok: #22c55e;
+  --color-ok-soft: #192f16;
+  --color-warn: #eab308;
+  --color-warn-soft: #392c08;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a1a12;
+  --color-sidebar-top: #1e170b;
+  --color-sidebar-bottom: #161108;
+  --color-sidebar-edge: #3d301a;
+  --color-brand-from: #9a6a27;
+  --color-brand-to: #78531e;
+  --color-brand-to-hover: #8b5f23;
+  --color-vs-titlebar: #1b150a;
+  --color-vs-activity: #171208;
+  --color-vs-sidebar: #1d160a;
+  --color-vs-editor: #21190c;
+  --color-vs-tabbar: #1b150a;
+  --color-vs-panel: #1d160a;
+  --color-vs-status: #78531e;
+  --color-vs-status-idle: #614c29;
+  --color-vs-border: #3d301a;
+  --color-vs-selected: #453114;
+  --color-vs-active: #593f19;
+  --color-vs-text: #f7ecd4;
+  --color-vs-dim: #cdb188;
+  --color-vs-badge: #e9a13b;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Sunset — Dusk violet with orange and pink moving slowly behind it. */
+:root[data-theme='sunset'] {
+  --color-canvas: #1a0d1a;
+  --color-surface: #241228;
+  --color-raised: #2d1732;
+  --color-overlay: #371c3d;
+  --color-edge: #43234a;
+  --color-edge-strong: #693974;
+  --color-ink: #ffeaf3;
+  --color-muted: #d5aec6;
+  --color-faint: #94768a;
+  --color-accent: #fb7185;
+  --color-accent-hover: #e26678;
+  --color-accent-soft: #431f2d;
+  --color-ok: #22c55e;
+  --color-ok-soft: #1b2a25;
+  --color-warn: #eab308;
+  --color-warn-soft: #3b2817;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3c1621;
+  --color-sidebar-top: #211124;
+  --color-sidebar-bottom: #180c18;
+  --color-sidebar-edge: #43234a;
+  --color-brand-from: #ba5462;
+  --color-brand-to: #91424c;
+  --color-brand-to-hover: #a74c58;
+  --color-vs-titlebar: #1e0f20;
+  --color-vs-activity: #1a0d1a;
+  --color-vs-sidebar: #201022;
+  --color-vs-editor: #241228;
+  --color-vs-tabbar: #1e0f20;
+  --color-vs-panel: #201022;
+  --color-vs-status: #91424c;
+  --color-vs-status-idle: #693974;
+  --color-vs-border: #43234a;
+  --color-vs-selected: #4b2339;
+  --color-vs-active: #602d42;
+  --color-vs-text: #ffeaf3;
+  --color-vs-dim: #d5aec6;
+  --color-vs-badge: #fb7185;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Aurora — A dark sky with green and violet light drifting across it. */
+:root[data-theme='aurora'] {
+  --color-canvas: #050b14;
+  --color-surface: #0a1420;
+  --color-raised: #0e1b2b;
+  --color-overlay: #132336;
+  --color-edge: #182b42;
+  --color-edge-strong: #2b4d6e;
+  --color-ink: #e3f1f6;
+  --color-muted: #a2c2cf;
+  --color-faint: #6b828e;
+  --color-accent: #34d399;
+  --color-accent-hover: #2fbe8a;
+  --color-accent-soft: #0d2f2c;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0a2920;
+  --color-warn: #eab308;
+  --color-warn-soft: #2a2612;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a141c;
+  --color-sidebar-top: #09111c;
+  --color-sidebar-bottom: #050a13;
+  --color-sidebar-edge: #182b42;
+  --color-brand-from: #20835f;
+  --color-brand-to: #19664a;
+  --color-brand-to-hover: #1d7656;
+  --color-vs-titlebar: #070f19;
+  --color-vs-activity: #050b14;
+  --color-vs-sidebar: #08101b;
+  --color-vs-editor: #0a1420;
+  --color-vs-tabbar: #070f19;
+  --color-vs-panel: #08101b;
+  --color-vs-status: #19664a;
+  --color-vs-status-idle: #2b4d6e;
+  --color-vs-border: #182b42;
+  --color-vs-selected: #123636;
+  --color-vs-active: #164942;
+  --color-vs-text: #e3f1f6;
+  --color-vs-dim: #a2c2cf;
+  --color-vs-badge: #34d399;
+  --glow: #34d399;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='aurora'] .btn-brand,
+:root[data-theme='aurora'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Rainy Night — Wet blue-grey glass with rain running down it. */
+:root[data-theme='rainy-night'] {
+  --color-canvas: #10141a;
+  --color-surface: #181d25;
+  --color-raised: #1e242e;
+  --color-overlay: #252c38;
+  --color-edge: #2d3542;
+  --color-edge-strong: #455264;
+  --color-ink: #e5ebf3;
+  --color-muted: #abb8c8;
+  --color-faint: #757f8b;
+  --color-accent: #7dd3fc;
+  --color-accent-hover: #71bee3;
+  --color-accent-soft: #243643;
+  --color-ok: #22c55e;
+  --color-ok-soft: #133025;
+  --color-warn: #eab308;
+  --color-warn-soft: #332d17;
+  --color-danger: #ef4444;
+  --color-danger-soft: #341c21;
+  --color-sidebar-top: #161a22;
+  --color-sidebar-bottom: #0f1318;
+  --color-sidebar-edge: #2d3542;
+  --color-brand-from: #497a92;
+  --color-brand-to: #395f72;
+  --color-brand-to-hover: #426e83;
+  --color-vs-titlebar: #13181e;
+  --color-vs-activity: #10141a;
+  --color-vs-sidebar: #151921;
+  --color-vs-editor: #181d25;
+  --color-vs-tabbar: #13181e;
+  --color-vs-panel: #151921;
+  --color-vs-status: #395f72;
+  --color-vs-status-idle: #455264;
+  --color-vs-border: #2d3542;
+  --color-vs-selected: #2a3e4c;
+  --color-vs-active: #345061;
+  --color-vs-text: #e5ebf3;
+  --color-vs-dim: #abb8c8;
+  --color-vs-badge: #7dd3fc;
+  --blur: 14px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='rainy-night'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='rainy-night'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='rainy-night'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+
+/* Cherry Blossom — Pale pink and white, with petals falling past. */
+:root[data-theme='cherry-blossom'] {
+  --color-canvas: #fdf2f5;
+  --color-surface: #ffffff;
+  --color-raised: #fbe8ee;
+  --color-overlay: #ffffff;
+  --color-edge: #f2d6de;
+  --color-edge-strong: #d4a8b6;
+  --color-ink: #2a1a20;
+  --color-muted: #6b4b56;
+  --color-faint: #9e858e;
+  --color-accent: #c2185b;
+  --color-accent-hover: #ab1550;
+  --color-accent-soft: #f2cbd9;
+  --color-ok: #22c55e;
+  --color-ok-soft: #daebdd;
+  --color-warn: #eab308;
+  --color-warn-soft: #fae8cf;
+  --color-danger: #ef4444;
+  --color-danger-soft: #fbd6d9;
+  --color-sidebar-top: #fefbfc;
+  --color-sidebar-bottom: #eee3e6;
+  --color-sidebar-edge: #f2d6de;
+  --color-brand-from: #c2185b;
+  --color-brand-to: #971347;
+  --color-brand-to-hover: #af1652;
+  --color-vs-titlebar: #fef7f9;
+  --color-vs-activity: #fdf2f5;
+  --color-vs-sidebar: #fefafb;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #fef7f9;
+  --color-vs-panel: #fefafb;
+  --color-vs-status: #971347;
+  --color-vs-status-idle: #d4a8b6;
+  --color-vs-border: #f2d6de;
+  --color-vs-selected: #f4d5e1;
+  --color-vs-active: #eebed1;
+  --color-vs-text: #2a1a20;
+  --color-vs-dim: #6b4b56;
+  --color-vs-badge: #c2185b;
+  --radius-card: 16.8px;
+  --radius-control: 11.2px;
+  --radius-object: 14px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Tropical — Jungle green with turquoise and a hot yellow warning. */
+:root[data-theme='tropical'] {
+  --color-canvas: #04140f;
+  --color-surface: #071e17;
+  --color-raised: #0a271e;
+  --color-overlay: #0e3125;
+  --color-edge: #123d2e;
+  --color-edge-strong: #1f6650;
+  --color-ink: #e4f8ef;
+  --color-muted: #9cd5be;
+  --color-faint: #679181;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #29bfac;
+  --color-accent-soft: #0b372f;
+  --color-ok: #4ade80;
+  --color-ok-soft: #0f3421;
+  --color-warn: #facc15;
+  --color-warn-soft: #2b3110;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2a1c17;
+  --color-sidebar-top: #061b15;
+  --color-sidebar-bottom: #04130e;
+  --color-sidebar-edge: #123d2e;
+  --color-brand-from: #1c8376;
+  --color-brand-to: #16665c;
+  --color-brand-to-hover: #19766a;
+  --color-vs-titlebar: #051812;
+  --color-vs-activity: #04140f;
+  --color-vs-sidebar: #061a14;
+  --color-vs-editor: #071e17;
+  --color-vs-tabbar: #051812;
+  --color-vs-panel: #061a14;
+  --color-vs-status: #16665c;
+  --color-vs-status-idle: #1f6650;
+  --color-vs-border: #123d2e;
+  --color-vs-selected: #0e3f35;
+  --color-vs-active: #125146;
+  --color-vs-text: #e4f8ef;
+  --color-vs-dim: #9cd5be;
+  --color-vs-badge: #2dd4bf;
+  --radius-card: 15.6px;
+  --radius-control: 10.4px;
+  --radius-object: 13px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* System 95 — Grey chrome, navy title bars, hard shadows and square everything. */
+:root[data-theme='system-95'] {
+  --color-canvas: #b8b8b8;
+  --color-surface: #d4d0c8;
+  --color-raised: #c8c4bc;
+  --color-overlay: #dfdcd6;
+  --color-edge: #808080;
+  --color-edge-strong: #404040;
+  --color-ink: #000000;
+  --color-muted: #3a3a3a;
+  --color-faint: #626262;
+  --color-accent: #000080;
+  --color-accent-hover: #000071;
+  --color-accent-soft: #9797ae;
+  --color-ok: #22c55e;
+  --color-ok-soft: #a0baaa;
+  --color-warn: #eab308;
+  --color-warn-soft: #c0b79c;
+  --color-danger: #ef4444;
+  --color-danger-soft: #c1a5a5;
+  --color-sidebar-top: #ccc9c3;
+  --color-sidebar-bottom: #adadad;
+  --color-sidebar-edge: #808080;
+  --color-brand-from: #000080;
+  --color-brand-to: #000064;
+  --color-brand-to-hover: #000073;
+  --color-vs-titlebar: #c3c2be;
+  --color-vs-activity: #b8b8b8;
+  --color-vs-sidebar: #c9c6c2;
+  --color-vs-editor: #d4d0c8;
+  --color-vs-tabbar: #c3c2be;
+  --color-vs-panel: #c9c6c2;
+  --color-vs-status: #000064;
+  --color-vs-status-idle: #404040;
+  --color-vs-border: #808080;
+  --color-vs-selected: #aeabbb;
+  --color-vs-active: #9996b4;
+  --color-vs-text: #000000;
+  --color-vs-dim: #3a3a3a;
+  --color-vs-badge: #000080;
+  --font-ui: Tahoma, 'MS Sans Serif', 'Segoe UI', Geneva, sans-serif;
+  --border-w: 2px;
+  --shadow-card: 2px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-raised: 1px 1px 0 rgb(0 0 0 / 0.3);
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='system-95'] [class*='rounded'] {
+  border-radius: 0;
+}
+:root[data-theme='system-95'] .border {
+  border-width: var(--border-w);
+}
+
+/* System XP — Cream panels, a bright blue task strip and softly rounded controls. */
+:root[data-theme='system-xp'] {
+  --color-canvas: #ece9d8;
+  --color-surface: #ffffff;
+  --color-raised: #f3f1e6;
+  --color-overlay: #ffffff;
+  --color-edge: #c4c0aa;
+  --color-edge-strong: #8e8a76;
+  --color-ink: #1a1a1a;
+  --color-muted: #4b4b4b;
+  --color-faint: #83827c;
+  --color-accent: #245edb;
+  --color-accent-hover: #2053c1;
+  --color-accent-soft: #c8d0d9;
+  --color-ok: #22c55e;
+  --color-ok-soft: #cce3c4;
+  --color-warn: #eab308;
+  --color-warn-soft: #ece0b7;
+  --color-danger: #ef4444;
+  --color-danger-soft: #eccfc0;
+  --color-sidebar-top: #f9f8f3;
+  --color-sidebar-bottom: #dedbcb;
+  --color-sidebar-edge: #c4c0aa;
+  --color-brand-from: #245edb;
+  --color-brand-to: #1c49ab;
+  --color-brand-to-hover: #2055c5;
+  --color-vs-titlebar: #f4f2e8;
+  --color-vs-activity: #ece9d8;
+  --color-vs-sidebar: #f7f6ef;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f4f2e8;
+  --color-vs-panel: #f7f6ef;
+  --color-vs-status: #1c49ab;
+  --color-vs-status-idle: #8e8a76;
+  --color-vs-border: #c4c0aa;
+  --color-vs-selected: #d8e2f9;
+  --color-vs-active: #c2d2f5;
+  --color-vs-text: #1a1a1a;
+  --color-vs-dim: #4b4b4b;
+  --color-vs-badge: #245edb;
+  --font-ui: Tahoma, 'MS Sans Serif', 'Segoe UI', Geneva, sans-serif;
+  --radius-card: 9.6px;
+  --radius-control: 6.4px;
+  --radius-object: 8px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Classic Desktop — Monochrome windows, black hairlines, no colour anywhere. */
+:root[data-theme='classic-desktop'] {
+  --color-canvas: #dcdcdc;
+  --color-surface: #ffffff;
+  --color-raised: #eeeeee;
+  --color-overlay: #ffffff;
+  --color-edge: #8a8a8a;
+  --color-edge-strong: #000000;
+  --color-ink: #000000;
+  --color-muted: #3a3a3a;
+  --color-faint: #737373;
+  --color-accent: #2b2b2b;
+  --color-accent-hover: #262626;
+  --color-accent-soft: #bcbcbc;
+  --color-ok: #22c55e;
+  --color-ok-soft: #bed8c8;
+  --color-warn: #eab308;
+  --color-warn-soft: #ded5ba;
+  --color-danger: #ef4444;
+  --color-danger-soft: #dfc4c4;
+  --color-sidebar-top: #f5f5f5;
+  --color-sidebar-bottom: #cfcfcf;
+  --color-sidebar-edge: #8a8a8a;
+  --color-brand-from: #2b2b2b;
+  --color-brand-to: #222222;
+  --color-brand-to-hover: #272727;
+  --color-vs-titlebar: #eaeaea;
+  --color-vs-activity: #dcdcdc;
+  --color-vs-sidebar: #f1f1f1;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #eaeaea;
+  --color-vs-panel: #f1f1f1;
+  --color-vs-status: #222222;
+  --color-vs-status-idle: #000000;
+  --color-vs-border: #8a8a8a;
+  --color-vs-selected: #d9d9d9;
+  --color-vs-active: #c4c4c4;
+  --color-vs-text: #000000;
+  --color-vs-dim: #3a3a3a;
+  --color-vs-badge: #2b2b2b;
+  --font-ui: Geneva, Verdana, 'Segoe UI', Tahoma, sans-serif;
+  --shadow-card: 1px 1px 0 rgb(0 0 0 / 0.6);
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='classic-desktop'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* DOS — Black screen, bright green text, no shapes at all. */
+:root[data-theme='dos'] {
+  --color-canvas: #000000;
+  --color-surface: #07070c;
+  --color-raised: #0c0c14;
+  --color-overlay: #12121d;
+  --color-edge: #1e1e2e;
+  --color-edge-strong: #33334f;
+  --color-ink: #e0e0e0;
+  --color-muted: #b4b4b4;
+  --color-faint: #757575;
+  --color-accent: #55ff55;
+  --color-accent-hover: #4de64d;
+  --color-accent-soft: #0f2e0f;
+  --color-ok: #55ff55;
+  --color-ok-soft: #0e290e;
+  --color-warn: #ffff55;
+  --color-warn-soft: #29290e;
+  --color-danger: #ff5555;
+  --color-danger-soft: #290e0e;
+  --color-sidebar-top: #050508;
+  --color-sidebar-bottom: #000000;
+  --color-sidebar-edge: #1e1e2e;
+  --color-brand-from: #2c852c;
+  --color-brand-to: #226822;
+  --color-brand-to-hover: #287828;
+  --color-vs-titlebar: #030305;
+  --color-vs-activity: #000000;
+  --color-vs-sidebar: #040407;
+  --color-vs-editor: #07070c;
+  --color-vs-tabbar: #030305;
+  --color-vs-panel: #040407;
+  --color-vs-status: #226822;
+  --color-vs-status-idle: #33334f;
+  --color-vs-border: #1e1e2e;
+  --color-vs-selected: #153419;
+  --color-vs-active: #1d4c20;
+  --color-vs-text: #e0e0e0;
+  --color-vs-dim: #b4b4b4;
+  --color-vs-badge: #55ff55;
+  --font-ui: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --font-mono-theme: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='dos'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* CRT Monitor — Phosphor green behind scan lines, with the glow of a warm tube. */
+:root[data-theme='crt-monitor'] {
+  --color-canvas: #0a0f0a;
+  --color-surface: #0f170f;
+  --color-raised: #141d14;
+  --color-overlay: #1a251a;
+  --color-edge: #223022;
+  --color-edge-strong: #385038;
+  --color-ink: #d8ffd8;
+  --color-muted: #95c995;
+  --color-faint: #648864;
+  --color-accent: #4ade80;
+  --color-accent-hover: #43c873;
+  --color-accent-soft: #16341f;
+  --color-ok: #4ade80;
+  --color-ok-soft: #14301d;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e290a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1713;
+  --color-sidebar-top: #0e150e;
+  --color-sidebar-bottom: #090e09;
+  --color-sidebar-edge: #223022;
+  --color-brand-from: #2c854d;
+  --color-brand-to: #22683c;
+  --color-brand-to-hover: #287845;
+  --color-vs-titlebar: #0c120c;
+  --color-vs-activity: #0a0f0a;
+  --color-vs-sidebar: #0d140d;
+  --color-vs-editor: #0f170f;
+  --color-vs-tabbar: #0c120c;
+  --color-vs-panel: #0d140d;
+  --color-vs-status: #22683c;
+  --color-vs-status-idle: #385038;
+  --color-vs-border: #223022;
+  --color-vs-selected: #1a3b23;
+  --color-vs-active: #204f2f;
+  --color-vs-text: #d8ffd8;
+  --color-vs-dim: #95c995;
+  --color-vs-badge: #4ade80;
+  --font-ui: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --font-mono-theme: 'Consolas', 'Lucida Console', 'Courier New', monospace;
+  --glow: #4ade80;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='crt-monitor'] [class*='rounded'] {
+  border-radius: 0;
+}
+:root[data-theme='crt-monitor'] .btn-brand,
+:root[data-theme='crt-monitor'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Vaporwave — Hot pink and cyan over a violet grid running to the horizon. */
+:root[data-theme='vaporwave'] {
+  --color-canvas: #1a0b2e;
+  --color-surface: #24103d;
+  --color-raised: #2c144a;
+  --color-overlay: #351858;
+  --color-edge: #421f6b;
+  --color-edge-strong: #6634a3;
+  --color-ink: #ffe6fb;
+  --color-muted: #d3aadc;
+  --color-faint: #92729f;
+  --color-accent: #ff71ce;
+  --color-accent-hover: #e666b9;
+  --color-accent-soft: #431d4b;
+  --color-ok: #05ffa1;
+  --color-ok-soft: #173240;
+  --color-warn: #fffb96;
+  --color-warn-soft: #3f313f;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3c1432;
+  --color-sidebar-top: #210f39;
+  --color-sidebar-bottom: #180a2b;
+  --color-sidebar-edge: #421f6b;
+  --color-brand-from: #b85194;
+  --color-brand-to: #903f73;
+  --color-brand-to-hover: #a64985;
+  --color-vs-titlebar: #1e0d34;
+  --color-vs-activity: #1a0b2e;
+  --color-vs-sidebar: #200e37;
+  --color-vs-editor: #24103d;
+  --color-vs-tabbar: #1e0d34;
+  --color-vs-panel: #200e37;
+  --color-vs-status: #903f73;
+  --color-vs-status-idle: #6634a3;
+  --color-vs-border: #421f6b;
+  --color-vs-selected: #4b2157;
+  --color-vs-active: #612b66;
+  --color-vs-text: #ffe6fb;
+  --color-vs-dim: #d3aadc;
+  --color-vs-badge: #ff71ce;
+  --glow: #ff71ce;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='vaporwave'] .btn-brand,
+:root[data-theme='vaporwave'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Synthwave — Neon sunset magenta over a dark grid. Louder than Vaporwave. */
+:root[data-theme='synthwave'] {
+  --color-canvas: #16082a;
+  --color-surface: #1f0c3a;
+  --color-raised: #271047;
+  --color-overlay: #2f1455;
+  --color-edge: #3b1a68;
+  --color-edge-strong: #5e2fa3;
+  --color-ink: #ffeaf7;
+  --color-muted: #cfa8dc;
+  --color-faint: #8e709e;
+  --color-accent: #f92aad;
+  --color-accent-hover: #e0269c;
+  --color-accent-soft: #3f0e42;
+  --color-ok: #22c55e;
+  --color-ok-soft: #182632;
+  --color-warn: #ff8a3d;
+  --color-warn-soft: #3b1d2d;
+  --color-danger: #ef4444;
+  --color-danger-soft: #39122e;
+  --color-sidebar-top: #1c0b35;
+  --color-sidebar-bottom: #150827;
+  --color-sidebar-edge: #3b1a68;
+  --color-brand-from: #d62495;
+  --color-brand-to: #a71c74;
+  --color-brand-to-hover: #c12086;
+  --color-vs-titlebar: #1a0a30;
+  --color-vs-activity: #16082a;
+  --color-vs-sidebar: #1b0a34;
+  --color-vs-editor: #1f0c3a;
+  --color-vs-tabbar: #1a0a30;
+  --color-vs-panel: #1b0a34;
+  --color-vs-status: #a71c74;
+  --color-vs-status-idle: #5e2fa3;
+  --color-vs-border: #3b1a68;
+  --color-vs-selected: #46114f;
+  --color-vs-active: #5c145a;
+  --color-vs-text: #ffeaf7;
+  --color-vs-dim: #cfa8dc;
+  --color-vs-badge: #f92aad;
+  --glow: #f92aad;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='synthwave'] .btn-brand,
+:root[data-theme='synthwave'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Cassette Era — Beige hi-fi panels with orange level meters. */
+:root[data-theme='cassette-era'] {
+  --color-canvas: #1a1713;
+  --color-surface: #241f19;
+  --color-raised: #2c261e;
+  --color-overlay: #342d24;
+  --color-edge: #40372c;
+  --color-edge-strong: #645643;
+  --color-ink: #f3e9da;
+  --color-muted: #c7b59b;
+  --color-faint: #8a7e6b;
+  --color-accent: #ff8c42;
+  --color-accent-hover: #e67e3b;
+  --color-accent-soft: #432c1b;
+  --color-ok: #22c55e;
+  --color-ok-soft: #1b331f;
+  --color-warn: #eab308;
+  --color-warn-soft: #3b3011;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3c1e1b;
+  --color-sidebar-top: #211d17;
+  --color-sidebar-bottom: #181612;
+  --color-sidebar-edge: #40372c;
+  --color-brand-from: #ad5f2d;
+  --color-brand-to: #874a23;
+  --color-brand-to-hover: #9c5629;
+  --color-vs-titlebar: #1e1a15;
+  --color-vs-activity: #1a1713;
+  --color-vs-sidebar: #201c17;
+  --color-vs-editor: #241f19;
+  --color-vs-tabbar: #1e1a15;
+  --color-vs-panel: #201c17;
+  --color-vs-status: #874a23;
+  --color-vs-status-idle: #645643;
+  --color-vs-border: #40372c;
+  --color-vs-selected: #4b3320;
+  --color-vs-active: #613e24;
+  --color-vs-text: #f3e9da;
+  --color-vs-dim: #c7b59b;
+  --color-vs-badge: #ff8c42;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Old Newspaper — Faded stock, black ink, a narrow serif and a halftone screen. */
+:root[data-theme='old-newspaper'] {
+  --color-canvas: #ece7db;
+  --color-surface: #f7f3e9;
+  --color-raised: #e4dfd2;
+  --color-overlay: #f7f3e9;
+  --color-edge: #cec8b8;
+  --color-edge-strong: #97927f;
+  --color-ink: #14120e;
+  --color-muted: #494539;
+  --color-faint: #827e72;
+  --color-accent: #8b2b1f;
+  --color-accent-hover: #7a261b;
+  --color-accent-soft: #dbc5b9;
+  --color-ok: #22c55e;
+  --color-ok-soft: #cce2c7;
+  --color-warn: #eab308;
+  --color-warn-soft: #ecdfb9;
+  --color-danger: #ef4444;
+  --color-danger-soft: #eccdc3;
+  --color-sidebar-top: #f4efe5;
+  --color-sidebar-bottom: #ded9ce;
+  --color-sidebar-edge: #cec8b8;
+  --color-brand-from: #8b2b1f;
+  --color-brand-to: #6c2218;
+  --color-brand-to-hover: #7d271c;
+  --color-vs-titlebar: #f0ece1;
+  --color-vs-activity: #ece7db;
+  --color-vs-sidebar: #f3eee3;
+  --color-vs-editor: #f7f3e9;
+  --color-vs-tabbar: #f0ece1;
+  --color-vs-panel: #f3eee3;
+  --color-vs-status: #6c2218;
+  --color-vs-status-idle: #97927f;
+  --color-vs-border: #cec8b8;
+  --color-vs-selected: #e4cfc5;
+  --color-vs-active: #d9bbb0;
+  --color-vs-text: #14120e;
+  --color-vs-dim: #494539;
+  --color-vs-badge: #8b2b1f;
+  --font-ui: 'Times New Roman', Times, 'Liberation Serif', Georgia, serif;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='old-newspaper'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* Victorian Machine — Dark wood and brass, with gauges rather than indicators. */
+:root[data-theme='victorian-machine'] {
+  --color-canvas: #120d09;
+  --color-surface: #1b140e;
+  --color-raised: #221a12;
+  --color-overlay: #2a2117;
+  --color-edge: #34281b;
+  --color-edge-strong: #56432c;
+  --color-ink: #f3e8d2;
+  --color-muted: #c7ad84;
+  --color-faint: #887559;
+  --color-accent: #c08a2e;
+  --color-accent-hover: #ad7c29;
+  --color-accent-soft: #312410;
+  --color-ok: #22c55e;
+  --color-ok-soft: #152a17;
+  --color-warn: #eab308;
+  --color-warn-soft: #352809;
+  --color-danger: #ef4444;
+  --color-danger-soft: #351612;
+  --color-sidebar-top: #18120d;
+  --color-sidebar-bottom: #110c08;
+  --color-sidebar-edge: #34281b;
+  --color-brand-from: #9a6e25;
+  --color-brand-to: #78561d;
+  --color-brand-to-hover: #8b6321;
+  --color-vs-titlebar: #16100b;
+  --color-vs-activity: #120d09;
+  --color-vs-sidebar: #17110c;
+  --color-vs-editor: #1b140e;
+  --color-vs-tabbar: #16100b;
+  --color-vs-panel: #17110c;
+  --color-vs-status: #78561d;
+  --color-vs-status-idle: #56432c;
+  --color-vs-border: #34281b;
+  --color-vs-selected: #392914;
+  --color-vs-active: #493517;
+  --color-vs-text: #f3e8d2;
+  --color-vs-dim: #c7ad84;
+  --color-vs-badge: #c08a2e;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --radius-card: 7.2px;
+  --radius-control: 4.8px;
+  --radius-object: 6px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Steampunk — Copper and brass over dark iron, with a serif face. */
+:root[data-theme='steampunk'] {
+  --color-canvas: #14100c;
+  --color-surface: #1e1811;
+  --color-raised: #262016;
+  --color-overlay: #2e271b;
+  --color-edge: #3a3022;
+  --color-edge-strong: #604e33;
+  --color-ink: #f5e9d0;
+  --color-muted: #cdb387;
+  --color-faint: #8c7a5c;
+  --color-accent: #c07f3c;
+  --color-accent-hover: #ad7236;
+  --color-accent-soft: #332415;
+  --color-ok: #22c55e;
+  --color-ok-soft: #162d19;
+  --color-warn: #eab308;
+  --color-warn-soft: #362a0b;
+  --color-danger: #ef4444;
+  --color-danger-soft: #371815;
+  --color-sidebar-top: #1b1610;
+  --color-sidebar-bottom: #130f0b;
+  --color-sidebar-edge: #3a3022;
+  --color-brand-from: #a16b32;
+  --color-brand-to: #7e5327;
+  --color-brand-to-hover: #91602d;
+  --color-vs-titlebar: #18130e;
+  --color-vs-activity: #14100c;
+  --color-vs-sidebar: #1a150f;
+  --color-vs-editor: #1e1811;
+  --color-vs-tabbar: #18130e;
+  --color-vs-panel: #1a150f;
+  --color-vs-status: #7e5327;
+  --color-vs-status-idle: #604e33;
+  --color-vs-border: #3a3022;
+  --color-vs-selected: #3b2b19;
+  --color-vs-active: #4b351d;
+  --color-vs-text: #f5e9d0;
+  --color-vs-dim: #cdb387;
+  --color-vs-badge: #c07f3c;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --radius-card: 7.2px;
+  --radius-control: 4.8px;
+  --radius-object: 6px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Luxury Gold — Black marble with a thin gold rule and a display serif. */
+:root[data-theme='luxury-gold'] {
+  --color-canvas: #08080a;
+  --color-surface: #101013;
+  --color-raised: #16161a;
+  --color-overlay: #1c1c21;
+  --color-edge: #24242a;
+  --color-edge-strong: #3d3d46;
+  --color-ink: #f6f2e8;
+  --color-muted: #bcb29b;
+  --color-faint: #7d7768;
+  --color-accent: #d4af37;
+  --color-accent-hover: #bf9e32;
+  --color-accent-soft: #2d2612;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0c2617;
+  --color-warn: #eab308;
+  --color-warn-soft: #2c230a;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2d1213;
+  --color-sidebar-top: #0e0e10;
+  --color-sidebar-bottom: #080809;
+  --color-sidebar-edge: #24242a;
+  --color-brand-from: #8c7424;
+  --color-brand-to: #6d5a1c;
+  --color-brand-to-hover: #7e6820;
+  --color-vs-titlebar: #0b0b0e;
+  --color-vs-activity: #08080a;
+  --color-vs-sidebar: #0d0d0f;
+  --color-vs-editor: #101013;
+  --color-vs-tabbar: #0b0b0e;
+  --color-vs-panel: #0d0d0f;
+  --color-vs-status: #6d5a1c;
+  --color-vs-status-idle: #3d3d46;
+  --color-vs-border: #24242a;
+  --color-vs-selected: #332d19;
+  --color-vs-active: #473d1d;
+  --color-vs-text: #f6f2e8;
+  --color-vs-dim: #bcb29b;
+  --color-vs-badge: #d4af37;
+  --font-ui: 'Baskerville', 'Bodoni MT', 'Didot', Georgia, serif;
+  --glow: #d4af37;
+  --radius-card: 3.6px;
+  --radius-control: 2.4px;
+  --radius-object: 3px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='luxury-gold'] .btn-brand,
+:root[data-theme='luxury-gold'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Frozen Glass — Pale blue panels behind heavy frost. Very soft, very light. */
+:root[data-theme='frozen-glass'] {
+  --color-canvas: #e6eef4;
+  --color-surface: #f4f9fc;
+  --color-raised: #dce8f0;
+  --color-overlay: #ffffff;
+  --color-edge: #c6d8e4;
+  --color-edge-strong: #95afc0;
+  --color-ink: #0f1c26;
+  --color-muted: #3f5c6c;
+  --color-faint: #748996;
+  --color-accent: #2a7fa8;
+  --color-accent-hover: #257094;
+  --color-accent-soft: #c4dae6;
+  --color-ok: #22c55e;
+  --color-ok-soft: #c7e7dc;
+  --color-warn: #eab308;
+  --color-warn-soft: #e7e5ce;
+  --color-danger: #ef4444;
+  --color-danger-soft: #e7d3d8;
+  --color-sidebar-top: #f0f6fa;
+  --color-sidebar-bottom: #d8e0e5;
+  --color-sidebar-edge: #c6d8e4;
+  --color-brand-from: #297ca5;
+  --color-brand-to: #206181;
+  --color-brand-to-hover: #257095;
+  --color-vs-titlebar: #ecf2f7;
+  --color-vs-activity: #e6eef4;
+  --color-vs-sidebar: #eef5f9;
+  --color-vs-editor: #f4f9fc;
+  --color-vs-tabbar: #ecf2f7;
+  --color-vs-panel: #eef5f9;
+  --color-vs-status: #206181;
+  --color-vs-status-idle: #95afc0;
+  --color-vs-border: #c6d8e4;
+  --color-vs-selected: #d0e3ed;
+  --color-vs-active: #bbd7e4;
+  --color-vs-text: #0f1c26;
+  --color-vs-dim: #3f5c6c;
+  --color-vs-badge: #2a7fa8;
+  --shadow-card: 0 1px 2px rgb(15 28 38 / 0.06), 0 12px 32px rgb(42 127 168 / 0.10);
+  --blur: 22px;
+  --radius-card: 19.2px;
+  --radius-control: 12.8px;
+  --radius-object: 16px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='frozen-glass'] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='frozen-glass'] .bg-raised {
+  background-color: color-mix(in srgb, var(--color-raised) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+:root[data-theme='frozen-glass'] .bg-overlay {
+  background-color: color-mix(in srgb, var(--color-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+
+/* Lava Lamp — Slow blobs of colour drifting behind everything. */
+:root[data-theme='lava-lamp'] {
+  --color-canvas: #150a18;
+  --color-surface: #1e0f23;
+  --color-raised: #26142c;
+  --color-overlay: #2e1836;
+  --color-edge: #3a1f44;
+  --color-edge-strong: #5e3570;
+  --color-ink: #ffeaf6;
+  --color-muted: #d3aecb;
+  --color-faint: #91758c;
+  --color-accent: #ff6b9d;
+  --color-accent-hover: #e6608d;
+  --color-accent-soft: #3f1b30;
+  --color-ok: #22c55e;
+  --color-ok-soft: #172823;
+  --color-warn: #eab308;
+  --color-warn-soft: #372515;
+  --color-danger: #ef4444;
+  --color-danger-soft: #38131f;
+  --color-sidebar-top: #1b0e20;
+  --color-sidebar-bottom: #140917;
+  --color-sidebar-edge: #3a1f44;
+  --color-brand-from: #bd4f74;
+  --color-brand-to: #933e5a;
+  --color-brand-to-hover: #aa4768;
+  --color-vs-titlebar: #190c1c;
+  --color-vs-activity: #150a18;
+  --color-vs-sidebar: #1a0d1f;
+  --color-vs-editor: #1e0f23;
+  --color-vs-tabbar: #190c1c;
+  --color-vs-panel: #1a0d1f;
+  --color-vs-status: #933e5a;
+  --color-vs-status-idle: #5e3570;
+  --color-vs-border: #3a1f44;
+  --color-vs-selected: #472039;
+  --color-vs-active: #5d2945;
+  --color-vs-text: #ffeaf6;
+  --color-vs-dim: #d3aecb;
+  --color-vs-badge: #ff6b9d;
+  --glow: #ff6b9d;
+  --radius-card: 21.6px;
+  --radius-control: 14.4px;
+  --radius-object: 18px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='lava-lamp'] .btn-brand,
+:root[data-theme='lava-lamp'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Comic Book — Cream paper, black outlines three pixels thick, and a halftone screen. */
+:root[data-theme='comic-book'] {
+  --color-canvas: #fff8e7;
+  --color-surface: #ffffff;
+  --color-raised: #fff1cc;
+  --color-overlay: #ffffff;
+  --color-edge: #1a1a1a;
+  --color-edge-strong: #000000;
+  --color-ink: #111111;
+  --color-muted: #4a453c;
+  --color-faint: #898478;
+  --color-accent: #e63946;
+  --color-accent-hover: #ca323e;
+  --color-accent-soft: #fbd6ca;
+  --color-ok: #2a9d8f;
+  --color-ok-soft: #dde9d9;
+  --color-warn: #e9a800;
+  --color-warn-soft: #fbebc2;
+  --color-danger: #ef4444;
+  --color-danger-soft: #fcdbcd;
+  --color-sidebar-top: #fffdf8;
+  --color-sidebar-bottom: #f0e9d9;
+  --color-sidebar-edge: #1a1a1a;
+  --color-brand-from: #d83642;
+  --color-brand-to: #a82a33;
+  --color-brand-to-hover: #c2313b;
+  --color-vs-titlebar: #fffbf1;
+  --color-vs-activity: #fff8e7;
+  --color-vs-sidebar: #fffcf5;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #fffbf1;
+  --color-vs-panel: #fffcf5;
+  --color-vs-status: #a82a33;
+  --color-vs-status-idle: #000000;
+  --color-vs-border: #1a1a1a;
+  --color-vs-selected: #fbdbde;
+  --color-vs-active: #f8c8cb;
+  --color-vs-text: #111111;
+  --color-vs-dim: #4a453c;
+  --color-vs-badge: #e63946;
+  --font-ui: 'Comic Sans MS', 'Chalkboard SE', 'Segoe UI', system-ui, sans-serif;
+  --border-w: 3px;
+  --shadow-card: 4px 4px 0 rgb(0 0 0 / 0.9);
+  --shadow-raised: 2px 2px 0 rgb(0 0 0 / 0.85);
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='comic-book'] .border {
+  border-width: var(--border-w);
+}
+
+/* Anime Interface — Bright violet and pink with very round corners and a moving sky. */
+:root[data-theme='anime-interface'] {
+  --color-canvas: #150f26;
+  --color-surface: #1e1533;
+  --color-raised: #251a3e;
+  --color-overlay: #2d2049;
+  --color-edge: #38285a;
+  --color-edge-strong: #57408c;
+  --color-ink: #fdeaff;
+  --color-muted: #cdb2e3;
+  --color-faint: #8d79a1;
+  --color-accent: #ff5fa2;
+  --color-accent-hover: #e65692;
+  --color-accent-soft: #3f1d3c;
+  --color-ok: #22c55e;
+  --color-ok-soft: #172c2f;
+  --color-warn: #eab308;
+  --color-warn-soft: #372921;
+  --color-danger: #ef4444;
+  --color-danger-soft: #38172b;
+  --color-sidebar-top: #1b132f;
+  --color-sidebar-bottom: #140e24;
+  --color-sidebar-edge: #38285a;
+  --color-brand-from: #c2487b;
+  --color-brand-to: #973860;
+  --color-brand-to-hover: #af416f;
+  --color-vs-titlebar: #19112b;
+  --color-vs-activity: #150f26;
+  --color-vs-sidebar: #1a132e;
+  --color-vs-editor: #1e1533;
+  --color-vs-tabbar: #19112b;
+  --color-vs-panel: #1a132e;
+  --color-vs-status: #973860;
+  --color-vs-status-idle: #57408c;
+  --color-vs-border: #38285a;
+  --color-vs-selected: #472247;
+  --color-vs-active: #5d2a52;
+  --color-vs-text: #fdeaff;
+  --color-vs-dim: #cdb2e3;
+  --color-vs-badge: #ff5fa2;
+  --font-ui: 'Comic Sans MS', 'Chalkboard SE', 'Segoe UI', system-ui, sans-serif;
+  --glow: #ff5fa2;
+  --radius-card: 21.6px;
+  --radius-control: 14.4px;
+  --radius-object: 18px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='anime-interface'] .btn-brand,
+:root[data-theme='anime-interface'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Graffiti — Concrete grey with one spray-can green and a layer of grain. */
+:root[data-theme='graffiti'] {
+  --color-canvas: #17171a;
+  --color-surface: #1f1f23;
+  --color-raised: #26262b;
+  --color-overlay: #2e2e34;
+  --color-edge: #38383f;
+  --color-edge-strong: #56565f;
+  --color-ink: #f0f0f2;
+  --color-muted: #b2b2ba;
+  --color-faint: #7c7c82;
+  --color-accent: #39ff14;
+  --color-accent-hover: #33e612;
+  --color-accent-soft: #1d4119;
+  --color-ok: #39ff14;
+  --color-ok-soft: #1c3c19;
+  --color-warn: #eab308;
+  --color-warn-soft: #393017;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a1e21;
+  --color-sidebar-top: #1d1d20;
+  --color-sidebar-bottom: #161618;
+  --color-sidebar-edge: #38383f;
+  --color-brand-from: #1e850a;
+  --color-brand-to: #176808;
+  --color-brand-to-hover: #1b7809;
+  --color-vs-titlebar: #1a1a1e;
+  --color-vs-activity: #17171a;
+  --color-vs-sidebar: #1c1c1f;
+  --color-vs-editor: #1f1f23;
+  --color-vs-tabbar: #1a1a1e;
+  --color-vs-panel: #1c1c1f;
+  --color-vs-status: #176808;
+  --color-vs-status-idle: #56565f;
+  --color-vs-border: #38383f;
+  --color-vs-selected: #244720;
+  --color-vs-active: #265e1f;
+  --color-vs-text: #f0f0f2;
+  --color-vs-dim: #b2b2ba;
+  --color-vs-badge: #39ff14;
+  --font-ui: 'Impact', 'Haettenschweiler', 'Arial Black', system-ui, sans-serif;
+  --glow: #39ff14;
+  --radius-card: 4.8px;
+  --radius-control: 3.2px;
+  --radius-object: 4px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='graffiti'] .btn-brand,
+:root[data-theme='graffiti'] .brand-tile {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--glow) 40%, transparent);
+}
+
+/* Blueprint — Drafting blue with white technical lines and a measured grid. */
+:root[data-theme='blueprint'] {
+  --color-canvas: #0a2540;
+  --color-surface: #0d2e4f;
+  --color-raised: #10375d;
+  --color-overlay: #14406b;
+  --color-edge: #1d5183;
+  --color-edge-strong: #3273ad;
+  --color-ink: #eaf4ff;
+  --color-muted: #adcbe7;
+  --color-faint: #7491ad;
+  --color-accent: #7dd3fc;
+  --color-accent-hover: #71bee3;
+  --color-accent-soft: #1f4462;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0e3f45;
+  --color-warn: #eab308;
+  --color-warn-soft: #2e3c37;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f2a41;
+  --color-sidebar-top: #0c2b4b;
+  --color-sidebar-bottom: #09233c;
+  --color-sidebar-edge: #1d5183;
+  --color-brand-from: #497a92;
+  --color-brand-to: #395f72;
+  --color-brand-to-hover: #426e83;
+  --color-vs-titlebar: #0b2946;
+  --color-vs-activity: #0a2540;
+  --color-vs-sidebar: #0c2a49;
+  --color-vs-editor: #0d2e4f;
+  --color-vs-tabbar: #0b2946;
+  --color-vs-panel: #0c2a49;
+  --color-vs-status: #395f72;
+  --color-vs-status-idle: #3273ad;
+  --color-vs-border: #1d5183;
+  --color-vs-selected: #214c6e;
+  --color-vs-active: #2c5c7f;
+  --color-vs-text: #eaf4ff;
+  --color-vs-dim: #adcbe7;
+  --color-vs-badge: #7dd3fc;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --radius-object: 0px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+:root[data-theme='blueprint'] [class*='rounded'] {
+  border-radius: 0;
+}
+
+/* Laboratory — Clinical white and cyan, with instrument-panel type. */
+:root[data-theme='laboratory'] {
+  --color-canvas: #eef3f5;
+  --color-surface: #ffffff;
+  --color-raised: #e6eef1;
+  --color-overlay: #ffffff;
+  --color-edge: #d2dfe4;
+  --color-edge-strong: #9fb6bf;
+  --color-ink: #0d1a1f;
+  --color-muted: #3f5b64;
+  --color-faint: #7a8d94;
+  --color-accent: #0891b2;
+  --color-accent-hover: #07809d;
+  --color-accent-soft: #c5e1e9;
+  --color-ok: #22c55e;
+  --color-ok-soft: #cdecdd;
+  --color-warn: #eab308;
+  --color-warn-soft: #ede9cf;
+  --color-danger: #ef4444;
+  --color-danger-soft: #eed7d9;
+  --color-sidebar-top: #fafbfc;
+  --color-sidebar-bottom: #e0e4e6;
+  --color-sidebar-edge: #d2dfe4;
+  --color-brand-from: #07809d;
+  --color-brand-to: #05647a;
+  --color-brand-to-hover: #06738d;
+  --color-vs-titlebar: #f5f8f9;
+  --color-vs-activity: #eef3f5;
+  --color-vs-sidebar: #f8fafb;
+  --color-vs-editor: #ffffff;
+  --color-vs-tabbar: #f5f8f9;
+  --color-vs-panel: #f8fafb;
+  --color-vs-status: #05647a;
+  --color-vs-status-idle: #9fb6bf;
+  --color-vs-border: #d2dfe4;
+  --color-vs-selected: #d3ebf1;
+  --color-vs-active: #bae0e9;
+  --color-vs-text: #0d1a1f;
+  --color-vs-dim: #3f5b64;
+  --color-vs-badge: #0891b2;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-object: 5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}
+
+/* Control Room — Dark operations panels, a status grid, and colour reserved for alarms. */
+:root[data-theme='control-room'] {
+  --color-canvas: #0b0e11;
+  --color-surface: #12161b;
+  --color-raised: #171c22;
+  --color-overlay: #1d232a;
+  --color-edge: #262d36;
+  --color-edge-strong: #3f4a57;
+  --color-ink: #e7edf3;
+  --color-muted: #aab6c4;
+  --color-faint: #727b85;
+  --color-accent: #22c55e;
+  --color-accent-hover: #1fb155;
+  --color-accent-soft: #0f2f1f;
+  --color-ok: #22c55e;
+  --color-ok-soft: #0f2b1d;
+  --color-warn: #f59e0b;
+  --color-warn-soft: #302510;
+  --color-danger: #ef4444;
+  --color-danger-soft: #2f1719;
+  --color-sidebar-top: #101418;
+  --color-sidebar-bottom: #0a0d10;
+  --color-sidebar-edge: #262d36;
+  --color-brand-from: #178640;
+  --color-brand-to: #126932;
+  --color-brand-to-hover: #15793a;
+  --color-vs-titlebar: #0e1115;
+  --color-vs-activity: #0b0e11;
+  --color-vs-sidebar: #0f1317;
+  --color-vs-editor: #12161b;
+  --color-vs-tabbar: #0e1115;
+  --color-vs-panel: #0f1317;
+  --color-vs-status: #126932;
+  --color-vs-status-idle: #3f4a57;
+  --color-vs-border: #262d36;
+  --color-vs-selected: #153627;
+  --color-vs-active: #16472e;
+  --color-vs-text: #e7edf3;
+  --color-vs-dim: #aab6c4;
+  --color-vs-badge: #22c55e;
+  --font-ui: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  --radius-card: 3px;
+  --radius-control: 2px;
+  --radius-object: 2.5px;
+
+  --background: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-overlay);
+  --primary: var(--color-accent);
+  --secondary: var(--color-edge-strong);
+  --text: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-edge);
+  --success: var(--color-ok);
+  --warning: var(--color-warn);
+  --danger: var(--color-danger);
+  --border-radius: var(--radius-card);
+  --font-family: var(--font-ui);
+  --shadow: var(--shadow-card);
+}

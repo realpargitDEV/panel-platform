@@ -1,19 +1,32 @@
 /**
  * How the application looks, as data.
  *
- * Themes are not stylesheets here — they are a theme *id* written onto the
- * root element, which the token blocks in `styles.css` respond to. Keeping the
- * choice as data and the colours as CSS means a theme switch is one attribute
- * write rather than a re-render, and nothing in the component tree has to know
- * which theme is on.
+ * Themes are not stylesheets here — they are a theme *id* written onto the root
+ * element, which the token blocks in `themes.generated.css` respond to. Keeping
+ * the choice as data and the colours as CSS means a theme switch is one
+ * attribute write rather than a re-render, and nothing in the component tree
+ * has to know which theme is on. That is what makes eighty-one of them cost the
+ * same as five.
  *
  * The exception, deliberately, is Discord. Its surface is Discord's identity,
  * not this application's, and it opts out of every theme — see the
  * `.discord-scope` block in `styles.css`.
  */
 
-export type ThemeId = 'dark' | 'light' | 'amber' | 'midnight' | 'nord';
-export type AccentId = 'blue' | 'violet' | 'emerald' | 'amber' | 'rose' | 'cyan';
+import { DEFAULT_THEME_ID, THEME_BY_ID, resolveThemeId } from './themes';
+import type { EffectId } from './themes/types';
+
+export type ThemeId = string;
+
+/**
+ * `auto` means "whatever the theme was designed with", and is the default.
+ *
+ * The six named accents remain, and still apply over any theme, but they are no
+ * longer what a fresh install gets: a blue accent forced onto Matrix Rain or
+ * Old Newspaper stops it being that theme, and there are now eighty-one themes
+ * with an accent chosen for each of them.
+ */
+export type AccentId = 'auto' | 'blue' | 'violet' | 'emerald' | 'amber' | 'rose' | 'cyan';
 export type Density = 'comfortable' | 'compact';
 /** `full` animates everything; `reduced` keeps only what conveys state; `off`
  *  removes motion entirely. The OS setting still wins over `full`. */
@@ -29,54 +42,16 @@ export interface Appearance {
 }
 
 export const defaultAppearance: Appearance = {
-  theme: 'dark',
-  accent: 'blue',
+  theme: DEFAULT_THEME_ID,
+  accent: 'auto',
   density: 'comfortable',
   fontScale: 100,
   motion: 'full',
 };
 
-/** The swatches are canvas / raised / accent, in that order — enough to show
- *  what a theme does without rendering the whole application into a card. */
-export const THEMES: {
-  id: ThemeId;
-  label: string;
-  detail: string;
-  swatch: [string, string, string];
-}[] = [
-  {
-    id: 'dark',
-    label: 'Dark',
-    detail: 'The default charcoal. Neutral, so project colours stay readable.',
-    swatch: ['#0e0e10', '#1c1c21', '#3b82f6'],
-  },
-  {
-    id: 'light',
-    label: 'Light',
-    detail: 'For bright rooms and screen sharing.',
-    swatch: ['#f7f7f9', '#ffffff', '#2563eb'],
-  },
-  {
-    id: 'amber',
-    label: 'Amber',
-    detail: 'Warm greys with a low-blue cast, for long evenings.',
-    swatch: ['#14100b', '#241d14', '#f59e0b'],
-  },
-  {
-    id: 'midnight',
-    label: 'Midnight',
-    detail: 'Deep blue-black with more contrast between layers.',
-    swatch: ['#0a0d16', '#161b2b', '#6366f1'],
-  },
-  {
-    id: 'nord',
-    label: 'Nord',
-    detail: 'Cool slate, softer whites, lower overall contrast.',
-    swatch: ['#161a21', '#232a35', '#88c0d0'],
-  },
-];
-
-export const ACCENTS: { id: AccentId; label: string; value: string }[] = [
+export const ACCENTS: { id: AccentId; label: string; value: string | null }[] = [
+  // `null` renders as the theme's own accent rather than a fixed swatch.
+  { id: 'auto', label: 'Theme default', value: null },
   { id: 'blue', label: 'Blue', value: '#3b82f6' },
   { id: 'violet', label: 'Violet', value: '#8b5cf6' },
   { id: 'emerald', label: 'Emerald', value: '#10b981' },
@@ -85,7 +60,6 @@ export const ACCENTS: { id: AccentId; label: string; value: string }[] = [
   { id: 'cyan', label: 'Cyan', value: '#06b6d4' },
 ];
 
-const THEME_IDS = new Set<string>(THEMES.map((theme) => theme.id));
 const ACCENT_IDS = new Set<string>(ACCENTS.map((accent) => accent.id));
 
 /**
@@ -95,16 +69,18 @@ const ACCENT_IDS = new Set<string>(ACCENTS.map((accent) => accent.id));
  * `localStorage`, where a value can be anything a previous version wrote, a
  * user edited by hand, or a half-finished migration left behind. An
  * unrecognised theme must fall back, never be written to the DOM.
+ *
+ * The theme is *resolved* rather than merely checked, because two of the five
+ * original ids were renamed when the catalogue arrived. Someone who chose
+ * `dark` gets `pure-dark` — the same colours under a name that still means
+ * something now that there are thirty dark themes.
  */
 export function normaliseAppearance(input: unknown): Appearance {
   if (input === null || typeof input !== 'object') return defaultAppearance;
   const stored = input as Partial<Record<keyof Appearance, unknown>>;
 
   return {
-    theme:
-      typeof stored.theme === 'string' && THEME_IDS.has(stored.theme)
-        ? (stored.theme as ThemeId)
-        : defaultAppearance.theme,
+    theme: resolveThemeId(stored.theme),
     accent:
       typeof stored.accent === 'string' && ACCENT_IDS.has(stored.accent)
         ? (stored.accent as AccentId)
@@ -133,11 +109,28 @@ export function clampFontScale(value: unknown): number {
  *
  * The only impure function here, and the only place that touches the DOM, so
  * everything above it can be tested as arithmetic.
+ *
+ * `auto` removes the accent attribute rather than writing a value, because the
+ * accent blocks in `styles.css` exist precisely to beat the theme's own accent.
+ * Writing `data-accent="auto"` would match no block, but leaving a previous
+ * accent on the element would silently keep overriding every theme chosen
+ * afterwards.
  */
 export function applyAppearance(root: HTMLElement, appearance: Appearance): void {
   root.dataset.theme = appearance.theme;
-  root.dataset.accent = appearance.accent;
+
+  if (appearance.accent === 'auto') {
+    delete root.dataset.accent;
+  } else {
+    root.dataset.accent = appearance.accent;
+  }
+
   root.dataset.density = appearance.density;
   root.dataset.motion = appearance.motion;
   root.style.setProperty('--font-scale', `${appearance.fontScale}%`);
+}
+
+/** The background effect the current theme asks for, if any. */
+export function effectFor(appearance: Appearance): EffectId | undefined {
+  return THEME_BY_ID.get(appearance.theme)?.effect;
 }
