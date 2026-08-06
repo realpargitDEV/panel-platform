@@ -66,12 +66,44 @@ migration of the five original ids.
 - Effect painters tested headless: counts, caps, bounds after 600 simulated
   frames, zero-length and half-second frames.
 
+## Seen running
+
+The frontend was driven in a browser against the Vite dev server (the Tauri
+backend is absent, so the core calls fail and the shell reports it — the styling
+is unaffected). Confirmed by looking:
+
+- The browser renders: 81 counted, eight category chips, results grouped under
+  their headings. Searching `falling code` returns Matrix Rain alone, on
+  description text; `halftone` returns two themes across two categories.
+- **Matrix Rain** applies across the whole shell, and the code rain is visible
+  behind the interface with cards and the rail correctly on top. This was the
+  main layering risk — a fixed layer at `z-index: 0` under a shell lifted to 1 —
+  and it holds.
+- **System 95** squares every corner, including the accent swatches that are
+  otherwise circles, and picks up the legacy face. The `[class*='rounded']`
+  override is what makes that reach Tailwind's literal radius utilities.
+- **Comic Book** draws three-pixel outlines on every element, hard offset
+  shadows, the rounded face and a visible halftone screen.
+- **Glass Minimal** resolves `--blur: 18px` and `backdrop-filter: blur(18px)` on
+  all three surface utilities.
+- Accent `Auto` writes no `data-accent`, and its swatch takes the theme's own
+  accent — green under Matrix Rain, navy under System 95.
+- The miniatures keep their own palettes while a different theme is applied,
+  which is the property that stops a card advertising a colour it does not use.
+
 ## Not verified
 
-Nothing here has been looked at. The browser tooling in this environment would
-not hold a tab open, so no theme, no card and no effect has been seen running —
-the palettes are reasoned from measurements, and the layouts from the markup.
-This is the main outstanding risk and the first thing to do with a real window.
+**The canvas effects have not been seen animating.** Chrome reports
+`document.hidden === true` for an automated window and fires zero animation
+frames, so the loop cannot run there — which is the suspend behaviour working,
+not a fault. The rain was instead confirmed by stepping the painter manually
+into the real canvas with the theme's live token values: 120 columns, ~7,000 lit
+pixels after 120 frames, and the result is visible in the screenshot. What
+remains unproven is the loop's _own_ behaviour in a watched window: that it
+starts, holds a steady frame rate, and suspends on blur.
+
+Seventy-seven of the eighty-one themes have not been looked at individually.
+They are held by measurement, not by eye.
 
 ## Deliberately not built
 
