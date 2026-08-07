@@ -21,8 +21,24 @@
 //!
 //! [`RuntimeSpec`]: https://docs.rs/project-host-database
 
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
+
 pub mod command;
+pub mod output;
 pub mod probe;
+pub mod supervisor;
 
 pub use command::{split_command, start_command, CommandError, CommandInputs, ProcessCommand};
+pub use output::{log_path, Tail};
 pub use probe::{candidates_for, probe, ExecutableResolver, Toolchain};
+pub use supervisor::{
+    run_step, start, HostError, HostObserved, HostStatus, SupervisorHandle, DEFAULT_GRACE,
+};

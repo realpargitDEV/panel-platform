@@ -4921,8 +4921,10 @@ dependencies = [
 name = "project-host-host-runner"
 version = "0.1.12"
 dependencies = [
+ "project-host-platform",
  "tempfile",
  "thiserror 2.0.19",
+ "tokio",
  "tracing",
 ]
 
