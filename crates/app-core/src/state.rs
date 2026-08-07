@@ -8,6 +8,7 @@ use project_host_docker_manager::{DockerProbe, DockerStatus};
 use tokio::sync::RwLock;
 
 use crate::config::AppConfig;
+use crate::runner::host::HostRegistry;
 
 /// Everything a command handler needs. Cheap to clone: one `Arc`.
 #[derive(Clone)]
@@ -35,6 +36,12 @@ pub struct Inner {
     pub schema_version: u32,
     pub started_at: std::time::Instant,
     pub started_at_wall: String,
+    /// Every host project this process is running.
+    ///
+    /// Lives here because it is process-scoped by nature: a supervisor handle
+    /// owns a child of *this* process, so nothing outside the process can hold
+    /// a meaningful one.
+    pub host_projects: HostRegistry,
 }
 
 /// Who this process is: the facts fixed at startup that never change.
@@ -71,7 +78,26 @@ impl AppState {
             schema_version: identity.schema_version,
             started_at: std::time::Instant::now(),
             started_at_wall: identity.started_at_wall,
+            host_projects: HostRegistry::new(),
         }))
+    }
+
+    /// Every host project this process is running.
+    pub fn host_projects(&self) -> &HostRegistry {
+        &self.0.host_projects
+    }
+
+    /// Where a project's run log is written.
+    ///
+    /// Falls back to a relative `logs` directory for the same reason
+    /// `projects_dir` does: a configuration that named neither should still
+    /// produce a working application rather than a panic at the first start.
+    pub fn logs_root(&self) -> std::path::PathBuf {
+        self.0
+            .config
+            .log_dir
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
     }
 
     pub fn inner(&self) -> &Inner {

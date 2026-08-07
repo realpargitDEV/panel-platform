@@ -27,7 +27,9 @@ use std::sync::Arc;
 
 use crate::images::{dockerfile_for, starter_files, ImageSpec};
 use crate::runner::docker::DockerRunner;
+use crate::runner::host::HostRunner;
 use crate::runner::{Observed, ProjectRunner, StartContext};
+use crate::state::AppState;
 use project_host_api_types::{DesiredState, HealthState, ProjectStatus};
 use project_host_database::{projects, Database};
 use project_host_docker_manager::container_spec::{
@@ -52,16 +54,44 @@ pub enum LifecycleError {
     /// reachable if `docker-manager` gains a word `ProjectStatus` does not have.
     #[error("`{0}` is not a project status this build knows")]
     UnknownStatus(String),
+
+    /// Host mode only. The failure is reported before anything is spawned, so
+    /// the message can name the runtime and the executables tried rather than
+    /// being an operating-system error about a file that does not exist.
+    #[error("{runtime} is not installed on this machine; looked for {}", looked_for.join(", "))]
+    ToolchainMissing {
+        runtime: String,
+        looked_for: Vec<String>,
+    },
+
+    /// A runtime that host mode cannot serve. `STATIC` needs an HTTP server
+    /// this application does not have, and `POLYGLOT` needs several toolchains
+    /// at once — neither is a missing executable, and reporting one would send
+    /// the user to install something that would not help.
+    #[error("host mode cannot run {0} projects yet; run this one in Docker")]
+    UnsupportedInHostMode(String),
+
+    #[error("{0}")]
+    Host(#[from] project_host_host_runner::HostError),
+
+    #[error("{0}")]
+    Command(#[from] project_host_host_runner::CommandError),
 }
 
 /// The runner a project's `run_mode` column asks for.
 ///
-/// Host mode does not exist yet, so every project is a container. This function
-/// is nonetheless where `run_mode` will be read, and introducing it now is the
-/// point of the exercise: the dispatch lands in one place rather than at each of
-/// the four call sites that would otherwise have grown their own.
-pub fn runner_for(_project: &projects::ProjectRecord) -> Arc<dyn ProjectRunner> {
-    Arc::new(DockerRunner::new())
+/// An unrecognised value is `DOCKER`, not an error. The schema's `CHECK` already
+/// refuses anything but the two words, so the fallback is unreachable through
+/// the application; if a hand-edited database ever reached it, defaulting to the
+/// substrate that isolates is the safer of the two wrong answers.
+pub fn runner_for(app: &AppState, project: &projects::ProjectRecord) -> Arc<dyn ProjectRunner> {
+    match project.run_mode.as_str() {
+        "HOST" => Arc::new(HostRunner::new(
+            app.host_projects().clone(),
+            app.logs_root(),
+        )),
+        _ => Arc::new(DockerRunner::new()),
+    }
 }
 
 /// Write a project's `Dockerfile` and starter files if they are absent.
@@ -203,11 +233,9 @@ pub(crate) fn project_status(state: &ContainerState) -> Result<ProjectStatus, Li
 }
 
 /// Start a project, building its image if there is not one already.
-pub async fn start(
-    db: &Database,
-    project_id: &str,
-    app_version: &str,
-) -> Result<String, LifecycleError> {
+pub async fn start(app: &AppState, project_id: &str) -> Result<String, LifecycleError> {
+    let db = app.database();
+    let app_version = app.inner().app_version.clone();
     let project = projects::find_project(db, project_id)
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
@@ -216,12 +244,12 @@ pub async fn start(
     projects::set_status(db, project_id, ProjectStatus::Starting, None).await?;
 
     let directory = std::path::PathBuf::from(&project.directory);
-    let outcome = runner_for(&project)
+    let outcome = runner_for(app, &project)
         .start(StartContext {
             db,
             project: &project,
             directory: &directory,
-            app_version,
+            app_version: &app_version,
         })
         .await;
 
@@ -254,7 +282,8 @@ async fn record(
 }
 
 /// Stop a project. Its data volume and files are untouched.
-pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError> {
+pub async fn stop(app: &AppState, project_id: &str) -> Result<(), LifecycleError> {
+    let db = app.database();
     let project = projects::find_project(db, project_id)
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
@@ -262,7 +291,7 @@ pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError>
     projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
     projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
 
-    runner_for(&project).stop(&project).await?;
+    runner_for(app, &project).stop(&project).await?;
 
     // A user-requested stop is a clean one: exit 0, no failure reason.
     projects::record_stopped(db, project_id, Some(0), None).await?;
@@ -270,7 +299,8 @@ pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError>
 }
 
 /// Kill a project immediately. Its data volume and files are untouched.
-pub async fn kill(db: &Database, project_id: &str) -> Result<(), LifecycleError> {
+pub async fn kill(app: &AppState, project_id: &str) -> Result<(), LifecycleError> {
+    let db = app.database();
     let project = projects::find_project(db, project_id)
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
@@ -278,18 +308,16 @@ pub async fn kill(db: &Database, project_id: &str) -> Result<(), LifecycleError>
     projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
     projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
 
-    runner_for(&project).kill(&project).await?;
+    runner_for(app, &project).kill(&project).await?;
 
     projects::record_stopped(db, project_id, None, None).await?;
     Ok(())
 }
 
 /// Restart a project in place, without rebuilding its image.
-pub async fn restart(
-    db: &Database,
-    project_id: &str,
-    app_version: &str,
-) -> Result<String, LifecycleError> {
+pub async fn restart(app: &AppState, project_id: &str) -> Result<String, LifecycleError> {
+    let db = app.database();
+    let app_version = app.inner().app_version.clone();
     let project = projects::find_project(db, project_id)
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
@@ -304,12 +332,12 @@ pub async fn restart(
     projects::set_status(db, project_id, ProjectStatus::Restarting, None).await?;
 
     let directory = std::path::PathBuf::from(&project.directory);
-    let outcome = runner_for(&project)
+    let outcome = runner_for(app, &project)
         .restart(StartContext {
             db,
             project: &project,
             directory: &directory,
-            app_version,
+            app_version: &app_version,
         })
         .await;
 

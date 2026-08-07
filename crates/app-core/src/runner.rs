@@ -18,6 +18,7 @@
 //! implementation.
 
 pub mod docker;
+pub mod host;
 
 use std::path::Path;
 
@@ -109,7 +110,7 @@ pub trait ProjectRunner: Send + Sync + std::fmt::Debug {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[derive(Debug)]
@@ -148,7 +149,9 @@ mod tests {
         );
     }
 
-    fn sample_project() -> ProjectRecord {
+    /// A project row with every column filled, for tests that need one and do
+    /// not care what is in it.
+    pub(crate) fn sample_project() -> ProjectRecord {
         ProjectRecord {
             id: "prj_test".to_string(),
             slug: "quiet-harbor-4f2a".to_string(),

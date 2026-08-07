@@ -619,8 +619,7 @@ async fn start_project(
     project_id: String,
 ) -> CommandResult<String> {
     let app: &AppState = &state;
-    let version = app.inner().app_version.clone();
-    project_host_core::lifecycle::start(app.database(), &project_id, &version)
+    project_host_core::lifecycle::start(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
@@ -817,7 +816,7 @@ async fn install_toolchain(
 #[tauri::command]
 async fn stop_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
-    project_host_core::lifecycle::stop(app.database(), &project_id)
+    project_host_core::lifecycle::stop(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
@@ -828,8 +827,7 @@ async fn restart_project(
     project_id: String,
 ) -> CommandResult<String> {
     let app: &AppState = &state;
-    let version = app.inner().app_version.clone();
-    project_host_core::lifecycle::restart(app.database(), &project_id, &version)
+    project_host_core::lifecycle::restart(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
@@ -837,7 +835,7 @@ async fn restart_project(
 #[tauri::command]
 async fn kill_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
-    project_host_core::lifecycle::kill(app.database(), &project_id)
+    project_host_core::lifecycle::kill(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
