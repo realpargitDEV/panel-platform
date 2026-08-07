@@ -85,6 +85,21 @@ export async function systemStatus(): Promise<SystemStatus> {
   return toCamel<SystemStatus>(await invoke('system_status'));
 }
 
+/**
+ * Change how a project runs.
+ *
+ * Refused while the project is up: switching substrate under a running project
+ * would leave the old one running with nothing tracking it.
+ */
+export async function setProjectRunMode(projectId: string, runMode: string): Promise<string> {
+  return invoke<string>('set_project_run_mode', { projectId, runMode });
+}
+
+/** What a project gives up by running outside a container. */
+export const HOST_MODE_TRADE =
+  'A host project runs as a process on this machine, with your files and your ' +
+  'network and no resource limits, and it stops when Panel Platform quits.';
+
 /** Whether a project runs as a process on this machine rather than a container. */
 export function isHostMode(project: { runMode?: string }): boolean {
   return project.runMode === 'HOST';

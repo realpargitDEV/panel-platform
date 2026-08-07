@@ -19,11 +19,13 @@
 )]
 
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
+use project_host_api_types::RunMode;
 use project_host_core::provisioning::SourceSpec;
 use project_host_core::{resolve_paths, AppConfig, AppState, Runtime};
 use project_host_database::projects;
@@ -224,6 +226,10 @@ pub struct NewProjectRequest {
     /// older callers working.
     #[serde(default)]
     pub source: Option<SourceRequest>,
+    /// `DOCKER` or `HOST`. Absent means `DOCKER`, which is what every caller
+    /// written before host mode existed means, and the substrate that isolates.
+    #[serde(default)]
+    pub run_mode: Option<String>,
 }
 
 /// The source half of the creation form.
@@ -580,6 +586,17 @@ async fn create_project(
         }
     };
 
+    // Applied after creation rather than through NewProject: the column has a
+    // DOCKER default and one UPDATE is a smaller change than threading a new
+    // field through create_project and every caller of it.
+    let record = match apply_run_mode(app, &record, request.run_mode.as_deref()).await {
+        Ok(record) => record,
+        Err(error) => {
+            project_host_core::provisioning::discard_directory(&directory);
+            return Err(error);
+        }
+    };
+
     // No key is held at runtime yet, so this stores nothing and says so. See
     // `provisioning`'s module documentation.
     let stored = project_host_core::provisioning::store_source_token(
@@ -837,6 +854,63 @@ async fn restart_project(
     project_host_core::lifecycle::restart(app, &project_id)
         .await
         .map_err(CommandError::from)
+}
+
+/// Set a project's run mode, and answer with the row as it now reads.
+///
+/// Refuses anything but the two words rather than letting the database's CHECK
+/// refuse it: the message a user should see names the choices, not the
+/// constraint.
+async fn apply_run_mode(
+    app: &AppState,
+    record: &projects::ProjectRecord,
+    requested: Option<&str>,
+) -> CommandResult<projects::ProjectRecord> {
+    let Some(requested) = requested else {
+        return Ok(record.clone());
+    };
+    let mode = RunMode::from_str(requested).map_err(|_| CommandError {
+        message: format!("`{requested}` is not a run mode. Use DOCKER or HOST."),
+    })?;
+    if record.run_mode == mode.as_str() {
+        return Ok(record.clone());
+    }
+
+    projects::set_run_mode(app.database(), &record.id, mode).await?;
+    projects::find_project(app.database(), &record.id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "The project vanished while its run mode was being set.".to_string(),
+        })
+}
+
+/// Change how an existing project runs.
+///
+/// Switching *to* host mode is the choice that gives something up — filesystem
+/// and network isolation, a non-root user — so the interface confirms it every
+/// time it is switched to. Nothing extra is stored for that: accepting is what
+/// calls this, so a project already in host mode is not asked again.
+#[tauri::command]
+async fn set_project_run_mode(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    run_mode: String,
+) -> CommandResult<String> {
+    let app: &AppState = &state;
+    let record = projects::find_project(app.database(), &project_id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "No project with that id.".to_string(),
+        })?;
+
+    if project_host_core::lifecycle::is_running(&record.status) {
+        return Err(CommandError {
+            message: "Stop the project before changing how it runs.".to_string(),
+        });
+    }
+
+    let updated = apply_run_mode(app, &record, Some(&run_mode)).await?;
+    Ok(updated.run_mode)
 }
 
 /// How many host projects would stop if the window were closed now.
@@ -2439,6 +2513,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             restart_project,
             kill_project,
             host_projects_running,
+            set_project_run_mode,
             app_settings,
             check_for_update,
             install_update,

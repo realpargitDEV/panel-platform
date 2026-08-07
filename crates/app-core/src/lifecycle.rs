@@ -300,6 +300,18 @@ pub async fn stop_host_projects(app: &AppState) -> Vec<String> {
     stopped
 }
 
+/// Whether a stored status word means the project is up or on its way there.
+///
+/// Used to refuse changes that only make sense on a stopped project. The
+/// transitional words count as running: a project that is STARTING is not a
+/// project it is safe to reconfigure.
+pub fn is_running(status: &str) -> bool {
+    matches!(
+        status,
+        "RUNNING" | "STARTING" | "RESTARTING" | "STOPPING" | "BUILDING" | "UNHEALTHY"
+    )
+}
+
 /// How many host projects would stop if the application quit now.
 ///
 /// What the quit dialog counts. Separate from [`stop_host_projects`] because it
@@ -684,6 +696,28 @@ mod tests {
             (container_state(false, Some(137)), ProjectStatus::Failed),
         ] {
             assert_eq!(project_status(&state).expect("a known status"), expected);
+        }
+    }
+
+    /// Every status the schema allows is classified deliberately. A word added
+    /// to the column later falls through to "not running" by default, and this
+    /// is where that decision is made visible rather than implied.
+    #[test]
+    fn every_stored_status_is_classified_as_running_or_not() {
+        for status in [
+            "RUNNING",
+            "STARTING",
+            "RESTARTING",
+            "STOPPING",
+            "BUILDING",
+            "UNHEALTHY",
+        ] {
+            assert!(is_running(status), "{status} should count as running");
+        }
+
+        // A project in any of these can be reconfigured safely.
+        for status in ["CREATING", "STOPPED", "FAILED", "ARCHIVED", "DELETING"] {
+            assert!(!is_running(status), "{status} should not count as running");
         }
     }
 
