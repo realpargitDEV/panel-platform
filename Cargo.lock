@@ -4954,6 +4954,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-host-resources"
+version = "0.1.12"
+dependencies = [
+ "serde",
+ "sysinfo 0.36.1",
+]
+
+[[package]]
 name = "project-host-security"
 version = "0.1.12"
 dependencies = [

@@ -1,0 +1,16 @@
+[package]
+name = "project-host-resources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+# Already in the tree for the machine scan. Only what this crate reads is
+# enabled: no disks, no networks, no user enumeration.
+sysinfo = { version = "0.36.1", default-features = false, features = ["system"] }
+
+[lints]
+workspace = true
