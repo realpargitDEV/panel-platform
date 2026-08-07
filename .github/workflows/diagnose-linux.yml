@@ -1,0 +1,95 @@
+name: Diagnose Linux
+
+# TEMPORARY. Delete before this branch merges.
+#
+# `verify` dies on ubuntu-22.04 with "the runner has received a shutdown
+# signal" roughly five minutes in, always inside `project-host-core`, and
+# always with an `sh`/`sleep` pair left as orphans. Windows passes the same
+# gate. `main` passes on both, so it arrived with this branch.
+#
+# Two hypotheses, and this job is built to tell them apart:
+#
+#   1. A test signals the wrong process group. `crates/platform/src/process.rs`
+#      signals a *negated* pid, which addresses a group rather than a process,
+#      and every Unix path on this branch is unproven. If the negation lands on
+#      the runner's own group, the agent gets the SIGTERM and the job dies while
+#      the project's own children survive — which is exactly what the orphan
+#      list looks like.
+#   2. The runner runs out of memory or disk and is reclaimed, and the orphaned
+#      `sleep` is a coincidence: that test is also the slowest in the binary, so
+#      it is in flight whenever the job dies for any reason at all.
+#
+# `--test-threads=1` decides (1): cargo prints a test's name before running it,
+# so the last name in the log is the test that was executing, not merely one of
+# thirty running at once. The sampler decides (2): it streams to the log every
+# two seconds, so its last line survives the runner's death and says what memory
+# and disk were doing at the end.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [theme-catalogue]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ -> target'
+
+      # The group ids to compare everything against. If a later kill addresses
+      # one of these, hypothesis 1 is confirmed outright.
+      - name: What group is this job in
+        run: |
+          echo "shell pid=$$ pgid=$(ps -o pgid= -p $$ | tr -d ' ') ppid=$PPID"
+          echo "session leaders and runner processes:"
+          ps -eo pid,pgid,ppid,comm | grep -Ei 'runner|Runner.Worker|node|bash' | head -20
+          echo "nproc=$(nproc)"
+          free -m
+          df -h /
+
+      - name: Serial app-core tests, with the machine sampled throughout
+        run: |
+          (
+            while true; do
+              mem=$(free -m | awk '/^Mem:/{print $3"/"$2"MB used, "$7"MB avail"}')
+              swap=$(free -m | awk '/^Swap:/{print $3"/"$2"MB"}')
+              echo "[SAMPLE $(date +%T)] mem: $mem | swap: $swap | load: $(cut -d' ' -f1-3 /proc/loadavg) | procs: $(ps -e --no-headers | wc -l) | root: $(df -h / | awk 'NR==2{print $4}') free"
+              # Anything the supervisor spawned, with its group, so a stray
+              # group id is visible before it is signalled rather than after.
+              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"||$4=="ping"{print "[PROC] "$0}'
+              sleep 2
+            done
+          ) &
+          sampler=$!
+
+          set +e
+          RUST_BACKTRACE=1 RUST_LOG=warn \
+            cargo test -p project-host-core -- --test-threads=1 --nocapture
+          echo "[EXIT] cargo test exited $?"
+          set -e
+
+          kill $sampler 2>/dev/null || true
+
+      - name: What the machine looked like afterwards
+        if: always()
+        run: |
+          free -m
+          df -h /
+          ps -eo pid,pgid,ppid,comm | grep -E 'sh|sleep' | head -20
