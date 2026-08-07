@@ -105,6 +105,30 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.13
+
+            **Projects can now run directly on the host, not only through
+            Docker.** The runner has a process-backed lifecycle beside the
+            container path: it starts the configured command, captures output,
+            polls health, restarts crashed projects and stops the whole process
+            tree when the application quits.
+
+            **The app measures the machine before starting more work.** It
+            records CPU, memory, disk, virtualization, WSL and GPU capabilities,
+            refuses starts the host cannot safely hold, and derives default
+            resource limits from what it found instead of from a fixed guess.
+
+            **Linux process shutdown is safer and more reliable.** The Unix
+            runner now signals the process tree by naming it directly, avoids
+            counting zombies as running work, and removes diagnostic paths that
+            could hang instead of answering.
+
+            **The theme catalogue is generated from one engine.** The release
+            records the themes that were actually built and keeps the theme CSS
+            formatted by the same checks that gate the rest of the app.
+
+            This release also carries everything in 0.1.12, below.
+
             ## What changed in 0.1.12
 
             **The interface has been designed rather than assembled.** The
