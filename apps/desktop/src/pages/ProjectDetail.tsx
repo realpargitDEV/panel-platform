@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   errorMessage,
+  isHostMode,
   killProject,
   projectDeployments,
   projectDetails,
@@ -40,7 +41,7 @@ import {
   uptimeSeconds,
 } from '../lib/format';
 import { runtimeLabel } from '../lib/projectList';
-import { describeAction, healthLook, isRunning, statusLook } from '../lib/projects';
+import { describeAction, healthLook, isRunning, runControls, statusLook } from '../lib/projects';
 import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
@@ -116,12 +117,7 @@ export default function ProjectDetail({
 
   const look = statusLook(project.status);
   const running = isRunning(project.status);
-  const blocked = busy || look.transitioning || !dockerAvailable;
-  const blockedReason = !dockerAvailable
-    ? 'Docker is not available'
-    : look.transitioning
-      ? `The project is ${look.label.toLowerCase()}`
-      : undefined;
+  const { blocked, reason: blockedReason } = runControls(project, { busy, dockerAvailable });
 
   async function act(verb: string, action: (id: string) => Promise<unknown>) {
     setBusy(true);
@@ -164,6 +160,14 @@ export default function ProjectDetail({
               <Badge tone={look.tone} dot>
                 {look.label}
               </Badge>
+              {isHostMode(project) && (
+                <Badge
+                  tone="warn"
+                  title="Runs as a process on this machine, without a container's isolation"
+                >
+                  host
+                </Badge>
+              )}
               {detail && detail.health.toUpperCase() !== 'NONE' && (
                 <Badge tone={healthLook(detail.health).tone}>
                   {healthLook(detail.health).label}

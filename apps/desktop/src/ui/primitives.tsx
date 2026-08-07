@@ -324,13 +324,17 @@ export function Badge({
   children,
   tone = 'neutral',
   dot,
+  title,
 }: {
   children: ReactNode;
   tone?: Tone;
   dot?: boolean;
+  /** Hover text. A badge that is a single word sometimes needs a sentence. */
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${TONES[tone].badge}`}
     >
       {dot && <span className={`h-1.5 w-1.5 rounded-full ${TONES[tone].dot}`} aria-hidden />}

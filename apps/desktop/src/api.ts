@@ -30,6 +30,8 @@ export interface ProjectSummary {
   status: string;
   desiredState: string;
   color: string | null;
+  /** `DOCKER` or `HOST`. A host project runs as a process on this machine. */
+  runMode: string;
 }
 
 export interface AvailableUpdate {
@@ -81,6 +83,20 @@ export function errorMessage(error: unknown): string {
 
 export async function systemStatus(): Promise<SystemStatus> {
   return toCamel<SystemStatus>(await invoke('system_status'));
+}
+
+/** Whether a project runs as a process on this machine rather than a container. */
+export function isHostMode(project: { runMode?: string }): boolean {
+  return project.runMode === 'HOST';
+}
+
+/**
+ * How many host projects would stop if the window were closed now.
+ *
+ * Docker projects are not counted: they outlive the application.
+ */
+export async function hostProjectsRunning(): Promise<number> {
+  return invoke<number>('host_projects_running');
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {

@@ -157,6 +157,11 @@ pub struct ProjectSummary {
     pub status: String,
     pub desired_state: String,
     pub color: Option<String>,
+    /// `DOCKER` or `HOST`. The interface needs it for two things: a badge, and
+    /// deciding whether a missing daemon should disable this project's
+    /// controls. Without it a machine with no Docker has every control greyed
+    /// out, including for the projects that do not need one.
+    pub run_mode: String,
 }
 
 #[tauri::command]
@@ -198,6 +203,7 @@ async fn list_projects(state: tauri::State<'_, AppState>) -> CommandResult<Vec<P
             status: record.status,
             desired_state: record.desired_state,
             color: record.color,
+            run_mode: record.run_mode,
         })
         .collect())
 }
@@ -601,6 +607,7 @@ async fn create_project(
             status: record.status,
             desired_state: record.desired_state,
             color: record.color,
+            run_mode: record.run_mode,
         },
         runtime: plan.spec.runtime,
         detected: plan.detected,

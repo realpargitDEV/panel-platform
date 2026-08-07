@@ -9,6 +9,7 @@ import {
   healthLook,
   isFailed,
   needsAttention,
+  runControls,
   statusLook,
 } from './projects';
 
@@ -22,6 +23,7 @@ function project(status: string, desiredState = 'RUNNING'): ProjectSummary {
     status,
     desiredState,
     color: null,
+    runMode: 'DOCKER',
   };
 }
 
@@ -127,5 +129,51 @@ describe('describing an audit entry', () => {
     expect(actionTone('FAILURE')).toBe('danger');
     expect(actionTone('DENIED')).toBe('warn');
     expect(actionTone('whatever')).toBe('neutral');
+  });
+});
+
+describe('runControls', () => {
+  function withMode(runMode: string, status = 'STOPPED'): ProjectSummary {
+    return { ...project(status), runMode };
+  }
+
+  it('blocks a Docker project when there is no daemon', () => {
+    const { blocked, reason } = runControls(withMode('DOCKER'), {
+      busy: false,
+      dockerAvailable: false,
+    });
+    expect(blocked).toBe(true);
+    expect(reason).toBe('Docker is not available');
+  });
+
+  // The whole point of host mode. Before this, a machine with no daemon had
+  // every control greyed out and the feature was unreachable.
+  it('leaves a host project usable when there is no daemon', () => {
+    expect(runControls(withMode('HOST'), { busy: false, dockerAvailable: false })).toEqual({
+      blocked: false,
+    });
+  });
+
+  it('blocks either mode while the project is transitioning', () => {
+    for (const mode of ['DOCKER', 'HOST']) {
+      const { blocked, reason } = runControls(withMode(mode, 'STARTING'), {
+        busy: false,
+        dockerAvailable: true,
+      });
+      expect(blocked).toBe(true);
+      expect(reason).toBe('The project is starting');
+    }
+  });
+
+  it('blocks either mode while another action is running', () => {
+    for (const mode of ['DOCKER', 'HOST']) {
+      expect(runControls(withMode(mode), { busy: true, dockerAvailable: true }).blocked).toBe(true);
+    }
+  });
+
+  it('allows a Docker project when the daemon is there', () => {
+    expect(runControls(withMode('DOCKER'), { busy: false, dockerAvailable: true })).toEqual({
+      blocked: false,
+    });
   });
 });

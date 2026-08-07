@@ -165,3 +165,34 @@ function sentenceCase(value: string): string {
   const lower = value.toLowerCase().replace(/_/g, ' ');
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
+
+/**
+ * Whether a project's controls should be usable, and why not when they are not.
+ *
+ * The rule that matters: **a missing Docker daemon blocks only the projects
+ * that need one.** This used to block every project, which meant a machine
+ * without Docker could create projects and edit their files but never run any
+ * of them — including the host-mode projects that exist precisely so that it
+ * can. That single condition is what made host mode reachable at all.
+ *
+ * Lives here rather than in the view because it is the same decision in two
+ * places, and because it is worth testing without rendering anything.
+ */
+export function runControls(
+  project: ProjectSummary,
+  options: { busy: boolean; dockerAvailable: boolean },
+): { blocked: boolean; reason?: string } {
+  const look = statusLook(project.status);
+  const needsDocker = project.runMode !== 'HOST';
+
+  if (needsDocker && !options.dockerAvailable) {
+    return { blocked: true, reason: 'Docker is not available' };
+  }
+  if (look.transitioning) {
+    return { blocked: true, reason: `The project is ${look.label.toLowerCase()}` };
+  }
+  if (options.busy) {
+    return { blocked: true, reason: 'Another action is running' };
+  }
+  return { blocked: false };
+}

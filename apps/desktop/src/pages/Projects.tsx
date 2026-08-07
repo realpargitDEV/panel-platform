@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  isHostMode,
   killProject,
   restartProject,
   startProject,
@@ -29,7 +30,7 @@ import {
   type StatusFilter,
   type ViewMode,
 } from '../lib/projectList';
-import { isRunning, statusLook } from '../lib/projects';
+import { isRunning, runControls, statusLook } from '../lib/projects';
 import { isDeclined, useToolchainGate } from '../components/useToolchainGate';
 import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
@@ -294,21 +295,17 @@ type ActFn = (
   action: (id: string) => Promise<unknown>,
 ) => Promise<void>;
 
-/** The controls a project offers, and why each is unavailable when it is. */
+/**
+ * The controls a project offers, and why each is unavailable when it is.
+ *
+ * A missing Docker daemon blocks only the projects that need one. This used to
+ * block every project, which meant a machine without Docker could create
+ * projects and edit their files but never run any of them — including the host
+ * projects that exist precisely so it can.
+ */
 function useControls(project: ProjectSummary, busy: boolean, dockerAvailable: boolean) {
-  const look = statusLook(project.status);
-  const running = isRunning(project.status);
-  const blocked = busy || look.transitioning || !dockerAvailable;
-
-  const reason = !dockerAvailable
-    ? 'Docker is not available'
-    : look.transitioning
-      ? `The project is ${look.label.toLowerCase()}`
-      : busy
-        ? 'Another action is running'
-        : undefined;
-
-  return { look, running, blocked, reason };
+  const { blocked, reason } = runControls(project, { busy, dockerAvailable });
+  return { look: statusLook(project.status), running: isRunning(project.status), blocked, reason };
 }
 
 function ProjectCard({
@@ -341,6 +338,14 @@ function ProjectCard({
           </span>
         </button>
 
+        {isHostMode(project) && (
+          <Badge
+            tone="warn"
+            title="Runs as a process on this machine, without a container's isolation"
+          >
+            host
+          </Badge>
+        )}
         <Badge tone={look.tone} dot>
           {look.label}
         </Badge>
@@ -441,6 +446,14 @@ function ProjectRow({
         {runtimeLabel(project.projectType)}
       </span>
 
+      {isHostMode(project) && (
+        <Badge
+          tone="warn"
+          title="Runs as a process on this machine, without a container's isolation"
+        >
+          host
+        </Badge>
+      )}
       <Badge tone={look.tone} dot>
         {look.label}
       </Badge>
