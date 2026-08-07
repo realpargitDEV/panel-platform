@@ -191,6 +191,12 @@ async fn run(command: &mut Command) -> Result<(), ()> {
 ///
 /// Reads the process table rather than signalling, because the signalling form
 /// of this question needs FFI on both platforms.
+///
+/// A zombie does not count. On Unix a child that has exited stays in the table
+/// until its parent reaps it, and every caller here is asking "is this thing
+/// still running", not "is there still a row for it". Counting one costs the
+/// full grace period: [`terminate_tree`] polls this until the process is gone,
+/// so a zombie root is a process that never appears to stop.
 pub fn is_alive(pid: u32) -> bool {
     let mut system = sysinfo::System::new();
     let pid = sysinfo::Pid::from_u32(pid);
@@ -199,7 +205,9 @@ pub fn is_alive(pid: u32) -> bool {
         true,
         sysinfo::ProcessRefreshKind::nothing(),
     );
-    system.process(pid).is_some()
+    system
+        .process(pid)
+        .is_some_and(|process| process.status() != sysinfo::ProcessStatus::Zombie)
 }
 
 /// Every process descended from `root`, `root` itself excluded.
