@@ -16,6 +16,9 @@ sysinfo = { version = "0.36.1", default-features = false, features = [
     "disk",
 ] }
 thiserror = "2.0.19"
+# `process` for spawning a project, `time` for the grace period a stop waits
+# out. No runtime features: this crate spawns onto whoever's runtime called it.
+tokio = { version = "1.53.1", features = ["process", "time"] }
 
 [lints]
 workspace = true
@@ -23,3 +26,4 @@ workspace = true
 [dev-dependencies]
 serde_json = "1.0.151"
 tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "process", "time"] }

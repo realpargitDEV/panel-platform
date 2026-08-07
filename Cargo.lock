@@ -4935,6 +4935,7 @@ dependencies = [
  "sysinfo 0.36.1",
  "tempfile",
  "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]
