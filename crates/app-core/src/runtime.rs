@@ -179,14 +179,26 @@ impl Runtime {
         }));
     }
 
-    /// Stop cleanly: flag the shutdown, checkpoint the WAL, close the pool.
+    /// Stop cleanly: stop host projects, flag the shutdown, checkpoint the WAL,
+    /// close the pool.
     ///
-    /// This does **not** stop project containers. Docker keeps them running
+    /// This does **not** stop project *containers*. Docker keeps them running
     /// under its own restart policy, which is what lets a bot stay online after
     /// the window is closed.
+    ///
+    /// Host projects are the opposite case and are stopped here. They are
+    /// children of this process, so they would die with it regardless; stopping
+    /// them deliberately is the difference between a clean stop with `STOPPED`
+    /// recorded and a process that vanishes leaving the database claiming it
+    /// runs. It happens before the pool closes, because it writes.
     pub async fn shutdown(mut self) {
         if let Some(refresher) = self.refresher.take() {
             refresher.abort();
+        }
+
+        let stopped = crate::lifecycle::stop_host_projects(&self.state).await;
+        if !stopped.is_empty() {
+            tracing::info!(count = stopped.len(), "stopped host projects on shutdown");
         }
 
         if let Err(error) = queries::record_clean_shutdown(self.state.database()).await {

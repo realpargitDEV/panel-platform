@@ -113,6 +113,25 @@ pub trait ProjectRunner: Send + Sync + std::fmt::Debug {
 pub(crate) mod tests {
     use super::*;
 
+    /// A Docker probe for a machine that has no Docker — which is also the
+    /// machine this is written on. `docker-manager`'s own stub is behind a
+    /// feature this crate does not enable.
+    #[derive(Debug)]
+    pub(crate) struct AbsentDocker;
+
+    #[async_trait::async_trait]
+    impl project_host_docker_manager::DockerProbe for AbsentDocker {
+        async fn probe(&self) -> project_host_docker_manager::DockerStatus {
+            project_host_docker_manager::DockerStatus::unavailable(
+                project_host_platform::DockerInstallHint {
+                    summary: "Docker is not installed.".to_string(),
+                    detail: String::new(),
+                    url: String::new(),
+                },
+            )
+        }
+    }
+
     #[derive(Debug)]
     struct Fake;
 
@@ -168,7 +187,7 @@ pub(crate) mod tests {
             image_tag: None,
             network_name: None,
             volume_name: None,
-            source_type: "LOCAL".to_string(),
+            source_type: "EMPTY".to_string(),
             directory: "projects/quiet-harbor-4f2a".to_string(),
             source_url: None,
             source_ref: None,

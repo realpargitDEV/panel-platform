@@ -37,6 +37,7 @@ use project_host_docker_manager::container_spec::{
 };
 use project_host_docker_manager::lifecycle::ContainerState;
 use project_host_docker_manager::DockerError;
+use project_host_host_runner::supervisor::{HostStatus, DEFAULT_GRACE};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LifecycleError {
@@ -256,6 +257,57 @@ pub async fn start(app: &AppState, project_id: &str) -> Result<String, Lifecycle
     record(db, project_id, outcome).await
 }
 
+/// Stop every host project this process is running, and record that it stopped.
+///
+/// Called on the way out. Docker projects are deliberately untouched: the daemon
+/// outlives this application and keeps them running under their own restart
+/// policy. A host project has no such daemon — it is a child of this process —
+/// so quitting stops it.
+///
+/// **`desired_state` is left alone.** A project stopped because the application
+/// is quitting still *wants* to be running, and the honest row for that is
+/// `desired_state = RUNNING` beside `status = STOPPED`. That pair is also
+/// exactly what a "start these again" prompt on the next launch needs to find,
+/// which is why no separate list is written.
+///
+/// Answers with the ids that were running, for the quit dialog to report.
+pub async fn stop_host_projects(app: &AppState) -> Vec<String> {
+    let registry = app.host_projects();
+    let mut stopped = Vec::new();
+
+    for (project_id, handle) in registry.all().await {
+        if handle.observe().status != HostStatus::Running {
+            continue;
+        }
+
+        if let Err(error) = handle.stop(DEFAULT_GRACE).await {
+            // Report and carry on. One project that will not die must not
+            // prevent the other fourteen from being stopped, and must not
+            // prevent the database from being closed cleanly.
+            tracing::warn!(%project_id, %error, "could not stop a host project on shutdown");
+        }
+
+        // Written from what happened, like every other status write. The
+        // process is gone whether or not the stop reported cleanly.
+        if let Err(error) =
+            projects::record_stopped(app.database(), &project_id, Some(0), None).await
+        {
+            tracing::warn!(%project_id, %error, "could not record a host project as stopped");
+        }
+        stopped.push(project_id);
+    }
+
+    stopped
+}
+
+/// How many host projects would stop if the application quit now.
+///
+/// What the quit dialog counts. Separate from [`stop_host_projects`] because it
+/// is asked before the user has decided, and must change nothing.
+pub async fn host_projects_running(app: &AppState) -> usize {
+    app.host_projects().running().await
+}
+
 /// Write what a runner observed, and answer with the status word.
 ///
 /// The single place a lifecycle outcome becomes a row. Both substrates go
@@ -342,6 +394,178 @@ pub async fn restart(app: &AppState, project_id: &str) -> Result<String, Lifecyc
         .await;
 
     record(db, project_id, outcome).await
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use project_host_api_types::{ProjectType, RunMode};
+    use project_host_database::projects::NewProject;
+
+    /// An `AppState` backed by an in-memory database and a Docker daemon that
+    /// is not there — which is also the state of the machine this is written on.
+    async fn test_state() -> AppState {
+        let database = project_host_database::Database::open_in_memory()
+            .await
+            .expect("in-memory database");
+
+        AppState::new(
+            crate::config::AppConfig::default(),
+            database,
+            std::sync::Arc::new(crate::runner::tests::AbsentDocker),
+            project_host_docker_manager::DockerStatus::unavailable(
+                project_host_platform::DockerInstallHint {
+                    summary: "Docker is not installed.".to_string(),
+                    detail: String::new(),
+                    url: String::new(),
+                },
+            ),
+            project_host_compatibility::Assessment {
+                tier: project_host_compatibility::PerformanceTier::Standard,
+                defaults: project_host_compatibility::ResourceDefaults {
+                    memory_limit_mb: 512,
+                    cpu_limit_cores: 1.0,
+                    process_limit: 128,
+                },
+            },
+            crate::state::Identity {
+                instance_id: "test".to_string(),
+                app_version: "0.0.0-test".to_string(),
+                schema_version: 5,
+                started_at_wall: project_host_database::time::now(),
+            },
+        )
+    }
+
+    async fn a_host_project(app: &AppState, slug: &str) -> String {
+        let project = projects::create_project(
+            app.database(),
+            &NewProject {
+                slug: slug.to_string(),
+                display_name: slug.to_string(),
+                description: String::new(),
+                project_type: ProjectType::Service,
+                icon: None,
+                color: None,
+                source_type: "EMPTY".to_string(),
+                directory: format!("projects/{slug}"),
+                source_url: None,
+                source_ref: None,
+                source_commit: None,
+                container_name: format!("ph-{slug}"),
+                network_name: format!("ph-{slug}-net"),
+                volume_name: format!("ph-{slug}-data"),
+                autostart: false,
+                restart_policy: "NO".to_string(),
+                network_mode: "INTERNET".to_string(),
+                memory_limit_mb: 512,
+                cpu_limit_cores: 1.0,
+                storage_limit_mb: 1024,
+                process_limit: 128,
+                runtime: project_host_database::projects::RuntimeSpec {
+                    runtime: "NODEJS".to_string(),
+                    runtime_version: "latest".to_string(),
+                    package_manager: "NPM".to_string(),
+                    install_command: None,
+                    build_command: None,
+                    start_command: "node index.js".to_string(),
+                    working_dir: "/app".to_string(),
+                    entry_file: None,
+                    publish_dir: None,
+                    template_id: "node".to_string(),
+                    health_check_type: "NONE".to_string(),
+                    health_check_target: None,
+                    health_interval_s: 30,
+                    health_timeout_s: 5,
+                    health_retries: 3,
+                    health_start_period_s: 10,
+                },
+                ports: Vec::new(),
+            },
+        )
+        .await
+        .expect("create");
+
+        projects::set_run_mode(app.database(), &project.id, RunMode::Host)
+            .await
+            .expect("host mode");
+        project.id
+    }
+
+    /// Nothing running is not a failure, and must not stop the database from
+    /// being closed cleanly.
+    #[tokio::test]
+    async fn shutting_down_with_nothing_running_does_nothing() {
+        let app = test_state().await;
+        assert!(stop_host_projects(&app).await.is_empty());
+        assert_eq!(host_projects_running(&app).await, 0);
+    }
+
+    /// The property the whole path exists for: a host project that was running
+    /// is recorded as stopped, so the next launch does not open onto an
+    /// interface claiming it runs.
+    #[tokio::test]
+    async fn quitting_stops_host_projects_and_records_it() {
+        let app = test_state().await;
+        let project_id = a_host_project(&app, "quiet-harbor-4f2a").await;
+
+        // Start something long-running directly through the supervisor, which
+        // is what HostRunner would have registered.
+        let directory = tempfile::tempdir().expect("temp dir");
+        #[cfg(windows)]
+        let command = project_host_host_runner::ProcessCommand {
+            program: "cmd".to_string(),
+            args: vec!["/C".to_string(), "ping -n 60 127.0.0.1 >NUL".to_string()],
+            cwd: directory.path().to_path_buf(),
+            env: Default::default(),
+        };
+        #[cfg(unix)]
+        let command = project_host_host_runner::ProcessCommand {
+            program: "sh".to_string(),
+            args: vec!["-c".to_string(), "sleep 60".to_string()],
+            cwd: directory.path().to_path_buf(),
+            env: Default::default(),
+        };
+
+        let handle =
+            project_host_host_runner::start(project_host_host_runner::SupervisorConfig::new(
+                command,
+                directory.path().join("run.log"),
+            ))
+            .await
+            .expect("start");
+
+        app.host_projects()
+            .insert_for_test(&project_id, handle.clone())
+            .await;
+
+        assert_eq!(host_projects_running(&app).await, 1);
+
+        // Mark it as running and wanted, the way a real start would have.
+        projects::set_desired_state(app.database(), &project_id, DesiredState::Running)
+            .await
+            .expect("desired");
+        projects::set_status(app.database(), &project_id, ProjectStatus::Running, None)
+            .await
+            .expect("status");
+
+        let stopped = stop_host_projects(&app).await;
+        assert_eq!(stopped, vec![project_id.clone()]);
+
+        let project = projects::find_project(app.database(), &project_id)
+            .await
+            .expect("query")
+            .expect("row");
+        assert_eq!(project.status, ProjectStatus::Stopped.as_str());
+
+        // Still *wanted* running. That pair — wanted running, observed stopped
+        // — is what a "start these again" prompt on the next launch reads.
+        assert_eq!(project.desired_state, "RUNNING");
+
+        assert!(!project_host_platform::is_alive(
+            handle.pid().unwrap_or(u32::MAX)
+        ));
+    }
 }
 
 #[cfg(test)]

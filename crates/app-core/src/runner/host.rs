@@ -55,6 +55,16 @@ impl HostRegistry {
         self.0.write().await.insert(project_id.to_string(), handle);
     }
 
+    /// Register a handle without going through a start.
+    ///
+    /// Only for tests that need a registry with something in it: constructing a
+    /// real `HostRunner::start` would need a project whose toolchain is actually
+    /// installed on whatever machine is running the suite.
+    #[cfg(test)]
+    pub async fn insert_for_test(&self, project_id: &str, handle: SupervisorHandle) {
+        self.insert(project_id, handle).await;
+    }
+
     async fn get(&self, project_id: &str) -> Option<SupervisorHandle> {
         self.0.read().await.get(project_id).cloned()
     }

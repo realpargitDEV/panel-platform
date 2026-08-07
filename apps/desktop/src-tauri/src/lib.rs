@@ -832,6 +832,17 @@ async fn restart_project(
         .map_err(CommandError::from)
 }
 
+/// How many host projects would stop if the window were closed now.
+///
+/// Docker projects are not counted: they outlive this application. The number
+/// exists so the quit dialog can say what quitting costs, rather than making
+/// the user discover it afterwards.
+#[tauri::command]
+async fn host_projects_running(state: tauri::State<'_, AppState>) -> CommandResult<usize> {
+    let app: &AppState = &state;
+    Ok(project_host_core::lifecycle::host_projects_running(app).await)
+}
+
 #[tauri::command]
 async fn kill_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
@@ -2420,6 +2431,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             stop_project,
             restart_project,
             kill_project,
+            host_projects_running,
             app_settings,
             check_for_update,
             install_update,
@@ -2455,9 +2467,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())?
         .run(move |app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                // Close the database cleanly, so the next start does not have to
-                // run recovery. Project containers are untouched: Docker keeps
-                // them running under their own restart policy.
+                // Stop host projects and close the database cleanly, so the next
+                // start does not have to run recovery. Project *containers* are
+                // untouched: Docker keeps them running under their own restart
+                // policy. Host projects are children of this process and would
+                // die with it regardless — stopping them deliberately is what
+                // gets STOPPED recorded instead of a row claiming they run.
                 let _ = shutdown_tx.send_replace(true);
                 if let Some(runtime) = runtime.blocking_lock().take() {
                     app.state::<AppState>();
