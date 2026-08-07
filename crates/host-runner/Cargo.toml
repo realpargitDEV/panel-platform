@@ -12,7 +12,14 @@ repository.workspace = true
 # those live in `platform` and nowhere else.
 project-host-platform = { version = "0.1.0", path = "../platform" }
 thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["process", "io-util", "fs", "sync", "time"] }
+tokio = { version = "1.53.1", features = [
+    "process",
+    "io-util",
+    "fs",
+    "sync",
+    "time",
+    "net",
+] }
 tracing = "0.1.44"
 
 [lints]
@@ -28,4 +35,5 @@ tokio = { version = "1.53.1", features = [
     "fs",
     "sync",
     "time",
+    "net",
 ] }

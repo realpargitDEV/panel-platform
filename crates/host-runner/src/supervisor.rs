@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use crate::command::ProcessCommand;
+use crate::health::{Check, Health};
 use crate::output::{pump, Tail};
 
 /// How long a freshly spawned process is watched before it is called started.
@@ -28,6 +29,60 @@ const SETTLE: Duration = Duration::from_millis(600);
 
 /// How long a stop waits before it stops asking.
 pub const DEFAULT_GRACE: Duration = Duration::from_secs(10);
+
+/// How many times a crashed project is restarted before it is left alone.
+///
+/// A project that cannot start does not start no matter how often it is asked.
+/// Past this point the restarts are noise in the log and load on the machine,
+/// and the status the user needs to see is `FAILED` with the last output.
+pub const MAX_RESTARTS: u32 = 5;
+
+/// The first backoff, doubled per attempt: 1s, 2s, 4s, 8s, 16s.
+const FIRST_BACKOFF: Duration = Duration::from_secs(1);
+
+/// What to run, where to log it, and what to do while it runs.
+#[derive(Debug, Clone)]
+pub struct SupervisorConfig {
+    pub command: ProcessCommand,
+    pub log_path: PathBuf,
+    /// `None` means no health check is configured, which is not the same as one
+    /// that never passes.
+    pub health: Option<HealthPolicy>,
+    /// Whether a crash is followed by another attempt.
+    pub restart_on_crash: bool,
+    /// The first backoff, doubled per attempt.
+    ///
+    /// Configurable only so the restart cap can be tested. Exercising five
+    /// attempts at the real backoff costs thirty-one seconds, which is the kind
+    /// of test that gets deleted rather than run — and the cap is the behaviour
+    /// most worth pinning, because without it a project that cannot start
+    /// becomes a machine that cannot idle.
+    pub backoff: Duration,
+}
+
+impl SupervisorConfig {
+    /// The plain case: run it, log it, ask nothing, restart nothing.
+    pub fn new(command: ProcessCommand, log_path: PathBuf) -> Self {
+        Self {
+            command,
+            log_path,
+            health: None,
+            restart_on_crash: false,
+            backoff: FIRST_BACKOFF,
+        }
+    }
+}
+
+/// How often to ask a project whether it is working, and how long to wait
+/// before starting to ask.
+#[derive(Debug, Clone)]
+pub struct HealthPolicy {
+    pub check: Check,
+    pub interval: Duration,
+    /// Grace at the beginning. A project that takes ten seconds to bind its
+    /// port is not unhealthy for those ten seconds; it is starting.
+    pub start_period: Duration,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostStatus {
@@ -45,9 +100,11 @@ pub enum HostStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostObserved {
     pub status: HostStatus,
+    pub health: Health,
     pub pid: Option<u32>,
     pub exit_code: Option<i64>,
     pub failure_reason: Option<String>,
+    pub restarts: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -82,14 +139,17 @@ pub enum HostError {
 #[derive(Debug)]
 struct Shared {
     status: HostStatus,
+    health: Health,
     pid: Option<u32>,
     exit_code: Option<i64>,
     failure_reason: Option<String>,
-    /// Set when a stop was asked for, so the waiter can tell a requested exit
-    /// from a crash. Without it, every clean stop would be recorded as a
+    /// Set when a stop was asked for, so the supervisor can tell a requested
+    /// exit from a crash. Without it, every clean stop would be recorded as a
     /// failure the moment the exit code was non-zero — which on Windows it is,
     /// because the process was force-killed.
     stopping: bool,
+    /// How many times this project has been restarted after crashing.
+    restarts: u32,
 }
 
 /// A handle to one running project.
@@ -111,9 +171,11 @@ impl SupervisorHandle {
         let state = self.state();
         HostObserved {
             status: state.status,
+            health: state.health.clone(),
             pid: state.pid,
             exit_code: state.exit_code,
             failure_reason: state.failure_reason.clone(),
+            restarts: state.restarts,
         }
     }
 
@@ -161,22 +223,25 @@ impl SupervisorHandle {
 /// Returns once the process has been watched for [`SETTLE`] without dying. A
 /// process that exits within that window with a non-zero code is a failed start
 /// reported with its own output, not a project that briefly ran.
-pub async fn start(
-    command: ProcessCommand,
-    log_path: PathBuf,
-) -> Result<SupervisorHandle, HostError> {
-    let program = command.program.clone();
-    let mut child = spawn(&command)?;
+pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostError> {
+    let program = config.command.program.clone();
+    let mut child = spawn(&config.command)?;
 
     let pid = child.id();
-    let tail = pump(child.stdout.take(), child.stderr.take(), log_path);
+    let tail = pump(
+        child.stdout.take(),
+        child.stderr.take(),
+        config.log_path.clone(),
+    );
 
     let shared = Arc::new(Mutex::new(Shared {
         status: HostStatus::Running,
+        health: Health::None,
         pid,
         exit_code: None,
         failure_reason: None,
         stopping: false,
+        restarts: 0,
     }));
 
     let handle = SupervisorHandle {
@@ -184,32 +249,10 @@ pub async fn start(
         tail: tail.clone(),
     };
 
-    // The waiter owns the child from here. Nothing else may wait on it: two
-    // waiters means one of them gets "no such child" and reports a healthy
-    // project as vanished.
-    let waiter_tail = tail.clone();
-    tokio::spawn(async move {
-        let status = child.wait().await;
-        let mut state = shared
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        let code = status.as_ref().ok().and_then(|status| status.code());
-        state.exit_code = code.map(i64::from);
-        state.pid = None;
-
-        if state.stopping {
-            // Asked to stop, and it stopped. On Windows this arrives as a
-            // non-zero code because the tree was force-killed, which is not a
-            // failure and must not be recorded as one.
-            state.status = HostStatus::Stopped;
-        } else if code == Some(0) {
-            state.status = HostStatus::Stopped;
-        } else {
-            state.status = HostStatus::Failed;
-            state.failure_reason = waiter_tail.text();
-        }
-    });
+    // The supervision task owns the child from here. Nothing else may wait on
+    // it: two waiters means one of them gets "no such child" and reports a
+    // healthy project as vanished.
+    tokio::spawn(supervise(shared, config, tail.clone(), child));
 
     // Watch the settle window, checking often enough that a healthy start is
     // not delayed by the full period for no reason.
@@ -232,6 +275,157 @@ pub async fn start(
     }
 
     Ok(handle)
+}
+
+/// Own one project for as long as it runs.
+///
+/// Three things happen here and nowhere else: the child is waited on, its health
+/// is polled, and a crash is followed by another attempt. They share a task
+/// because they share the child — a health poller in a separate task would have
+/// to be told, race-free, each time the child was replaced by a restart.
+async fn supervise(
+    shared: Arc<Mutex<Shared>>,
+    config: SupervisorConfig,
+    tail: Tail,
+    mut child: tokio::process::Child,
+) {
+    let mut attempt: u32 = 0;
+
+    loop {
+        let exit = wait_while_polling_health(&shared, &config, &mut child).await;
+        let code = exit.ok().and_then(|status| status.code()).map(i64::from);
+
+        {
+            let mut state = lock(&shared);
+            state.exit_code = code;
+            state.pid = None;
+            state.health = Health::None;
+
+            if state.stopping {
+                // Asked to stop, and it stopped. On Windows this arrives as a
+                // non-zero code because the tree was force-killed, which is not
+                // a failure and must not be recorded as one.
+                state.status = HostStatus::Stopped;
+                return;
+            }
+            if code == Some(0) {
+                state.status = HostStatus::Stopped;
+                return;
+            }
+
+            state.status = HostStatus::Failed;
+            state.failure_reason = tail.text();
+
+            if !config.restart_on_crash {
+                return;
+            }
+            if attempt >= MAX_RESTARTS {
+                // Give up, and say so in the reason rather than leaving the
+                // user to infer it from a restart count that stopped moving.
+                state.failure_reason = Some(format!(
+                    "gave up after {MAX_RESTARTS} restarts\n{}",
+                    tail.text().unwrap_or_default()
+                ));
+                return;
+            }
+        }
+
+        // Backoff, doubling. `saturating_mul` rather than a shift, so a future
+        // larger cap cannot overflow the duration.
+        let backoff = config.backoff.saturating_mul(1u32 << attempt.min(16));
+        if !sleep_unless_stopping(&shared, backoff).await {
+            lock(&shared).status = HostStatus::Stopped;
+            return;
+        }
+
+        attempt = attempt.saturating_add(1);
+
+        match spawn(&config.command) {
+            Ok(mut replacement) => {
+                let pid = replacement.id();
+                // A fresh pump per attempt: the previous child's pipes are
+                // closed, and its pump task has already ended.
+                pump(
+                    replacement.stdout.take(),
+                    replacement.stderr.take(),
+                    config.log_path.clone(),
+                );
+                let mut state = lock(&shared);
+                state.status = HostStatus::Running;
+                state.pid = pid;
+                state.exit_code = None;
+                state.failure_reason = None;
+                state.restarts = attempt;
+                drop(state);
+                child = replacement;
+            }
+            Err(error) => {
+                // The program vanished between attempts — uninstalled, or the
+                // directory was removed. Another attempt would fail the same
+                // way.
+                let mut state = lock(&shared);
+                state.status = HostStatus::Failed;
+                state.failure_reason = Some(error.to_string());
+                return;
+            }
+        }
+    }
+}
+
+/// Wait for the child, asking after its health while waiting.
+///
+/// `Child::wait` is cancel-safe, which is what makes it usable as a `select!`
+/// branch: a health tick that fires first does not lose the wait.
+async fn wait_while_polling_health(
+    shared: &Arc<Mutex<Shared>>,
+    config: &SupervisorConfig,
+    child: &mut tokio::process::Child,
+) -> std::io::Result<std::process::ExitStatus> {
+    let Some(policy) = config.health.as_ref() else {
+        return child.wait().await;
+    };
+
+    let started = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval_at(
+        started + policy.start_period.max(Duration::from_millis(1)),
+        policy.interval.max(Duration::from_millis(100)),
+    );
+
+    loop {
+        tokio::select! {
+            status = child.wait() => return status,
+            _ = ticker.tick() => {
+                let health = crate::health::check(&policy.check).await;
+                let mut state = lock(shared);
+                // Only while it is up. A check that completed just as the
+                // process exited must not overwrite the exit with a verdict
+                // about a process that is no longer there.
+                if state.status == HostStatus::Running {
+                    state.health = health;
+                }
+            }
+        }
+    }
+}
+
+/// Sleep, unless a stop is requested first. `false` means a stop was requested.
+async fn sleep_unless_stopping(shared: &Arc<Mutex<Shared>>, total: Duration) -> bool {
+    let deadline = std::time::Instant::now() + total;
+    while std::time::Instant::now() < deadline {
+        if lock(shared).stopping {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    !lock(shared).stopping
+}
+
+/// Lock, recovering from poisoning. A panicked supervision task must not make
+/// every subsequent read of a project's state panic too.
+fn lock(shared: &Arc<Mutex<Shared>>) -> MutexGuard<'_, Shared> {
+    shared
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Run a command to completion — an install or a build step.
@@ -330,10 +524,10 @@ mod tests {
     #[tokio::test]
     async fn a_project_that_starts_is_observed_running() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let handle = start(
+        let handle = start(SupervisorConfig::new(
             long_running(directory.path()),
             directory.path().join("run.log"),
-        )
+        ))
         .await
         .expect("start");
 
@@ -364,9 +558,12 @@ mod tests {
             directory.path(),
         );
 
-        let error = start(dying, directory.path().join("run.log"))
-            .await
-            .expect_err("a project that exits 1 immediately has not started");
+        let error = start(SupervisorConfig::new(
+            dying,
+            directory.path().join("run.log"),
+        ))
+        .await
+        .expect_err("a project that exits 1 immediately has not started");
 
         match error {
             HostError::ExitedImmediately { code, tail, .. } => {
@@ -383,10 +580,10 @@ mod tests {
     #[tokio::test]
     async fn a_program_that_does_not_exist_names_itself() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let error = start(
+        let error = start(SupervisorConfig::new(
             command("definitely-not-a-real-program", &[], directory.path()),
             directory.path().join("run.log"),
-        )
+        ))
         .await
         .expect_err("nothing to spawn");
 
@@ -403,10 +600,10 @@ mod tests {
     #[tokio::test]
     async fn stopping_a_project_records_it_stopped_rather_than_failed() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let handle = start(
+        let handle = start(SupervisorConfig::new(
             long_running(directory.path()),
             directory.path().join("run.log"),
-        )
+        ))
         .await
         .expect("start");
 
@@ -472,15 +669,220 @@ mod tests {
             .expect("exit 0 is success");
     }
 
+    /// A command that runs briefly and then crashes, so the supervisor has
+    /// something to keep restarting. It survives the settle window first, so
+    /// the start succeeds and the crash is a crash rather than a failed start.
+    fn crashes_after_a_moment(cwd: &std::path::Path) -> ProcessCommand {
+        #[cfg(windows)]
+        return command("cmd", &["/C", "ping -n 2 127.0.0.1 >NUL && exit 9"], cwd);
+        #[cfg(unix)]
+        return command("sh", &["-c", "sleep 1; exit 9"], cwd);
+    }
+
+    /// Without a restart policy, a crash is simply a crash.
+    #[tokio::test]
+    async fn a_crash_is_not_restarted_unless_asked() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let handle = start(SupervisorConfig::new(
+            crashes_after_a_moment(directory.path()),
+            directory.path().join("run.log"),
+        ))
+        .await
+        .expect("start");
+
+        wait_until(&handle, |observed| observed.status != HostStatus::Running).await;
+
+        let observed = handle.observe();
+        assert_eq!(observed.status, HostStatus::Failed);
+        assert_eq!(observed.exit_code, Some(9));
+        assert_eq!(observed.restarts, 0, "nothing asked for a restart");
+    }
+
+    /// A program that dies instantly never reaches the restart loop at all: it
+    /// fails inside the settle window, so the *start* fails. Enabling restarts
+    /// must not change that — a project that was never up has nothing to
+    /// restart.
+    #[tokio::test]
+    async fn a_program_that_exits_at_once_fails_the_start_even_with_restarts_on() {
+        let directory = tempfile::tempdir().expect("temp dir");
+
+        #[cfg(windows)]
+        let always_fails = command("cmd", &["/C", "exit 4"], directory.path());
+        #[cfg(unix)]
+        let always_fails = command("sh", &["-c", "exit 4"], directory.path());
+
+        let error = start(SupervisorConfig {
+            restart_on_crash: true,
+            ..SupervisorConfig::new(always_fails, directory.path().join("run.log"))
+        })
+        .await
+        .expect_err("a program that exits at once has not started");
+
+        assert!(matches!(
+            error,
+            HostError::ExitedImmediately { code: 4, .. }
+        ));
+    }
+
+    /// The cap is the behaviour most worth pinning: without it, a project that
+    /// crashes on a loop keeps a core busy respawning it forever.
+    ///
+    /// Run at a 10ms backoff rather than the real 1s, so five attempts take a
+    /// moment instead of thirty-one seconds.
+    #[tokio::test]
+    async fn a_project_that_keeps_crashing_is_given_up_on_after_the_cap() {
+        let directory = tempfile::tempdir().expect("temp dir");
+
+        let handle = start(SupervisorConfig {
+            restart_on_crash: true,
+            backoff: Duration::from_millis(10),
+            ..SupervisorConfig::new(
+                crashes_after_a_moment(directory.path()),
+                directory.path().join("run.log"),
+            )
+        })
+        .await
+        .expect("start");
+
+        let gave_up = wait_until(&handle, |observed| {
+            observed.status == HostStatus::Failed && observed.restarts >= MAX_RESTARTS
+        })
+        .await;
+        assert!(gave_up, "the supervisor never reached the cap");
+
+        // Nothing further happens: the count stops moving.
+        let at_cap = handle.observe().restarts;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let observed = handle.observe();
+        assert_eq!(
+            observed.restarts, at_cap,
+            "it kept restarting after giving up"
+        );
+        assert_eq!(observed.status, HostStatus::Failed);
+        assert!(
+            observed
+                .failure_reason
+                .unwrap_or_default()
+                .contains("gave up"),
+            "giving up has to say so, not just stop"
+        );
+    }
+
+    /// A project that survives its start and then crashes is restarted, and the
+    /// restart is counted.
+    #[tokio::test]
+    async fn a_crash_after_a_good_start_is_restarted_and_counted() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let handle = start(SupervisorConfig {
+            restart_on_crash: true,
+            ..SupervisorConfig::new(
+                crashes_after_a_moment(directory.path()),
+                directory.path().join("run.log"),
+            )
+        })
+        .await
+        .expect("start");
+
+        // First crash, then the 1s backoff, then a fresh attempt.
+        wait_until(&handle, |observed| observed.restarts >= 1).await;
+
+        assert!(
+            handle.observe().restarts >= 1,
+            "the crash should have been followed by another attempt"
+        );
+
+        handle.kill().await.expect("kill");
+    }
+
+    /// A stop during the backoff must not be followed by another attempt: the
+    /// user asked for it to be off.
+    #[tokio::test]
+    async fn stopping_during_the_backoff_ends_the_restart_loop() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let handle = start(SupervisorConfig {
+            restart_on_crash: true,
+            ..SupervisorConfig::new(
+                crashes_after_a_moment(directory.path()),
+                directory.path().join("run.log"),
+            )
+        })
+        .await
+        .expect("start");
+
+        // Wait for the crash, which puts the supervisor into its backoff.
+        wait_until(&handle, |observed| observed.status == HostStatus::Failed).await;
+
+        handle.kill().await.expect("kill");
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let observed = handle.observe();
+        assert_eq!(
+            observed.restarts, 0,
+            "a stop during the backoff must not be followed by a restart"
+        );
+        assert_eq!(observed.status, HostStatus::Stopped);
+    }
+
+    /// Health is polled while the project runs, and reaches `observe`.
+    #[tokio::test]
+    async fn a_running_project_has_its_health_polled() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+
+        let directory = tempfile::tempdir().expect("temp dir");
+        let handle = start(SupervisorConfig {
+            health: Some(HealthPolicy {
+                check: Check::resolved("TCP", Some(&port.to_string()), 2, None),
+                interval: Duration::from_millis(200),
+                start_period: Duration::from_millis(100),
+            }),
+            ..SupervisorConfig::new(
+                long_running(directory.path()),
+                directory.path().join("run.log"),
+            )
+        })
+        .await
+        .expect("start");
+
+        wait_until(&handle, |observed| observed.health == Health::Passing).await;
+        assert_eq!(handle.observe().health, Health::Passing);
+
+        // Take the listener away and the next poll should say so.
+        drop(listener);
+        wait_until(&handle, |observed| {
+            matches!(observed.health, Health::Failing(_))
+        })
+        .await;
+        assert!(matches!(handle.observe().health, Health::Failing(_)));
+
+        handle.kill().await.expect("kill");
+    }
+
+    /// Poll until the predicate holds, or give up after a bounded wait.
+    async fn wait_until(
+        handle: &SupervisorHandle,
+        predicate: impl Fn(&HostObserved) -> bool,
+    ) -> bool {
+        for _ in 0..300 {
+            if predicate(&handle.observe()) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
     /// Stopping something that has already gone is the state the caller asked
     /// for, not an error to report.
     #[tokio::test]
     async fn stopping_a_project_twice_is_success() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let handle = start(
+        let handle = start(SupervisorConfig::new(
             long_running(directory.path()),
             directory.path().join("run.log"),
-        )
+        ))
         .await
         .expect("start");
 
