@@ -64,25 +64,66 @@ jobs:
           free -m
           df -h /
 
-      - name: Serial app-core tests, with the machine sampled throughout
+      # Which `kill` gets run, and what it thinks a negative pid means. The
+      # whole Unix strategy rests on `-<pid>` addressing a process group.
+      - name: Which kill is this
+        run: |
+          echo "PATH kill: $(command -v kill)"
+          /usr/bin/kill --version 2>&1 | head -2 || true
+
+      # Round one: the platform crate signals a process tree, and its own tests
+      # spawn a nested sleeper and kill it. If the runner dies here, the defect
+      # is in `platform::process` alone and nothing above it is implicated.
+      #
+      # The sampler ticks four times a second because the previous run's
+      # two-second tick never saw the child at all: it lived 0.6s. Its `pgid`
+      # column is the fact the whole diagnosis turns on. If pgid == the child's
+      # own pid, `process_group(0)` worked and a group kill was safe; if pgid is
+      # 1818, the child never left the runner's group and signalling `-<pid>`
+      # was aimed at whatever else happens to carry that id.
+      - name: Round 1 — the platform crate's own tree-kill tests
         run: |
           (
             while true; do
-              mem=$(free -m | awk '/^Mem:/{print $3"/"$2"MB used, "$7"MB avail"}')
-              swap=$(free -m | awk '/^Swap:/{print $3"/"$2"MB"}')
-              echo "[SAMPLE $(date +%T)] mem: $mem | swap: $swap | load: $(cut -d' ' -f1-3 /proc/loadavg) | procs: $(ps -e --no-headers | wc -l) | root: $(df -h / | awk 'NR==2{print $4}') free"
-              # Anything the supervisor spawned, with its group, so a stray
-              # group id is visible before it is signalled rather than after.
-              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"||$4=="ping"{print "[PROC] "$0}'
+              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"||$4=="ping"||$4=="cmd"{print "[PROC] pid="$1" pgid="$2" ppid="$3" "$4}'
+              sleep 0.25
+            done
+          ) &
+          sampler=$!
+
+          (
+            while true; do
+              echo "[SAMPLE $(date +%T)] mem: $(free -m | awk '/^Mem:/{print $7"MB avail"}') | procs: $(ps -e --no-headers | wc -l)"
               sleep 2
+            done
+          ) &
+          slow=$!
+
+          set +e
+          RUST_BACKTRACE=1 RUST_LOG=warn \
+            cargo test -p project-host-platform -- --test-threads=1 --nocapture
+          echo "[EXIT] platform tests exited $?"
+          set -e
+
+          kill $sampler $slow 2>/dev/null || true
+
+      # Round two: only the test that was in flight when the runner died. Runs
+      # last because it is the one expected to be fatal — everything above it
+      # has to have reported first.
+      - name: Round 2 — only the test that was running when the runner died
+        run: |
+          (
+            while true; do
+              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"{print "[PROC] pid="$1" pgid="$2" ppid="$3" "$4}'
+              sleep 0.25
             done
           ) &
           sampler=$!
 
           set +e
           RUST_BACKTRACE=1 RUST_LOG=warn \
-            cargo test -p project-host-core -- --test-threads=1 --nocapture
-          echo "[EXIT] cargo test exited $?"
+            cargo test -p project-host-core quitting_stops_host_projects -- --test-threads=1 --nocapture
+          echo "[EXIT] app-core test exited $?"
           set -e
 
           kill $sampler 2>/dev/null || true
