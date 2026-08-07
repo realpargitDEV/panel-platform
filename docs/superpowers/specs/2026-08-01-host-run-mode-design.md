@@ -2,8 +2,25 @@
 
 Date: 2026-08-01
 Status: implemented, 2026-08-07 — except §14 (resource limits) and the
-`STATIC` stage. Verified on Windows only; no Docker, WSL or Linux was
-available, so every Docker path and every Unix path remains unproven.
+`STATIC` stage. Developed on Windows; no Docker, WSL or Linux was available
+here, so every Docker path remains unproven.
+
+The Unix paths are no longer unproven, and they were wrong. CI on
+ubuntu-22.04 found two defects in `platform::process` that no amount of
+Windows testing could have shown:
+
+- Ending a tree signalled a **negated pid**, which addresses a process
+  group rather than a process. It did not go where the number said: the
+  target survived and the caller was signalled, killing the CI runner
+  outright. Trees are now ended by naming every pid, which cannot address
+  a group at all.
+- `is_alive` counted a **zombie** as running. On Unix an exited child keeps
+  its row until it is reaped, so a process that stopped on time looked as
+  though it never stopped, and `terminate_tree` spent the whole grace
+  period waiting for it.
+
+Both are fixed and both platforms are green. The lesson is worth keeping:
+"unproven" was doing more work in this document than it looked like.
 
 §14 will not land as written: a Windows memory cap needs a Job Object,
 which needs `unsafe`, which the workspace forbids. Host projects are
