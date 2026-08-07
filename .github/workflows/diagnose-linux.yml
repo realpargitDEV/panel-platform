@@ -33,6 +33,12 @@ on:
 jobs:
   diagnose:
     runs-on: ubuntu-22.04
+    # A diagnostic that hangs teaches nothing and bills for six hours. The
+    # previous attempt sat for half an hour: a `while true` sampler in the
+    # background holds the step's stdout open, so the step cannot end even
+    # once the tests have finished. Every sampler below is bounded, every
+    # test run is under `timeout`, and the job is capped.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -81,39 +87,40 @@ jobs:
       # own pid, `process_group(0)` worked and a group kill was safe; if pgid is
       # 1818, the child never left the runner's group and signalling `-<pid>`
       # was aimed at whatever else happens to carry that id.
+      # Built first, and separately, so the compile does not run inside the
+      # timeout that guards the tests themselves.
+      - name: Build the test binaries
+        run: cargo test --no-run -p project-host-platform -p project-host-core
+
       - name: Round 1 — the platform crate's own tree-kill tests
+        timeout-minutes: 8
         run: |
           (
-            while true; do
-              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"||$4=="ping"||$4=="cmd"{print "[PROC] pid="$1" pgid="$2" ppid="$3" "$4}'
+            for _ in $(seq 1 1200); do
+              ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"||$4=="ping"{print "[PROC] pid="$1" pgid="$2" ppid="$3" "$4}'
               sleep 0.25
             done
           ) &
           sampler=$!
 
-          (
-            while true; do
-              echo "[SAMPLE $(date +%T)] mem: $(free -m | awk '/^Mem:/{print $7"MB avail"}') | procs: $(ps -e --no-headers | wc -l)"
-              sleep 2
-            done
-          ) &
-          slow=$!
-
           set +e
           RUST_BACKTRACE=1 RUST_LOG=warn \
-            cargo test -p project-host-platform -- --test-threads=1 --nocapture
+            timeout 240 cargo test -p project-host-platform -- --test-threads=1 --nocapture
           echo "[EXIT] platform tests exited $?"
           set -e
 
-          kill $sampler $slow 2>/dev/null || true
+          kill $sampler 2>/dev/null || true
+          wait $sampler 2>/dev/null || true
 
       # Round two: only the test that was in flight when the runner died. Runs
       # last because it is the one expected to be fatal — everything above it
       # has to have reported first.
       - name: Round 2 — only the test that was running when the runner died
+        if: always()
+        timeout-minutes: 8
         run: |
           (
-            while true; do
+            for _ in $(seq 1 1200); do
               ps -eo pid,pgid,ppid,comm | awk '$4=="sh"||$4=="sleep"{print "[PROC] pid="$1" pgid="$2" ppid="$3" "$4}'
               sleep 0.25
             done
@@ -122,11 +129,12 @@ jobs:
 
           set +e
           RUST_BACKTRACE=1 RUST_LOG=warn \
-            cargo test -p project-host-core quitting_stops_host_projects -- --test-threads=1 --nocapture
+            timeout 240 cargo test -p project-host-core quitting_stops_host_projects -- --test-threads=1 --nocapture
           echo "[EXIT] app-core test exited $?"
           set -e
 
           kill $sampler 2>/dev/null || true
+          wait $sampler 2>/dev/null || true
 
       - name: What the machine looked like afterwards
         if: always()
