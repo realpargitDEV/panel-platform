@@ -180,7 +180,7 @@ Its own `memory_limit_mb`, the column that already exists and that
 `ResourceDefaults` seeds from the machine tier. For a Docker project this is
 also what the daemon will enforce, so it is exact. For a host project it is an
 estimate and is labelled as one in the interface: the number is what the project
-is *allowed* under Docker and *expected* to use on the host.
+is _allowed_ under Docker and _expected_ to use on the host.
 
 Once a host project has run, its observed peak is recorded and used in place of
 the estimate on subsequent starts. A project that turned out to need 3 GB is
@@ -221,7 +221,7 @@ its turn comes, not once for the batch, because the projects ahead of it have
 changed the answer by the time it starts.
 
 This is the only queue in the design. Section 0 recorded that queueing was
-rejected as the answer to a *single* refused start; a user who selected twelve
+rejected as the answer to a _single_ refused start; a user who selected twelve
 projects and pressed Start has already said they want them all, and running them
 four at a time is carrying out that instruction rather than deferring it.
 
@@ -280,26 +280,26 @@ architecture, OS build, virtualization and GPUs, gathered through the injectable
 `SystemProbe`. The scan is that, plus the settings-specific readings that no
 existing code needs:
 
-| Reading            | Windows source                       | Why it matters                                                        |
-| ------------------ | ------------------------------------ | --------------------------------------------------------------------- |
-| Active power plan  | `powercfg /getactivescheme`          | A balanced plan parks cores and sleeps the machine under a server load |
-| Sleep and hibernate timeouts | `powercfg /query`          | A machine that sleeps kills every running project                      |
-| Page file          | `Win32_PageFileSetting`              | Too small is the most common cause of an out-of-memory crash           |
-| Defender exclusions| `Get-MpPreference`                   | Real-time scanning of `node_modules` is a large, invisible cost        |
-| Ephemeral port range | `netsh int ipv4 show dynamicport tcp` | Many servers plus many restarts exhausts the default range          |
+| Reading                      | Windows source                        | Why it matters                                                         |
+| ---------------------------- | ------------------------------------- | ---------------------------------------------------------------------- |
+| Active power plan            | `powercfg /getactivescheme`           | A balanced plan parks cores and sleeps the machine under a server load |
+| Sleep and hibernate timeouts | `powercfg /query`                     | A machine that sleeps kills every running project                      |
+| Page file                    | `Win32_PageFileSetting`               | Too small is the most common cause of an out-of-memory crash           |
+| Defender exclusions          | `Get-MpPreference`                    | Real-time scanning of `node_modules` is a large, invisible cost        |
+| Ephemeral port range         | `netsh int ipv4 show dynamicport tcp` | Many servers plus many restarts exhausts the default range             |
 
 Every one of these is a read first. A proposal is only shown when the current
 value is known and is worse than the proposal — never as a blanket checklist.
 
 ### 5.3 The proposals
 
-| Proposal                       | Effect                                     | Admin | Reversible |
-| ------------------------------ | ------------------------------------------ | ----- | ---------- |
-| High-performance power plan    | Cores stop parking; latency drops          | No    | Yes        |
-| Never sleep while projects run | The machine stays up to serve              | No    | Yes        |
-| Page file ≥ 1.5× RAM, system-managed | Overcommit swaps instead of killing  | Yes   | Yes        |
-| Defender exclusion for `projects_dir` | Installs and builds stop being scanned | Yes | Yes      |
-| Ephemeral ports 10000–65534    | Room for many listeners and their TIME_WAIT | Yes  | Yes        |
+| Proposal                              | Effect                                      | Admin | Reversible |
+| ------------------------------------- | ------------------------------------------- | ----- | ---------- |
+| High-performance power plan           | Cores stop parking; latency drops           | No    | Yes        |
+| Never sleep while projects run        | The machine stays up to serve               | No    | Yes        |
+| Page file ≥ 1.5× RAM, system-managed  | Overcommit swaps instead of killing         | Yes   | Yes        |
+| Defender exclusion for `projects_dir` | Installs and builds stop being scanned      | Yes   | Yes        |
+| Ephemeral ports 10000–65534           | Room for many listeners and their TIME_WAIT | Yes   | Yes        |
 
 Each carries a one-sentence statement of what it gives up. The Defender
 exclusion's is the one that matters and is stated plainly: **code fetched from
