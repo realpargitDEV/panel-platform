@@ -23,4 +23,10 @@ pub enum PlatformError {
 
     #[error("this platform is not supported")]
     UnsupportedPlatform,
+
+    /// A process tree outlived every attempt to end it. Reported rather than
+    /// ignored because the consequence is a held port and a next start that
+    /// fails for a reason nothing else explains.
+    #[error("could not end the process tree rooted at {pid}")]
+    ProcessSurvived { pid: u32 },
 }

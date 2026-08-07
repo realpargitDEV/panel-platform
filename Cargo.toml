@@ -11,6 +11,7 @@ members = [
     "crates/file-manager",
     "crates/project-manager",
     "crates/host-runner",
+    "crates/resources",
     "crates/discord",
     "crates/updater",
     "crates/app-core",

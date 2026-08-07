@@ -20,7 +20,13 @@ import NewProjectWizard, { CreatedSummary } from './pages/NewProjectWizard';
 import Overview from './pages/Overview';
 import ProjectDetail from './pages/ProjectDetail';
 import Projects from './pages/Projects';
-import { applyAppearance, defaultAppearance, normaliseAppearance } from './lib/appearance';
+import {
+  applyAppearance,
+  defaultAppearance,
+  effectFor,
+  normaliseAppearance,
+} from './lib/appearance';
+import ThemeEffects from './components/ThemeEffects';
 import Settings, { type Preferences } from './pages/Settings';
 import CommandPalette from './shell/CommandPalette';
 import Sidebar, { type View } from './shell/Sidebar';
@@ -205,6 +211,11 @@ export default function App() {
   useEffect(() => {
     applyAppearance(document.documentElement, preferences.appearance);
   }, [preferences.appearance]);
+
+  // The background the current theme asks for, if any. Read here rather than
+  // inside the effects layer so the layer stays a renderer with no opinion
+  // about which theme is on.
+  const effect = useMemo(() => effectFor(preferences.appearance), [preferences.appearance]);
 
   const patchPreferences = useCallback((next: Partial<Preferences>) => {
     setPreferences((current) => {
@@ -411,6 +422,9 @@ export default function App() {
   if (editing && project) {
     return (
       <>
+        {/* No effects layer here. The editor fills the window with opaque
+            panels of its own, so a canvas behind it would be a frame loop
+            nobody could see. */}
         <ProjectWorkspace
           key={project.id}
           project={project}
@@ -439,188 +453,195 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full bg-canvas text-ink">
-      <Sidebar
-        view={view}
-        collapsed={preferences.collapsedSidebar}
-        projectCount={projects?.length ?? 0}
-        busyCount={
-          projects?.filter((item) =>
-            ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING', 'DEPLOYING'].includes(item.status),
-          ).length ?? 0
-        }
-        dockerAvailable={status?.dockerAvailable ?? false}
-        dockerSummary={status?.dockerSummary ?? 'Checking Docker…'}
-        onNavigate={(next) => {
-          setOpenProject(null);
-          setView(next);
-        }}
-        onNewProject={() => setCreating(true)}
-        onToggleCollapsed={() =>
-          patchPreferences({ collapsedSidebar: !preferences.collapsedSidebar })
-        }
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          version={status?.appVersion ?? '—'}
-          runningCount={running}
-          attentionCount={attention}
+    <>
+      {/* Before the shell, not inside it: the layer is fixed and the shell is
+          lifted above it, so the canvas colour comes from `body` and the effect
+          shows through the gaps between panels rather than being painted over
+          by the shell's own background. */}
+      <ThemeEffects effect={effect} motion={preferences.appearance.motion} />
+      <div className="theme-effects-above flex h-full text-ink">
+        <Sidebar
+          view={view}
+          collapsed={preferences.collapsedSidebar}
+          projectCount={projects?.length ?? 0}
+          busyCount={
+            projects?.filter((item) =>
+              ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING', 'DEPLOYING'].includes(item.status),
+            ).length ?? 0
+          }
           dockerAvailable={status?.dockerAvailable ?? false}
-          updateAvailable={update.check?.state === 'available' ? update.check.newVersion : null}
-          onOpenPalette={() => setPaletteOpen(true)}
-          onOpenSettings={() => {
+          dockerSummary={status?.dockerSummary ?? 'Checking Docker…'}
+          onNavigate={(next) => {
             setOpenProject(null);
-            setView('settings');
+            setView(next);
           }}
-          onCheckUpdates={() => {
-            openUpdates();
-            void updateStore.check();
-          }}
-          onOpenActivity={() => {
-            setOpenProject(null);
-            setView('activity');
-          }}
-          onInstallUpdate={openUpdates}
+          onNewProject={() => setCreating(true)}
+          onToggleCollapsed={() =>
+            patchPreferences({ collapsedSidebar: !preferences.collapsedSidebar })
+          }
         />
 
-        {/* Keyed on the destination so React remounts the subtree when the
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar
+            version={status?.appVersion ?? '—'}
+            runningCount={running}
+            attentionCount={attention}
+            dockerAvailable={status?.dockerAvailable ?? false}
+            updateAvailable={update.check?.state === 'available' ? update.check.newVersion : null}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onOpenSettings={() => {
+              setOpenProject(null);
+              setView('settings');
+            }}
+            onCheckUpdates={() => {
+              openUpdates();
+              void updateStore.check();
+            }}
+            onOpenActivity={() => {
+              setOpenProject(null);
+              setView('activity');
+            }}
+            onInstallUpdate={openUpdates}
+          />
+
+          {/* Keyed on the destination so React remounts the subtree when the
             view changes, which is what re-runs the enter animation. Keyed on
             the open project too, or moving between two projects would swap the
             content with no transition at all. */}
-        <main
-          key={`${view}:${openProject ?? ''}`}
-          className="animate-view min-h-0 flex-1 overflow-y-auto"
-        >
-          {failure && (
-            <div className="border-b border-danger/30 bg-danger-soft px-8 py-2.5 text-[13px] text-danger">
-              {failure}
-            </div>
-          )}
+          <main
+            key={`${view}:${openProject ?? ''}`}
+            className="animate-view min-h-0 flex-1 overflow-y-auto"
+          >
+            {failure && (
+              <div className="border-b border-danger/30 bg-danger-soft px-8 py-2.5 text-[13px] text-danger">
+                {failure}
+              </div>
+            )}
 
-          {created && (
-            <div className="mx-auto w-full max-w-[1200px] px-8 pt-6">
-              <CreatedSummary
-                created={created}
-                onDismiss={() => setCreated(null)}
-                onOpen={() => {
-                  const id = created.id;
-                  setCreated(null);
-                  openProjectById(id);
+            {created && (
+              <div className="mx-auto w-full max-w-[1200px] px-8 pt-6">
+                <CreatedSummary
+                  created={created}
+                  onDismiss={() => setCreated(null)}
+                  onOpen={() => {
+                    const id = created.id;
+                    setCreated(null);
+                    openProjectById(id);
+                  }}
+                />
+              </div>
+            )}
+
+            {view === 'projects' && project ? (
+              <ProjectDetail
+                key={project.id}
+                project={project}
+                dockerAvailable={status?.dockerAvailable ?? false}
+                developerMode={preferences.developerMode}
+                onRefreshProjects={refresh}
+                onBack={() => setOpenProject(null)}
+                onOpenFiles={() => setEditing(true)}
+              />
+            ) : view === 'overview' ? (
+              <Overview
+                status={status}
+                projects={projects}
+                recentIds={recentIds}
+                dockerDismissed={dockerDismissed}
+                onDismissDocker={() => setDockerDismissed(true)}
+                onOpenProject={openProjectById}
+                onNewProject={() => setCreating(true)}
+                onGoProjects={() => setView('projects')}
+                onGoActivity={() => setView('activity')}
+                onGoSettings={() => setView('settings')}
+                onRetryDocker={() => {
+                  void refresh();
+                  toast.info('Rechecking Docker');
                 }}
               />
-            </div>
-          )}
+            ) : view === 'projects' ? (
+              <Projects
+                projects={projects}
+                dockerAvailable={status?.dockerAvailable ?? false}
+                onRefresh={refresh}
+                onOpen={openProjectById}
+                onNewProject={() => setCreating(true)}
+              />
+            ) : view === 'activity' ? (
+              <Activity projects={projects} onOpenProject={openProjectById} />
+            ) : view === 'discord' ? (
+              <Discord />
+            ) : (
+              <Settings
+                status={status}
+                projects={projects}
+                preferences={preferences}
+                onPreferences={patchPreferences}
+                onOpenUpdates={() => {
+                  openUpdates();
+                  void updateStore.check();
+                }}
+                onResetLayout={() => {
+                  try {
+                    window.localStorage.removeItem(PREFERENCES_KEY);
+                    window.localStorage.removeItem('workspace.layout.v1');
+                    window.localStorage.removeItem('panel.projectsView.v1');
+                  } catch {
+                    // Nothing to do: the defaults apply on the next start anyway.
+                  }
+                  setPreferences(defaultPreferences);
+                }}
+              />
+            )}
+          </main>
+        </div>
 
-          {view === 'projects' && project ? (
-            <ProjectDetail
-              key={project.id}
-              project={project}
-              dockerAvailable={status?.dockerAvailable ?? false}
-              developerMode={preferences.developerMode}
-              onRefreshProjects={refresh}
-              onBack={() => setOpenProject(null)}
-              onOpenFiles={() => setEditing(true)}
-            />
-          ) : view === 'overview' ? (
-            <Overview
-              status={status}
-              projects={projects}
-              recentIds={recentIds}
-              dockerDismissed={dockerDismissed}
-              onDismissDocker={() => setDockerDismissed(true)}
-              onOpenProject={openProjectById}
-              onNewProject={() => setCreating(true)}
-              onGoProjects={() => setView('projects')}
-              onGoActivity={() => setView('activity')}
-              onGoSettings={() => setView('settings')}
-              onRetryDocker={() => {
-                void refresh();
-                toast.info('Rechecking Docker');
-              }}
-            />
-          ) : view === 'projects' ? (
-            <Projects
-              projects={projects}
-              dockerAvailable={status?.dockerAvailable ?? false}
-              onRefresh={refresh}
-              onOpen={openProjectById}
-              onNewProject={() => setCreating(true)}
-            />
-          ) : view === 'activity' ? (
-            <Activity projects={projects} onOpenProject={openProjectById} />
-          ) : view === 'discord' ? (
-            <Discord />
-          ) : (
-            <Settings
-              status={status}
-              projects={projects}
-              preferences={preferences}
-              onPreferences={patchPreferences}
-              onOpenUpdates={() => {
-                openUpdates();
-                void updateStore.check();
-              }}
-              onResetLayout={() => {
-                try {
-                  window.localStorage.removeItem(PREFERENCES_KEY);
-                  window.localStorage.removeItem('workspace.layout.v1');
-                  window.localStorage.removeItem('panel.projectsView.v1');
-                } catch {
-                  // Nothing to do: the defaults apply on the next start anyway.
-                }
-                setPreferences(defaultPreferences);
-              }}
-            />
-          )}
-        </main>
+        {creating && (
+          <NewProjectWizard
+            onClose={() => setCreating(false)}
+            onCreate={async (draft: Draft) => {
+              const result = await createProject(toRequest(draft));
+              await refresh();
+              return result;
+            }}
+            onCreated={(result, startNow) => {
+              setCreated(result);
+              setRecentIds(recordRecent(window.localStorage, result.id));
+              toast.success(`${result.displayName} created`);
+              if (startNow) {
+                // A project created on a machine that lacks its language is the
+                // most likely place to meet this offer, not the least.
+                guard(startProject)(result.id)
+                  .then(() => refresh())
+                  .then(() => toast.success(`${result.displayName} started`))
+                  .catch((error: unknown) => {
+                    if (isDeclined(error)) return;
+                    toast.error('Could not start the project', errorMessage(error));
+                  });
+              }
+            }}
+          />
+        )}
+
+        {paletteOpen && (
+          <CommandPalette
+            commands={commands}
+            projects={projects ?? []}
+            onOpenProject={openProjectById}
+            onClose={() => setPaletteOpen(false)}
+          />
+        )}
+
+        {gate}
+
+        <UpdateManager
+          open={updatesOpen}
+          currentVersion={status?.appVersion ?? '—'}
+          onClose={() => setUpdatesOpen(false)}
+        />
+
+        <ToastHost />
       </div>
-
-      {creating && (
-        <NewProjectWizard
-          onClose={() => setCreating(false)}
-          onCreate={async (draft: Draft) => {
-            const result = await createProject(toRequest(draft));
-            await refresh();
-            return result;
-          }}
-          onCreated={(result, startNow) => {
-            setCreated(result);
-            setRecentIds(recordRecent(window.localStorage, result.id));
-            toast.success(`${result.displayName} created`);
-            if (startNow) {
-              // A project created on a machine that lacks its language is the
-              // most likely place to meet this offer, not the least.
-              guard(startProject)(result.id)
-                .then(() => refresh())
-                .then(() => toast.success(`${result.displayName} started`))
-                .catch((error: unknown) => {
-                  if (isDeclined(error)) return;
-                  toast.error('Could not start the project', errorMessage(error));
-                });
-            }
-          }}
-        />
-      )}
-
-      {paletteOpen && (
-        <CommandPalette
-          commands={commands}
-          projects={projects ?? []}
-          onOpenProject={openProjectById}
-          onClose={() => setPaletteOpen(false)}
-        />
-      )}
-
-      {gate}
-
-      <UpdateManager
-        open={updatesOpen}
-        currentVersion={status?.appVersion ?? '—'}
-        onClose={() => setUpdatesOpen(false)}
-      />
-
-      <ToastHost />
-    </div>
+    </>
   );
 }

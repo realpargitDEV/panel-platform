@@ -27,13 +27,8 @@ import { formatBytes, formatDuration } from '../lib/format';
 import { installBusy } from '../update';
 import { useUpdate } from '../useUpdate';
 import Icon from '../ui/Icon';
-import {
-  ACCENTS,
-  THEMES,
-  type Appearance,
-  type Density,
-  type MotionLevel,
-} from '../lib/appearance';
+import { ACCENTS, type Appearance, type Density, type MotionLevel } from '../lib/appearance';
+import ThemeBrowser from '../components/ThemeBrowser';
 import { ConfirmDialog } from '../ui/overlays';
 import Select from '../ui/Select';
 import {
@@ -584,42 +579,7 @@ function AppearancePanel({
     <div className="animate-view flex flex-col gap-4">
       <Card>
         <CardHeader title="Theme" subtitle="Applies everywhere except the Discord panel" />
-        <div className="stagger grid gap-3 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-3">
-          {THEMES.map((theme) => {
-            const active = appearance.theme === theme.id;
-            return (
-              <button
-                key={theme.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onChange({ theme: theme.id })}
-                className={`flex items-center gap-3 rounded-[10px] border p-3 text-left ${
-                  active
-                    ? 'border-accent bg-accent-soft'
-                    : 'border-edge bg-raised hover:border-edge-strong'
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className="flex h-9 w-9 shrink-0 overflow-hidden rounded-[8px] border border-edge"
-                >
-                  {theme.swatch.map((colour) => (
-                    <span key={colour} className="flex-1" style={{ background: colour }} />
-                  ))}
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-                    {theme.label}
-                    {active && <Icon name="check" size={13} />}
-                  </span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-                    {theme.detail}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <ThemeBrowser value={appearance.theme} onChange={(theme) => onChange({ theme })} />
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -634,7 +594,11 @@ function AppearancePanel({
                   type="button"
                   aria-pressed={active}
                   aria-label={accent.label}
-                  title={accent.label}
+                  title={
+                    accent.id === 'auto'
+                      ? 'Use the accent this theme was designed with'
+                      : accent.label
+                  }
                   onClick={() => onChange({ accent: accent.id })}
                   className={`grid h-9 w-9 place-items-center rounded-full border-2 ${
                     active ? 'border-ink' : 'border-transparent hover:border-edge-strong'
@@ -643,7 +607,17 @@ function AppearancePanel({
                   <span
                     aria-hidden
                     className="grid h-6 w-6 place-items-center rounded-full text-white"
-                    style={{ background: accent.value }}
+                    style={
+                      // Auto has no colour of its own: it shows the accent the
+                      // current theme brought, which is exactly what choosing it
+                      // means.
+                      accent.value === null
+                        ? {
+                            background: 'var(--color-accent)',
+                            boxShadow: 'inset 0 0 0 2px var(--color-canvas)',
+                          }
+                        : { background: accent.value }
+                    }
                   >
                     {active && <Icon name="check" size={12} />}
                   </span>
@@ -651,6 +625,10 @@ function AppearancePanel({
               );
             })}
           </div>
+          <p className="px-4 pb-4 text-[12px] leading-snug text-muted">
+            Theme default keeps the accent each theme was designed with. Choosing a colour applies
+            it over every theme.
+          </p>
         </Card>
 
         <Card>

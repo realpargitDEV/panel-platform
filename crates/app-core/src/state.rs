@@ -8,6 +8,8 @@ use project_host_docker_manager::{DockerProbe, DockerStatus};
 use tokio::sync::RwLock;
 
 use crate::config::AppConfig;
+use crate::runner::host::HostRegistry;
+use project_host_resources::{MachineUsage, Reserve, SystemUsage, UsageSource};
 
 /// Everything a command handler needs. Cheap to clone: one `Arc`.
 #[derive(Clone)]
@@ -35,6 +37,23 @@ pub struct Inner {
     pub schema_version: u32,
     pub started_at: std::time::Instant,
     pub started_at_wall: String,
+    /// Every host project this process is running.
+    ///
+    /// Lives here because it is process-scoped by nature: a supervisor handle
+    /// owns a child of *this* process, so nothing outside the process can hold
+    /// a meaningful one.
+    pub host_projects: HostRegistry,
+    /// Where usage figures come from. Behind a trait so a test can describe a
+    /// machine that is out of memory, which is the case that matters and the
+    /// one that cannot be arranged for real.
+    pub usage: Arc<dyn UsageSource>,
+    /// The last machine sample, refreshed on a timer rather than read per call.
+    ///
+    /// The same reason `docker_status` is: walking the process table on every
+    /// render would turn a busy machine into an unusable interface.
+    pub machine_usage: RwLock<MachineUsage>,
+    /// How much memory is held back from the budget.
+    pub reserve: Reserve,
 }
 
 /// Who this process is: the facts fixed at startup that never change.
@@ -71,7 +90,64 @@ impl AppState {
             schema_version: identity.schema_version,
             started_at: std::time::Instant::now(),
             started_at_wall: identity.started_at_wall,
+            host_projects: HostRegistry::new(),
+            usage: Arc::new(SystemUsage::new()),
+            // Unknown until the sampler has run once. Admission treats that as
+            // "cannot say" and allows, which is the honest answer before
+            // anything has been measured.
+            machine_usage: RwLock::new(MachineUsage::unknown()),
+            reserve: Reserve::default(),
         }))
+    }
+
+    /// The last machine sample.
+    pub async fn machine_usage(&self) -> MachineUsage {
+        *self.0.machine_usage.read().await
+    }
+
+    /// Re-sample and store. Called by the background sampler.
+    pub async fn refresh_machine_usage(&self) -> MachineUsage {
+        // Sampled outside the lock: reading the process table is the slow part,
+        // and holding the write lock across it would block every render.
+        let sample = self.0.usage.machine();
+        *self.0.machine_usage.write().await = sample;
+        sample
+    }
+
+    pub fn usage_source(&self) -> &Arc<dyn UsageSource> {
+        &self.0.usage
+    }
+
+    pub fn reserve(&self) -> Reserve {
+        self.0.reserve
+    }
+
+    /// Replace the usage source and the last sample.
+    ///
+    /// For tests that need a machine which is out of memory — the case the
+    /// governor exists for, and the one that cannot be arranged for real
+    /// without making the machine running the tests unusable.
+    #[cfg(test)]
+    pub async fn set_usage_for_test(&self, sample: MachineUsage) {
+        *self.0.machine_usage.write().await = sample;
+    }
+
+    /// Every host project this process is running.
+    pub fn host_projects(&self) -> &HostRegistry {
+        &self.0.host_projects
+    }
+
+    /// Where a project's run log is written.
+    ///
+    /// Falls back to a relative `logs` directory for the same reason
+    /// `projects_dir` does: a configuration that named neither should still
+    /// produce a working application rather than a panic at the first start.
+    pub fn logs_root(&self) -> std::path::PathBuf {
+        self.0
+            .config
+            .log_dir
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
     }
 
     pub fn inner(&self) -> &Inner {

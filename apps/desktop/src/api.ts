@@ -30,6 +30,8 @@ export interface ProjectSummary {
   status: string;
   desiredState: string;
   color: string | null;
+  /** `DOCKER` or `HOST`. A host project runs as a process on this machine. */
+  runMode: string;
 }
 
 export interface AvailableUpdate {
@@ -81,6 +83,62 @@ export function errorMessage(error: unknown): string {
 
 export async function systemStatus(): Promise<SystemStatus> {
   return toCamel<SystemStatus>(await invoke('system_status'));
+}
+
+/** What the machine is carrying right now. */
+export interface MachineLoad {
+  totalMemoryBytes: number;
+  availableMemoryBytes: number;
+  reserveBytes: number;
+  headroomBytes: number;
+  cpuPercent: number | null;
+  logicalCores: number;
+  /** False until the sampler has run once; the numbers are placeholders. */
+  measured: boolean;
+  running: RunningProject[];
+}
+
+export interface RunningProject {
+  projectId: string;
+  displayName: string;
+  runMode: string;
+  memoryBytes: number;
+  cpuPercent: number | null;
+  /** False for a Docker project, whose figure is its limit, not a reading. */
+  measured: boolean;
+}
+
+export async function machineLoad(): Promise<MachineLoad> {
+  return toCamel<MachineLoad>(await invoke('machine_load'));
+}
+
+/**
+ * Change how a project runs.
+ *
+ * Refused while the project is up: switching substrate under a running project
+ * would leave the old one running with nothing tracking it.
+ */
+export async function setProjectRunMode(projectId: string, runMode: string): Promise<string> {
+  return invoke<string>('set_project_run_mode', { projectId, runMode });
+}
+
+/** What a project gives up by running outside a container. */
+export const HOST_MODE_TRADE =
+  'A host project runs as a process on this machine, with your files and your ' +
+  'network and no resource limits, and it stops when Panel Platform quits.';
+
+/** Whether a project runs as a process on this machine rather than a container. */
+export function isHostMode(project: { runMode?: string }): boolean {
+  return project.runMode === 'HOST';
+}
+
+/**
+ * How many host projects would stop if the window were closed now.
+ *
+ * Docker projects are not counted: they outlive the application.
+ */
+export async function hostProjectsRunning(): Promise<number> {
+  return invoke<number>('host_projects_running');
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
@@ -206,8 +264,14 @@ export async function createProject(request: NewProjectRequest): Promise<Created
   );
 }
 
-export async function startProject(projectId: string): Promise<string> {
-  return invoke('start_project', { projectId });
+/**
+ * Start a project.
+ *
+ * `force` skips the memory check. Pass it only when the user has answered a
+ * refusal that stated the numbers — never as a stored preference.
+ */
+export async function startProject(projectId: string, force = false): Promise<string> {
+  return invoke('start_project', { projectId, force });
 }
 
 export async function stopProject(projectId: string): Promise<void> {

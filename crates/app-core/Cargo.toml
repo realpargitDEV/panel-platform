@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+async-trait = "0.1.91"
 project-host-api-types = { version = "0.1.0", path = "../api-types" }
 project-host-compatibility = { version = "0.1.0", path = "../compatibility" }
 project-host-database = { version = "0.1.0", path = "../database" }
@@ -15,6 +16,7 @@ project-host-docker-manager = { version = "0.1.0", path = "../docker-manager" }
 project-host-file-manager = { version = "0.1.0", path = "../file-manager" }
 project-host-host-runner = { version = "0.1.0", path = "../host-runner" }
 project-host-platform = { version = "0.1.0", path = "../platform" }
+project-host-resources = { version = "0.1.0", path = "../resources" }
 project-host-project-manager = { version = "0.1.0", path = "../project-manager" }
 project-host-security = { version = "0.1.0", path = "../security" }
 project-host-toolchain = { version = "0.1.0", path = "../toolchain" }

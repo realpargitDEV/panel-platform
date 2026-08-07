@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* Every theme, generated from `src/lib/themes/catalogue/`. Imported before the
+   accent and density blocks below so an explicitly chosen accent overrides the
+   one the theme came with, rather than the other way round. */
+@import './themes.generated.css';
+
 /* ==========================================================================
    Design tokens
    ==========================================================================
@@ -98,96 +103,55 @@
    Themes
    ==========================================================================
 
-   Each block re-points the same token names the whole interface already uses,
-   so a theme is a palette swap rather than a second set of components. The
-   `@theme` block above is the Dark values; `[data-theme='dark']` is therefore
-   deliberately absent rather than a duplicate that could drift from it.
+   The eighty-one theme blocks are generated into `themes.generated.css` from
+   the catalogue in `src/lib/themes/catalogue/`, and imported at the top of this
+   file. They are not written here, and editing them here would be undone by the
+   next regeneration.
 
-   Every ramp keeps the same *relationships*: canvas darkest, surface above it,
-   raised above that, and `ink`/`muted`/`faint` in descending contrast. A theme
-   that inverted one of those would break every component at once. */
+   The `@theme` block above is what the interface falls back to before a theme
+   id has been written onto the root — the Pure Dark values, which are also the
+   first block in the generated file.
 
-:root[data-theme='light'] {
-  --color-canvas: #f4f4f6;
-  --color-surface: #ffffff;
-  --color-raised: #ececed;
-  --color-overlay: #ffffff;
-  --color-edge: #dededf;
-  --color-edge-strong: #c3c3c6;
+   Every generated ramp keeps the same *relationships*: layers that stay
+   distinguishable from each other, and `ink`/`muted`/`faint` in descending
+   contrast. A test measures all eighty-one against WCAG rather than trusting
+   that. */
 
-  /* Not pure black: #16161a at 15.6:1 on white is past the point where more
-     contrast reads as harsher rather than clearer. */
-  --color-ink: #16161a;
-  --color-muted: #56565f;
-  --color-faint: #78787f;
+/* -------------------------------------------------- traits a theme may set */
 
-  --color-accent-soft: #e3edfd;
-  --color-ok-soft: #e4f7ea;
-  --color-warn-soft: #fbf2da;
-  --color-danger-soft: #fce8e8;
-
-  --color-sidebar-top: #ffffff;
-  --color-sidebar-bottom: #f4f4f6;
-  --color-sidebar-edge: #e2e2e4;
-}
-
-:root[data-theme='amber'] {
-  --color-canvas: #14100b;
-  --color-surface: #1c1710;
-  --color-raised: #241d14;
-  --color-overlay: #2b2318;
-  --color-edge: #33291c;
-  --color-edge-strong: #453725;
-
-  --color-ink: #f0e7d8;
-  --color-muted: #b3a08a;
-  --color-faint: #8a7a63;
-
-  --color-sidebar-top: #1f1810;
-  --color-sidebar-bottom: #16110a;
-  --color-sidebar-edge: #33291c;
-}
-
-:root[data-theme='midnight'] {
-  --color-canvas: #0a0d16;
-  --color-surface: #10141f;
-  --color-raised: #161b2b;
-  --color-overlay: #1c2336;
-  --color-edge: #232b40;
-  --color-edge-strong: #33405c;
-
-  --color-ink: #e6e9f2;
-  --color-muted: #9aa3bd;
-  --color-faint: #6b7593;
-
-  --color-sidebar-top: #121728;
-  --color-sidebar-bottom: #0b0f1a;
-  --color-sidebar-edge: #232b40;
-}
-
-:root[data-theme='nord'] {
-  --color-canvas: #161a21;
-  --color-surface: #1d232c;
-  --color-raised: #232a35;
-  --color-overlay: #2a323f;
-  --color-edge: #333c4a;
-  --color-edge-strong: #465366;
-
-  --color-ink: #e5e9f0;
-  --color-muted: #a7b1c2;
-  --color-faint: #7b8697;
-
-  --color-sidebar-top: #1f2630;
-  --color-sidebar-bottom: #171c24;
-  --color-sidebar-edge: #333c4a;
+/* Defaults for the non-colour tokens. A theme that says nothing about type,
+   shape or depth gets these, so the trait tokens are always defined and no
+   component has to guard against an empty `var()`. */
+:root {
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono-theme: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --border-w: 1px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
+  --shadow-raised: 0 1px 1px rgb(0 0 0 / 0.2);
+  /* Transparent rather than unset: a theme without a glow still resolves the
+     `color-mix` that the glow rules are written with. */
+  --glow: transparent;
+  --texture: none;
+  --blur: 0px;
 }
 
 /* ------------------------------------------------------------------ accents */
 
-/* The accent is independent of the theme: any of the six on any of the five.
+/* An accent chosen explicitly, which overrides the one its theme came with.
+   `Auto` — the default — writes no `data-accent` at all, so the theme's own
+   accent stands and Matrix Rain stays green.
+
+   These blocks come after the generated theme file on purpose: they match at
+   the same specificity, so source order is what decides, and the explicit
+   choice is the one that should win.
+
    `accent-soft` is the tinted background behind a selected row, and is mixed
-   from the accent rather than listed per pair — thirty hand-written values
-   would be thirty chances to get one wrong. */
+   from the accent rather than listed per pair — six accents across eighty-one
+   themes would be four hundred and eighty hand-written values. */
+:root[data-accent='blue'] {
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2f74e6;
+}
 :root[data-accent='violet'] {
   --color-accent: #8b5cf6;
   --color-accent-hover: #7c47ec;
@@ -208,7 +172,10 @@
   --color-accent: #06b6d4;
   --color-accent-hover: #05a0bb;
 }
-:root[data-accent]:not([data-accent='blue']) {
+/* Every explicit accent, including blue: the theme's own `accent-soft` was
+   mixed from the theme's own accent, and would be the wrong tint under any
+   other one. */
+:root[data-accent] {
   --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, var(--color-canvas));
 }
 
@@ -239,18 +206,12 @@ body,
 
 body {
   margin: 0;
-  /* Inter when the machine has it, and the platform's own UI face otherwise.
-     Not bundled: a webfont binary in a desktop application is weight added to
-     every install to change the shape of the letters slightly, and the CSP
-     forbids fetching one. */
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  /* The theme's face, defaulting to Inter where the machine has it and the
+     platform's own UI face otherwise. Never bundled: a webfont binary in a
+     desktop application is weight added to every install to change the shape of
+     the letters slightly, and the CSP forbids fetching one — which is why every
+     stack a theme can name is a system stack. */
+  font-family: var(--font-ui);
   font-size: 14px;
   color: var(--color-ink);
   background: var(--color-canvas);
@@ -270,22 +231,24 @@ body {
 
 /* --------------------------------------------------------------- scrollbars */
 
+/* Tokenised rather than fixed: these were the charcoal theme's own edge
+   colours, and a dark scrollbar on Pure Light or Paper reads as damage. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #35353e transparent;
+  scrollbar-color: var(--color-edge-strong) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #35353e;
+  background: var(--color-edge-strong);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #45454f;
+  background: color-mix(in srgb, var(--color-edge-strong) 70%, var(--color-ink));
   background-clip: content-box;
 }
 *::-webkit-scrollbar-corner {
@@ -700,4 +663,181 @@ textarea,
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
   border-radius: 0;
+}
+
+/* ================================================================= effects */
+
+/* One layer, behind everything, for the themes that ask for a background.
+   `pointer-events: none` is load-bearing: this sits over the canvas and under
+   the interface, and without it the whole application would stop taking
+   clicks.
+
+   The animated ones are deliberately slow and low-contrast. A background that
+   competes with the text in front of it is a background that gets the theme
+   turned off within a minute. */
+.theme-effects {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* The interface sits above the layer. Without this the effects would paint
+   over the application rather than behind it. */
+.theme-effects-above {
+  position: relative;
+  z-index: 1;
+}
+
+.theme-effects canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Scan lines: a one-pixel dark line every three, plus a slow vertical roll.
+   Kept under 8% or the text behind it starts to shimmer. */
+.theme-effects[data-effect='scanlines']::before {
+  content: '';
+  position: absolute;
+  inset: -100% 0;
+  background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.22) 0 1px, transparent 1px 3px);
+  opacity: 0.5;
+  animation: scanline-roll calc(8s / var(--motion-scale, 1)) linear infinite;
+}
+
+@keyframes scanline-roll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(50%);
+  }
+}
+
+/* A drafting or HUD grid, fading out toward the bottom so it reads as a
+   surface receding rather than as wallpaper. */
+.theme-effects[data-effect='grid']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-accent) 18%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-accent) 18%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.55), transparent 85%);
+}
+
+/* Aurora: three soft lights on different timings, so the pattern does not
+   visibly repeat. */
+.theme-effects[data-effect='aurora']::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background-image:
+    radial-gradient(
+      40% 50% at 20% 25%,
+      color-mix(in srgb, var(--color-accent) 34%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      35% 45% at 75% 20%,
+      color-mix(in srgb, var(--color-ok) 24%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      45% 55% at 55% 80%,
+      color-mix(in srgb, var(--color-accent) 22%, transparent),
+      transparent 70%
+    );
+  filter: blur(40px);
+  animation: aurora-drift calc(24s / var(--motion-scale, 1)) ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.12);
+  }
+}
+
+/* A slow breath of accent light from the top edge. The quietest effect here,
+   for the themes that want to feel alert rather than decorated. */
+.theme-effects[data-effect='pulse']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    70% 45% at 50% 0%,
+    color-mix(in srgb, var(--color-accent) 26%, transparent),
+    transparent 70%
+  );
+  animation: effect-pulse calc(6s / var(--motion-scale, 1)) ease-in-out infinite;
+}
+
+@keyframes effect-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Grain, drawn rather than fetched: two one-pixel gratings crossed at right
+   angles read as noise at normal viewing distance and cost no request. */
+.theme-effects[data-effect='noise']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.025) 0 1px, transparent 1px 2px),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.02) 0 1px, transparent 1px 3px);
+}
+
+/* Halftone: printing dots. Larger and softer than the grain, and tinted with
+   the ink colour so it reads as press registration rather than dirt. */
+.theme-effects[data-effect='halftone']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--color-ink) 18%, transparent) 1px,
+    transparent 1.6px
+  );
+  background-size: 6px 6px;
+  opacity: 0.5;
+}
+
+/* The texture a theme can set is a property of the canvas rather than of the
+   effect layer, so the two can be used together. */
+body {
+  background-image: var(--texture);
+}
+
+/* Motion, applied to the whole layer at once. The canvas effects stop being
+   rendered at all — that is enforced in TypeScript, where the frame loop
+   lives — and the CSS ones stop moving but stay visible, because a scan line
+   is part of what the theme looks like, not an animation of it. */
+:root[data-motion='reduced'] .theme-effects::before,
+:root[data-motion='off'] .theme-effects::before {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-effects::before {
+    animation: none;
+  }
 }

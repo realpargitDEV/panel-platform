@@ -27,8 +27,36 @@ describe('applying an appearance', () => {
     const root = document.createElement('div');
 
     applyAppearance(root, { ...defaultAppearance, theme: 'amber' });
-    applyAppearance(root, { ...defaultAppearance, theme: 'light' });
+    applyAppearance(root, { ...defaultAppearance, theme: 'pure-light' });
 
-    expect(root.dataset.theme).toBe('light');
+    expect(root.dataset.theme).toBe('pure-light');
+  });
+
+  /**
+   * `auto` has to remove the attribute, not write itself.
+   *
+   * The accent blocks in the stylesheet exist to override the accent a theme
+   * came with. A left-behind `data-accent` would go on doing that for every
+   * theme chosen afterwards — the setting would appear to be Auto while a
+   * previous choice quietly kept winning.
+   */
+  it('removes the accent attribute when the theme’s own accent is wanted', () => {
+    const root = document.createElement('div');
+
+    applyAppearance(root, { ...defaultAppearance, accent: 'rose' });
+    expect(root.dataset.accent).toBe('rose');
+
+    applyAppearance(root, { ...defaultAppearance, accent: 'auto' });
+    expect(root.dataset.accent).toBeUndefined();
+    expect(root.hasAttribute('data-accent')).toBe(false);
+  });
+
+  it('writes an explicit accent over a theme that has its own', () => {
+    const root = document.createElement('div');
+
+    applyAppearance(root, { ...defaultAppearance, theme: 'matrix-rain', accent: 'cyan' });
+
+    expect(root.dataset.theme).toBe('matrix-rain');
+    expect(root.dataset.accent).toBe('cyan');
   });
 });

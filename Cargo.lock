@@ -4809,6 +4809,7 @@ dependencies = [
 name = "project-host-core"
 version = "0.1.12"
 dependencies = [
+ "async-trait",
  "project-host-api-types",
  "project-host-compatibility",
  "project-host-database",
@@ -4818,6 +4819,7 @@ dependencies = [
  "project-host-host-runner",
  "project-host-platform",
  "project-host-project-manager",
+ "project-host-resources",
  "project-host-security",
  "project-host-toolchain",
  "serde",
@@ -4920,8 +4922,10 @@ dependencies = [
 name = "project-host-host-runner"
 version = "0.1.12"
 dependencies = [
+ "project-host-platform",
  "tempfile",
  "thiserror 2.0.19",
+ "tokio",
  "tracing",
 ]
 
@@ -4934,6 +4938,7 @@ dependencies = [
  "sysinfo 0.36.1",
  "tempfile",
  "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]
@@ -4947,6 +4952,14 @@ dependencies = [
  "thiserror 2.0.19",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "project-host-resources"
+version = "0.1.12"
+dependencies = [
+ "serde",
+ "sysinfo 0.36.1",
 ]
 
 [[package]]

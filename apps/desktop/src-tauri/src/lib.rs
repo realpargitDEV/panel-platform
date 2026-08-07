@@ -19,11 +19,13 @@
 )]
 
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
+use project_host_api_types::RunMode;
 use project_host_core::provisioning::SourceSpec;
 use project_host_core::{resolve_paths, AppConfig, AppState, Runtime};
 use project_host_database::projects;
@@ -157,6 +159,11 @@ pub struct ProjectSummary {
     pub status: String,
     pub desired_state: String,
     pub color: Option<String>,
+    /// `DOCKER` or `HOST`. The interface needs it for two things: a badge, and
+    /// deciding whether a missing daemon should disable this project's
+    /// controls. Without it a machine with no Docker has every control greyed
+    /// out, including for the projects that do not need one.
+    pub run_mode: String,
 }
 
 #[tauri::command]
@@ -198,6 +205,7 @@ async fn list_projects(state: tauri::State<'_, AppState>) -> CommandResult<Vec<P
             status: record.status,
             desired_state: record.desired_state,
             color: record.color,
+            run_mode: record.run_mode,
         })
         .collect())
 }
@@ -218,6 +226,10 @@ pub struct NewProjectRequest {
     /// older callers working.
     #[serde(default)]
     pub source: Option<SourceRequest>,
+    /// `DOCKER` or `HOST`. Absent means `DOCKER`, which is what every caller
+    /// written before host mode existed means, and the substrate that isolates.
+    #[serde(default)]
+    pub run_mode: Option<String>,
 }
 
 /// The source half of the creation form.
@@ -574,6 +586,17 @@ async fn create_project(
         }
     };
 
+    // Applied after creation rather than through NewProject: the column has a
+    // DOCKER default and one UPDATE is a smaller change than threading a new
+    // field through create_project and every caller of it.
+    let record = match apply_run_mode(app, &record, request.run_mode.as_deref()).await {
+        Ok(record) => record,
+        Err(error) => {
+            project_host_core::provisioning::discard_directory(&directory);
+            return Err(error);
+        }
+    };
+
     // No key is held at runtime yet, so this stores nothing and says so. See
     // `provisioning`'s module documentation.
     let stored = project_host_core::provisioning::store_source_token(
@@ -601,6 +624,7 @@ async fn create_project(
             status: record.status,
             desired_state: record.desired_state,
             color: record.color,
+            run_mode: record.run_mode,
         },
         runtime: plan.spec.runtime,
         detected: plan.detected,
@@ -613,14 +637,16 @@ async fn create_project(
 ///
 /// Long-running: building an image the first time takes minutes. The window
 /// keeps the button in a pending state rather than this pretending to be fast.
+/// `force` skips the memory check. Sent only by the user answering a refusal
+/// that stated the numbers — never a stored preference, and absent means false.
 #[tauri::command]
 async fn start_project(
     state: tauri::State<'_, AppState>,
     project_id: String,
+    force: Option<bool>,
 ) -> CommandResult<String> {
     let app: &AppState = &state;
-    let version = app.inner().app_version.clone();
-    project_host_core::lifecycle::start(app.database(), &project_id, &version)
+    project_host_core::lifecycle::start_forcing(app, &project_id, force.unwrap_or(false))
         .await
         .map_err(CommandError::from)
 }
@@ -817,7 +843,7 @@ async fn install_toolchain(
 #[tauri::command]
 async fn stop_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
-    project_host_core::lifecycle::stop(app.database(), &project_id)
+    project_host_core::lifecycle::stop(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
@@ -828,16 +854,145 @@ async fn restart_project(
     project_id: String,
 ) -> CommandResult<String> {
     let app: &AppState = &state;
-    let version = app.inner().app_version.clone();
-    project_host_core::lifecycle::restart(app.database(), &project_id, &version)
+    project_host_core::lifecycle::restart(app, &project_id)
         .await
         .map_err(CommandError::from)
+}
+
+/// Set a project's run mode, and answer with the row as it now reads.
+///
+/// Refuses anything but the two words rather than letting the database's CHECK
+/// refuse it: the message a user should see names the choices, not the
+/// constraint.
+async fn apply_run_mode(
+    app: &AppState,
+    record: &projects::ProjectRecord,
+    requested: Option<&str>,
+) -> CommandResult<projects::ProjectRecord> {
+    let Some(requested) = requested else {
+        return Ok(record.clone());
+    };
+    let mode = RunMode::from_str(requested).map_err(|_| CommandError {
+        message: format!("`{requested}` is not a run mode. Use DOCKER or HOST."),
+    })?;
+    if record.run_mode == mode.as_str() {
+        return Ok(record.clone());
+    }
+
+    projects::set_run_mode(app.database(), &record.id, mode).await?;
+    projects::find_project(app.database(), &record.id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "The project vanished while its run mode was being set.".to_string(),
+        })
+}
+
+/// Change how an existing project runs.
+///
+/// Switching *to* host mode is the choice that gives something up — filesystem
+/// and network isolation, a non-root user — so the interface confirms it every
+/// time it is switched to. Nothing extra is stored for that: accepting is what
+/// calls this, so a project already in host mode is not asked again.
+#[tauri::command]
+async fn set_project_run_mode(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    run_mode: String,
+) -> CommandResult<String> {
+    let app: &AppState = &state;
+    let record = projects::find_project(app.database(), &project_id)
+        .await?
+        .ok_or_else(|| CommandError {
+            message: "No project with that id.".to_string(),
+        })?;
+
+    if project_host_core::lifecycle::is_running(&record.status) {
+        return Err(CommandError {
+            message: "Stop the project before changing how it runs.".to_string(),
+        });
+    }
+
+    let updated = apply_run_mode(app, &record, Some(&run_mode)).await?;
+    Ok(updated.run_mode)
+}
+
+/// What the machine is carrying, and what each running project costs.
+///
+/// Host projects are measured. Docker projects report their declared limit,
+/// which is an upper bound rather than a reading — the daemon's stats endpoint
+/// is not wired up, and this machine has no daemon to wire it against.
+#[derive(Debug, Serialize)]
+pub struct MachineLoad {
+    pub total_memory_bytes: u64,
+    pub available_memory_bytes: u64,
+    pub reserve_bytes: u64,
+    pub headroom_bytes: u64,
+    pub cpu_percent: Option<f32>,
+    pub logical_cores: u32,
+    /// Whether anything has been sampled yet. Before the first tick the numbers
+    /// are placeholders and the interface should say so rather than draw zeroes.
+    pub measured: bool,
+    pub running: Vec<RunningProjectDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RunningProjectDto {
+    pub project_id: String,
+    pub display_name: String,
+    pub run_mode: String,
+    pub memory_bytes: u64,
+    pub cpu_percent: Option<f32>,
+    /// False for a Docker project, whose figure is its limit rather than a
+    /// measurement. Shown so the interface never presents a bound as a reading.
+    pub measured: bool,
+}
+
+#[tauri::command]
+async fn machine_load(state: tauri::State<'_, AppState>) -> CommandResult<MachineLoad> {
+    let app: &AppState = &state;
+    let machine = app.machine_usage().await;
+    let reserve_bytes = app.reserve().bytes_for(machine.total_memory_bytes);
+
+    let running = project_host_core::lifecycle::running_projects(app)
+        .await
+        .into_iter()
+        .map(|project| RunningProjectDto {
+            project_id: project.project_id,
+            display_name: project.display_name,
+            measured: project.run_mode == "HOST",
+            run_mode: project.run_mode,
+            memory_bytes: project.usage.memory_bytes,
+            cpu_percent: project.usage.cpu_percent,
+        })
+        .collect();
+
+    Ok(MachineLoad {
+        total_memory_bytes: machine.total_memory_bytes,
+        available_memory_bytes: machine.available_memory_bytes,
+        reserve_bytes,
+        headroom_bytes: machine.available_memory_bytes.saturating_sub(reserve_bytes),
+        cpu_percent: machine.cpu_percent,
+        logical_cores: machine.logical_cores,
+        measured: machine.is_known(),
+        running,
+    })
+}
+
+/// How many host projects would stop if the window were closed now.
+///
+/// Docker projects are not counted: they outlive this application. The number
+/// exists so the quit dialog can say what quitting costs, rather than making
+/// the user discover it afterwards.
+#[tauri::command]
+async fn host_projects_running(state: tauri::State<'_, AppState>) -> CommandResult<usize> {
+    let app: &AppState = &state;
+    Ok(project_host_core::lifecycle::host_projects_running(app).await)
 }
 
 #[tauri::command]
 async fn kill_project(state: tauri::State<'_, AppState>, project_id: String) -> CommandResult<()> {
     let app: &AppState = &state;
-    project_host_core::lifecycle::kill(app.database(), &project_id)
+    project_host_core::lifecycle::kill(app, &project_id)
         .await
         .map_err(CommandError::from)
 }
@@ -2399,7 +2554,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     tokio_runtime.block_on(async {
-        runtime.spawn_docker_refresher(shutdown_rx);
+        runtime.spawn_docker_refresher(shutdown_rx.clone());
+        runtime.spawn_usage_sampler(shutdown_rx);
     });
 
     let state = runtime.state().clone();
@@ -2422,6 +2578,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             stop_project,
             restart_project,
             kill_project,
+            host_projects_running,
+            set_project_run_mode,
+            machine_load,
             app_settings,
             check_for_update,
             install_update,
@@ -2457,9 +2616,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())?
         .run(move |app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                // Close the database cleanly, so the next start does not have to
-                // run recovery. Project containers are untouched: Docker keeps
-                // them running under their own restart policy.
+                // Stop host projects and close the database cleanly, so the next
+                // start does not have to run recovery. Project *containers* are
+                // untouched: Docker keeps them running under their own restart
+                // policy. Host projects are children of this process and would
+                // die with it regardless — stopping them deliberately is what
+                // gets STOPPED recorded instead of a row claiming they run.
                 let _ = shutdown_tx.send_replace(true);
                 if let Some(runtime) = runtime.blocking_lock().take() {
                     app.state::<AppState>();

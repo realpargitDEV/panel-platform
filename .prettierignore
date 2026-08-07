@@ -9,6 +9,11 @@ contracts/
 packages/shared-types/src/generated.ts
 packages/api-contracts/src/generated.ts
 
+# Generated from the theme catalogue by `pnpm test:themes:update`. Prettier
+# would reformat it and the next regeneration would undo that, failing the
+# check that proves the stylesheet still matches the catalogue.
+apps/desktop/src/themes.generated.css
+
 # Dockerfile templates that happen to use Handlebars placeholders. Prettier
 # parses them as HTML and rewrites the Docker directives into nonsense.
 docker/templates/**/*.hbs
