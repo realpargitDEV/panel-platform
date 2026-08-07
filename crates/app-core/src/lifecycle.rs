@@ -38,6 +38,7 @@ use project_host_docker_manager::container_spec::{
 use project_host_docker_manager::lifecycle::ContainerState;
 use project_host_docker_manager::DockerError;
 use project_host_host_runner::supervisor::{HostStatus, DEFAULT_GRACE};
+use project_host_resources::{admit, Admission, RunningProject, Shortfall, Usage};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LifecycleError {
@@ -77,6 +78,12 @@ pub enum LifecycleError {
 
     #[error("{0}")]
     Command(#[from] project_host_host_runner::CommandError),
+
+    /// The machine cannot take another project. Boxed because `Shortfall`
+    /// carries the running set, and an enum whose largest variant is a vector
+    /// of projects makes every `Result` in this module that size.
+    #[error("{}", .0.message())]
+    NotEnoughMemory(Box<Shortfall>),
 }
 
 /// The runner a project's `run_mode` column asks for.
@@ -234,12 +241,28 @@ pub(crate) fn project_status(state: &ContainerState) -> Result<ProjectStatus, Li
 }
 
 /// Start a project, building its image if there is not one already.
-pub async fn start(app: &AppState, project_id: &str) -> Result<String, LifecycleError> {
+///
+/// `force` skips the memory check. The estimate can be wrong and the user knows
+/// things the governor does not, so overriding is offered on refusal — as a
+/// button in a dialog that states the numbers, never as a setting that turns
+/// the governor off.
+pub async fn start_forcing(
+    app: &AppState,
+    project_id: &str,
+    force: bool,
+) -> Result<String, LifecycleError> {
     let db = app.database();
     let app_version = app.inner().app_version.clone();
     let project = projects::find_project(db, project_id)
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
+
+    // Before anything is written or spawned. A refusal must leave the project
+    // exactly as it was: writing STARTING and then refusing would leave a row
+    // claiming a start that never began.
+    if !force {
+        admit_project(app, &project).await?;
+    }
 
     projects::set_desired_state(db, project_id, DesiredState::Running).await?;
     projects::set_status(db, project_id, ProjectStatus::Starting, None).await?;
@@ -255,6 +278,11 @@ pub async fn start(app: &AppState, project_id: &str) -> Result<String, Lifecycle
         .await;
 
     record(db, project_id, outcome).await
+}
+
+/// Start a project, refusing if this machine cannot take another.
+pub async fn start(app: &AppState, project_id: &str) -> Result<String, LifecycleError> {
+    start_forcing(app, project_id, false).await
 }
 
 /// Stop every host project this process is running, and record that it stopped.
@@ -298,6 +326,82 @@ pub async fn stop_host_projects(app: &AppState) -> Vec<String> {
     }
 
     stopped
+}
+
+/// What every project that is currently up is costing this machine.
+///
+/// Host projects are measured: their supervisor holds a pid, and the reading
+/// covers the whole process tree because `npm start`'s memory lives in the
+/// `node` it spawned.
+///
+/// Docker projects are **not** measured. The daemon's stats endpoint is not
+/// wired up, and this machine has no daemon to wire it against. Their declared
+/// `memory_limit_mb` is counted instead, which is an upper bound rather than a
+/// reading: a container cannot exceed the limit the daemon enforces. Counting
+/// the bound errs towards refusing a start, which is the safe direction — the
+/// opposite error would let the machine overcommit on a guess.
+pub async fn running_projects(app: &AppState) -> Vec<RunningProject> {
+    let Ok(records) = projects::list_projects(app.database(), false, None, 500).await else {
+        return Vec::new();
+    };
+
+    let handles: std::collections::BTreeMap<String, _> =
+        app.host_projects().all().await.into_iter().collect();
+
+    let mut running = Vec::new();
+    for record in records {
+        if !is_running(&record.status) {
+            continue;
+        }
+
+        let usage = match handles.get(&record.id).and_then(|handle| handle.pid()) {
+            Some(pid) => app.usage_source().process_tree(pid).unwrap_or_default(),
+            None => Usage {
+                memory_bytes: record.memory_limit_mb.max(0).unsigned_abs() * 1024 * 1024,
+                cpu_percent: None,
+            },
+        };
+
+        running.push(RunningProject {
+            project_id: record.id,
+            display_name: record.display_name,
+            run_mode: record.run_mode,
+            usage,
+        });
+    }
+
+    running
+}
+
+/// What a project is expected to need, in bytes.
+///
+/// Its own `memory_limit_mb`. For a container that is exact, because the daemon
+/// enforces it. For a host project it is an estimate and nothing enforces it —
+/// which is precisely why the start is gated rather than the process capped.
+fn wanted_bytes(project: &projects::ProjectRecord) -> u64 {
+    project.memory_limit_mb.max(0).unsigned_abs() * 1024 * 1024
+}
+
+/// Decide whether this machine can take one more project.
+///
+/// Called before the runner is dispatched, so both substrates are gated without
+/// either runner knowing the governor exists.
+pub async fn admit_project(
+    app: &AppState,
+    project: &projects::ProjectRecord,
+) -> Result<(), LifecycleError> {
+    let running = running_projects(app).await;
+    let decision = admit(
+        wanted_bytes(project),
+        app.machine_usage().await,
+        app.reserve(),
+        &running,
+    );
+
+    match decision {
+        Admission::Allow => Ok(()),
+        Admission::Refuse(shortfall) => Err(LifecycleError::NotEnoughMemory(Box::new(shortfall))),
+    }
 }
 
 /// Whether a stored status word means the project is up or on its way there.
@@ -408,8 +512,12 @@ pub async fn restart(app: &AppState, project_id: &str) -> Result<String, Lifecyc
     record(db, project_id, outcome).await
 }
 
+/// Tests that need a real `AppState`: the governor, and shutdown.
+///
+/// Separate from the module below because those are pure functions needing
+/// nothing, and these need a database, a project row and a described machine.
 #[cfg(test)]
-mod shutdown_tests {
+mod tests_with_state {
     use super::*;
     use project_host_api_types::{ProjectType, RunMode};
     use project_host_database::projects::NewProject;
@@ -502,6 +610,107 @@ mod shutdown_tests {
             .await
             .expect("host mode");
         project.id
+    }
+
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    /// A machine with plenty to spare.
+    fn roomy() -> project_host_resources::MachineUsage {
+        project_host_resources::MachineUsage {
+            total_memory_bytes: 32 * GB,
+            available_memory_bytes: 24 * GB,
+            cpu_percent: Some(10.0),
+            logical_cores: 8,
+        }
+    }
+
+    /// A machine with nothing to spare. Constructed rather than arranged: the
+    /// alternative is exhausting the memory of whatever runs the tests.
+    fn full() -> project_host_resources::MachineUsage {
+        project_host_resources::MachineUsage {
+            total_memory_bytes: 32 * GB,
+            available_memory_bytes: GB / 2,
+            cpu_percent: Some(99.0),
+            logical_cores: 8,
+        }
+    }
+
+    /// The requirement, in one test: on a full machine, starting is refused —
+    /// and the refusal says what the numbers are rather than just failing.
+    #[tokio::test]
+    async fn a_full_machine_refuses_another_project() {
+        let app = test_state().await;
+        let project_id = a_host_project(&app, "crowded-port-9a11").await;
+        app.set_usage_for_test(full()).await;
+
+        let project = projects::find_project(app.database(), &project_id)
+            .await
+            .expect("query")
+            .expect("row");
+
+        match admit_project(&app, &project).await {
+            Err(LifecycleError::NotEnoughMemory(shortfall)) => {
+                let message = shortfall.message();
+                assert!(message.contains("GB"), "no numbers in: {message}");
+                assert_eq!(shortfall.headroom_bytes, 0, "a full machine spares nothing");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_roomy_machine_admits() {
+        let app = test_state().await;
+        let project_id = a_host_project(&app, "quiet-port-9a12").await;
+        app.set_usage_for_test(roomy()).await;
+
+        let project = projects::find_project(app.database(), &project_id)
+            .await
+            .expect("query")
+            .expect("row");
+        admit_project(&app, &project).await.expect("512 MB fits");
+    }
+
+    /// Before the sampler has run there is no basis for a refusal. Refusing
+    /// everything until it warms up would look exactly like a broken
+    /// application.
+    #[tokio::test]
+    async fn an_unmeasured_machine_admits_rather_than_blocking_the_first_start() {
+        let app = test_state().await;
+        let project_id = a_host_project(&app, "unmeasured-9a13").await;
+
+        let project = projects::find_project(app.database(), &project_id)
+            .await
+            .expect("query")
+            .expect("row");
+        admit_project(&app, &project)
+            .await
+            .expect("nothing measured yet means nothing to refuse on");
+    }
+
+    /// The override exists because the estimate can be wrong and the user knows
+    /// things the governor does not. `start` refuses; `start_forcing(.., true)`
+    /// gets past the gate — and then fails for its own reasons, which is a
+    /// different failure and the point of the assertion.
+    #[tokio::test]
+    async fn forcing_gets_past_the_governor() {
+        let app = test_state().await;
+        let project_id = a_host_project(&app, "forced-port-9a14").await;
+        app.set_usage_for_test(full()).await;
+
+        let refused = start(&app, &project_id).await;
+        assert!(
+            matches!(refused, Err(LifecycleError::NotEnoughMemory(_))),
+            "got {refused:?}"
+        );
+
+        // NODEJS on a machine without Node, or a start that fails for any other
+        // reason — either way it is no longer the governor refusing.
+        let forced = start_forcing(&app, &project_id, true).await;
+        assert!(
+            !matches!(forced, Err(LifecycleError::NotEnoughMemory(_))),
+            "forcing must not still be refused by the governor: {forced:?}"
+        );
     }
 
     /// Nothing running is not a failure, and must not stop the database from

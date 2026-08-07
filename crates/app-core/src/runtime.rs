@@ -28,6 +28,13 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// How often the Docker daemon is re-probed in the background.
 const DOCKER_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
 
+/// How often the machine's memory and CPU are sampled.
+///
+/// Two seconds is a compromise: often enough that the number on screen is not
+/// visibly stale, and rare enough that walking the process table is not itself
+/// a load worth measuring.
+const USAGE_SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     #[error("could not prepare directories: {0}")]
@@ -44,6 +51,7 @@ pub struct Runtime {
     state: AppState,
     paths: StandardPaths,
     refresher: Option<JoinHandle<()>>,
+    sampler: Option<JoinHandle<()>>,
     pub recovery: RecoveryReport,
 }
 
@@ -135,6 +143,7 @@ impl Runtime {
             state,
             paths,
             refresher: None,
+            sampler: None,
             recovery,
         })
     }
@@ -179,6 +188,34 @@ impl Runtime {
         }));
     }
 
+    /// Sample what the machine is using, on a timer.
+    ///
+    /// On a timer rather than per call for the same reason the Docker status is:
+    /// walking the process table on every render would turn a busy machine —
+    /// exactly the machine this exists to detect — into an unusable interface.
+    ///
+    /// The first tick is not skipped, unlike the Docker refresher's. Nothing has
+    /// sampled yet at this point, and until something does, admission has no
+    /// basis for a refusal and allows everything.
+    pub fn spawn_usage_sampler(&mut self, mut shutdown: watch::Receiver<bool>) {
+        if let Some(previous) = self.sampler.take() {
+            previous.abort();
+        }
+
+        let state = self.state.clone();
+        self.sampler = Some(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(USAGE_SAMPLE_INTERVAL);
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        state.refresh_machine_usage().await;
+                    }
+                    _ = shutdown.changed() => break,
+                }
+            }
+        }));
+    }
+
     /// Stop cleanly: stop host projects, flag the shutdown, checkpoint the WAL,
     /// close the pool.
     ///
@@ -194,6 +231,9 @@ impl Runtime {
     pub async fn shutdown(mut self) {
         if let Some(refresher) = self.refresher.take() {
             refresher.abort();
+        }
+        if let Some(sampler) = self.sampler.take() {
+            sampler.abort();
         }
 
         let stopped = crate::lifecycle::stop_host_projects(&self.state).await;

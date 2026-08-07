@@ -100,7 +100,7 @@ pub fn admit(
     }
 
     let mut running: Vec<RunningProject> = running.to_vec();
-    running.sort_by(|left, right| right.usage.memory_bytes.cmp(&left.usage.memory_bytes));
+    running.sort_by_key(|project| std::cmp::Reverse(project.usage.memory_bytes));
 
     Admission::Refuse(Shortfall {
         wanted_bytes,

@@ -85,6 +85,33 @@ export async function systemStatus(): Promise<SystemStatus> {
   return toCamel<SystemStatus>(await invoke('system_status'));
 }
 
+/** What the machine is carrying right now. */
+export interface MachineLoad {
+  totalMemoryBytes: number;
+  availableMemoryBytes: number;
+  reserveBytes: number;
+  headroomBytes: number;
+  cpuPercent: number | null;
+  logicalCores: number;
+  /** False until the sampler has run once; the numbers are placeholders. */
+  measured: boolean;
+  running: RunningProject[];
+}
+
+export interface RunningProject {
+  projectId: string;
+  displayName: string;
+  runMode: string;
+  memoryBytes: number;
+  cpuPercent: number | null;
+  /** False for a Docker project, whose figure is its limit, not a reading. */
+  measured: boolean;
+}
+
+export async function machineLoad(): Promise<MachineLoad> {
+  return toCamel<MachineLoad>(await invoke('machine_load'));
+}
+
 /**
  * Change how a project runs.
  *
@@ -237,8 +264,14 @@ export async function createProject(request: NewProjectRequest): Promise<Created
   );
 }
 
-export async function startProject(projectId: string): Promise<string> {
-  return invoke('start_project', { projectId });
+/**
+ * Start a project.
+ *
+ * `force` skips the memory check. Pass it only when the user has answered a
+ * refusal that stated the numbers — never as a stored preference.
+ */
+export async function startProject(projectId: string, force = false): Promise<string> {
+  return invoke('start_project', { projectId, force });
 }
 
 export async function stopProject(projectId: string): Promise<void> {

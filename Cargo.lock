@@ -4819,6 +4819,7 @@ dependencies = [
  "project-host-host-runner",
  "project-host-platform",
  "project-host-project-manager",
+ "project-host-resources",
  "project-host-security",
  "project-host-toolchain",
  "serde",
