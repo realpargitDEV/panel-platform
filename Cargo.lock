@@ -4809,6 +4809,7 @@ dependencies = [
 name = "project-host-core"
 version = "0.1.12"
 dependencies = [
+ "async-trait",
  "project-host-api-types",
  "project-host-compatibility",
  "project-host-database",

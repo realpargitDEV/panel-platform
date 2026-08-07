@@ -23,14 +23,17 @@
 
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::images::{dockerfile_for, starter_files, ImageSpec};
+use crate::runner::docker::DockerRunner;
+use crate::runner::{Observed, ProjectRunner, StartContext};
 use project_host_api_types::{DesiredState, HealthState, ProjectStatus};
 use project_host_database::{projects, Database};
 use project_host_docker_manager::container_spec::{
     ContainerSpec, NetworkMode, PortBinding, ResourceLimits, RestartPolicy, SpecInputs,
 };
-use project_host_docker_manager::lifecycle::{ContainerRunner, ContainerState};
+use project_host_docker_manager::lifecycle::ContainerState;
 use project_host_docker_manager::DockerError;
 
 #[derive(Debug, thiserror::Error)]
@@ -51,11 +54,14 @@ pub enum LifecycleError {
     UnknownStatus(String),
 }
 
-/// Connect to Docker, or explain that it is not there.
-async fn runner() -> Result<ContainerRunner, LifecycleError> {
-    let probe = project_host_docker_manager::system_probe();
-    let connection = probe.connect().await?;
-    Ok(ContainerRunner::new(connection.client().clone()))
+/// The runner a project's `run_mode` column asks for.
+///
+/// Host mode does not exist yet, so every project is a container. This function
+/// is nonetheless where `run_mode` will be read, and introducing it now is the
+/// point of the exercise: the dispatch lands in one place rather than at each of
+/// the four call sites that would otherwise have grown their own.
+pub fn runner_for(_project: &projects::ProjectRecord) -> Arc<dyn ProjectRunner> {
+    Arc::new(DockerRunner::new())
 }
 
 /// Write a project's `Dockerfile` and starter files if they are absent.
@@ -95,7 +101,7 @@ fn write_if_absent(path: &Path, contents: &str) -> Result<(), LifecycleError> {
 }
 
 /// Build the container specification for a stored project.
-async fn spec_for(
+pub(crate) async fn spec_for(
     db: &Database,
     project: &projects::ProjectRecord,
     app_version: &str,
@@ -174,7 +180,7 @@ pub fn image_tag(slug: &str) -> String {
 /// A word Docker has and we do not becomes `UNKNOWN` rather than an error: the
 /// container is up either way, and refusing to record that would be a worse
 /// answer than recording that its health is not known.
-fn health_state(reported: Option<&str>) -> Option<HealthState> {
+pub(crate) fn health_state(reported: Option<&str>) -> Option<HealthState> {
     let word = reported?;
     Some(match word {
         "healthy" => HealthState::Healthy,
@@ -191,7 +197,7 @@ fn health_state(reported: Option<&str>) -> Option<HealthState> {
 /// vocabulary, so this parse succeeds for every value it can return. It exists
 /// so that a word added there without a matching variant here is a reported
 /// error rather than a write the database refuses.
-fn project_status(state: &ContainerState) -> Result<ProjectStatus, LifecycleError> {
+pub(crate) fn project_status(state: &ContainerState) -> Result<ProjectStatus, LifecycleError> {
     let word = state.project_status();
     ProjectStatus::from_str(word).map_err(|_| LifecycleError::UnknownStatus(word.to_string()))
 }
@@ -209,21 +215,33 @@ pub async fn start(
     projects::set_desired_state(db, project_id, DesiredState::Running).await?;
     projects::set_status(db, project_id, ProjectStatus::Starting, None).await?;
 
-    // The runtime row is read inside, where the scaffold needs all of it rather
-    // than just its name.
-    let outcome = start_inner(db, &project, app_version).await;
+    let directory = std::path::PathBuf::from(&project.directory);
+    let outcome = runner_for(&project)
+        .start(StartContext {
+            db,
+            project: &project,
+            directory: &directory,
+            app_version,
+        })
+        .await;
 
+    record(db, project_id, outcome).await
+}
+
+/// Write what a runner observed, and answer with the status word.
+///
+/// The single place a lifecycle outcome becomes a row. Both substrates go
+/// through it, which is what makes "status is what was observed, never what was
+/// intended" a property of the module rather than a habit of each caller.
+async fn record(
+    db: &Database,
+    project_id: &str,
+    outcome: Result<Observed, LifecycleError>,
+) -> Result<String, LifecycleError> {
     match outcome {
-        Ok(state) => {
-            let status = project_status(&state)?;
-            projects::set_status(
-                db,
-                project_id,
-                status,
-                health_state(state.health.as_deref()),
-            )
-            .await?;
-            Ok(status.as_str().to_string())
+        Ok(observed) => {
+            projects::set_status(db, project_id, observed.status, observed.health).await?;
+            Ok(observed.status.as_str().to_string())
         }
         Err(error) => {
             // The observed status is FAILED whatever the intent was. Recording
@@ -235,75 +253,6 @@ pub async fn start(
     }
 }
 
-async fn start_inner(
-    db: &Database,
-    project: &projects::ProjectRecord,
-    app_version: &str,
-) -> Result<project_host_docker_manager::lifecycle::ContainerState, LifecycleError> {
-    let runner = runner().await?;
-    let directory = std::path::PathBuf::from(&project.directory);
-
-    let runtime_record = projects::find_runtime(db, &project.id)
-        .await?
-        .ok_or_else(|| LifecycleError::Scaffold("the project has no runtime row".to_string()))?;
-    scaffold(
-        &directory,
-        &ImageSpec {
-            runtime: &runtime_record.runtime,
-            install_command: runtime_record.install_command.as_deref(),
-            build_command: runtime_record.build_command.as_deref(),
-            start_command: &runtime_record.start_command,
-            publish_dir: runtime_record.publish_dir.as_deref(),
-        },
-    )?;
-
-    let spec = spec_for(db, project, app_version).await?;
-
-    if let Some(network) = &spec.network_name {
-        runner.ensure_network(network).await?;
-    }
-    runner
-        .ensure_volume(&ContainerSpec::volume_name(&project.slug))
-        .await?;
-
-    if !runner.has_image(&spec.image).await {
-        let mut log = String::new();
-        runner
-            .build_image(&spec.image, &directory, |line| {
-                // Kept for the failure message; the logs view will stream this
-                // properly once Phase 6 exists.
-                log.push_str(line);
-                log.push('\n');
-            })
-            .await
-            .map_err(|error| LifecycleError::Build(format!("{error}\n{log}")))?;
-    }
-
-    // A container from a previous run has the old configuration baked in, so
-    // it is replaced rather than reused.
-    if runner.inspect(&spec.name).await?.is_some() {
-        runner.remove(&spec.name, true).await?;
-    }
-
-    let container_id = runner.create(&spec).await?;
-    projects::record_container(
-        db,
-        &project.id,
-        Some(container_id.as_str()),
-        Some(spec.image.as_str()),
-    )
-    .await?;
-
-    runner.start(&spec.name).await?;
-    projects::record_started(db, &project.id).await?;
-
-    runner.inspect(&spec.name).await?.ok_or_else(|| {
-        LifecycleError::Docker(DockerError::Daemon(
-            "the container vanished immediately after starting".to_string(),
-        ))
-    })
-}
-
 /// Stop a project. Its data volume and files are untouched.
 pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError> {
     let project = projects::find_project(db, project_id)
@@ -313,14 +262,7 @@ pub async fn stop(db: &Database, project_id: &str) -> Result<(), LifecycleError>
     projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
     projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
 
-    let runner = runner().await?;
-    let name = ContainerSpec::container_name(&project.slug);
-
-    // Already gone is success. Stopping something that is not there is the
-    // state the caller asked for.
-    if runner.inspect(&name).await?.is_some() {
-        runner.stop(&name, None).await?;
-    }
+    runner_for(&project).stop(&project).await?;
 
     // A user-requested stop is a clean one: exit 0, no failure reason.
     projects::record_stopped(db, project_id, Some(0), None).await?;
@@ -336,16 +278,7 @@ pub async fn kill(db: &Database, project_id: &str) -> Result<(), LifecycleError>
     projects::set_desired_state(db, project_id, DesiredState::Stopped).await?;
     projects::set_status(db, project_id, ProjectStatus::Stopping, None).await?;
 
-    let runner = runner().await?;
-    let name = ContainerSpec::container_name(&project.slug);
-
-    if runner
-        .inspect(&name)
-        .await?
-        .is_some_and(|state| state.running)
-    {
-        runner.kill(&name).await?;
-    }
+    runner_for(&project).kill(&project).await?;
 
     projects::record_stopped(db, project_id, None, None).await?;
     Ok(())
@@ -361,33 +294,26 @@ pub async fn restart(
         .await?
         .ok_or_else(|| LifecycleError::NoSuchProject(project_id.to_string()))?;
 
-    let runner = runner().await?;
-    let name = ContainerSpec::container_name(&project.slug);
-
-    // Nothing to restart means start it, which is what the user meant.
-    if runner.inspect(&name).await?.is_none() {
-        return start(db, project_id, app_version).await;
-    }
-
+    // `RESTARTING` is now written before the runner is asked, rather than only
+    // once a container was known to exist. A restart of something not running is
+    // still a start, and now passes through `RESTARTING` on its way to
+    // `STARTING` instead of going straight there. Both end in the same place;
+    // the intermediate word is the honest one, because a restart is what was
+    // asked for.
+    projects::set_desired_state(db, project_id, DesiredState::Running).await?;
     projects::set_status(db, project_id, ProjectStatus::Restarting, None).await?;
-    runner.restart(&name, None).await?;
-    projects::increment_restart_count(db, project_id).await?;
 
-    let state = runner.inspect(&name).await?.ok_or_else(|| {
-        LifecycleError::Docker(DockerError::Daemon(
-            "the container vanished during a restart".to_string(),
-        ))
-    })?;
+    let directory = std::path::PathBuf::from(&project.directory);
+    let outcome = runner_for(&project)
+        .restart(StartContext {
+            db,
+            project: &project,
+            directory: &directory,
+            app_version,
+        })
+        .await;
 
-    let status = project_status(&state)?;
-    projects::set_status(
-        db,
-        project_id,
-        status,
-        health_state(state.health.as_deref()),
-    )
-    .await?;
-    Ok(status.as_str().to_string())
+    record(db, project_id, outcome).await
 }
 
 #[cfg(test)]
