@@ -15,11 +15,35 @@
 //! - **Windows** — [`CommandExt::creation_flags`] with `CREATE_NEW_PROCESS_GROUP`
 //!   at spawn, and `taskkill /T` to walk the tree.
 //! - **Unix** — [`CommandExt::process_group`], stable since Rust 1.64 and safe,
-//!   and the `kill` program to signal the negated group id.
+//!   and the `kill` program, given every pid in the tree by name.
 //!
 //! Shelling out to `taskkill` and `kill` is not elegant. It is the only way to
 //! reach this capability without FFI, and the alternative — an `unsafe` block,
 //! or a dependency that hides one — was rejected when the rule was written.
+//!
+//! # Why Unix names the pids instead of signalling the group
+//!
+//! `kill -TERM -<pid>` — a *negated* pid — signals a process group, and it is
+//! the obvious way to end a tree. It is not used here, because a negated pid is
+//! a different kind of thing from a pid and the failure is not a no-op:
+//! `kill(0, sig)` and `kill(-1, sig)` mean "everything in my own process group"
+//! and "everything I am allowed to signal". A wrong number does not miss, it
+//! hits something else.
+//!
+//! It cost a day to learn that. On a Linux CI runner this module signalled a
+//! negated pid and the *runner itself* died — "the runner has received a
+//! shutdown signal" — while the `sh` it was aiming at, a group leader in its
+//! own right, survived untouched. The signal had not gone where the number
+//! said.
+//!
+//! So [`descendants`] walks the tree and every process is named. Nothing
+//! computed here can address a group, so the worst a stale pid can do is signal
+//! one process that has already exited.
+//!
+//! The cost is a race the group form does not have: a process that forks
+//! between the walk and the signal is not on the list. That is the trade
+//! accepted — a tree that is missed is a bug to fix, a runner that is killed is
+//! a machine nobody can use.
 //!
 //! # What "graceful" means here, honestly
 //!
@@ -107,7 +131,7 @@ pub async fn kill_tree(pid: u32) -> Result<(), PlatformError> {
     let outcome = run(Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"])).await;
 
     #[cfg(unix)]
-    let outcome = run(Command::new("kill").args(["-KILL", &format!("-{pid}")])).await;
+    let outcome = signal_tree(pid, "KILL").await;
 
     // `taskkill` and `kill` both fail when the process is already gone, which
     // is the race this function is most likely to lose and least needs to
@@ -124,7 +148,30 @@ async fn request_stop(pid: u32) {
     let _ = run(Command::new("taskkill").args(["/PID", &pid.to_string(), "/T"])).await;
 
     #[cfg(unix)]
-    let _ = run(Command::new("kill").args(["-TERM", &format!("-{pid}")])).await;
+    let _ = signal_tree(pid, "TERM").await;
+}
+
+/// Send one signal to every process in a tree, each named by its own pid.
+///
+/// The root is signalled first so a supervisor gets the news before the child
+/// it would otherwise restart. Both are in the same `kill` call, so the gap is
+/// an argument's width rather than a process spawn.
+///
+/// See the module docs for why this does not signal the process group.
+#[cfg(unix)]
+async fn signal_tree(root: u32, signal: &str) -> Result<(), ()> {
+    let mut targets = vec![root];
+    targets.extend(descendants(root));
+
+    let mut command = Command::new("kill");
+    command.arg(format!("-{signal}"));
+    for target in &targets {
+        // Formatted from a `u32`, so it cannot carry a sign and cannot be read
+        // as a group. That is the property this whole approach rests on.
+        command.arg(target.to_string());
+    }
+
+    run(&mut command).await
 }
 
 /// Run a helper program, silently, and answer whether it succeeded.
