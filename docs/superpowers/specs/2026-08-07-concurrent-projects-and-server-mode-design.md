@@ -1,7 +1,17 @@
 # Running many projects at once, and tuning the machine to take it
 
 Date: 2026-08-07
-Status: designed, not implemented
+Status: stages 1 and 3 implemented, 2026-08-07. Stage 2's sampler is in;
+`observed_peak_memory_bytes` is not, so a host project is admitted against
+its declared limit every time rather than against what it turned out to
+need. Stages 4-9 — the running view, bulk start, the stagger queue, quit
+progress and all of server mode — are designed here and not built.
+
+One departure from §2.1 as written: Docker container usage is not sampled.
+The daemon's stats endpoint is not wired up and this machine has no daemon
+to wire it against, so a container contributes its declared limit to the
+total. That is an upper bound rather than a reading, and it errs towards
+refusing a start, which is the safe direction.
 
 Three pieces that only make sense together: a governor that decides whether the
 machine can take one more project, a way to see and control everything that is

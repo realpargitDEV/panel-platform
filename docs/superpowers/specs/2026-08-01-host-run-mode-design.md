@@ -1,7 +1,14 @@
 # Host run mode
 
 Date: 2026-08-01
-Status: designed, not implemented
+Status: implemented, 2026-08-07 — except §14 (resource limits) and the
+`STATIC` stage. Verified on Windows only; no Docker, WSL or Linux was
+available, so every Docker path and every Unix path remains unproven.
+
+§14 will not land as written: a Windows memory cap needs a Job Object,
+which needs `unsafe`, which the workspace forbids. Host projects are
+therefore not capped, and admission control took its place — see
+`2026-08-07-concurrent-projects-and-server-mode-design.md`.
 
 Let a project run as an ordinary process on the user's machine instead of inside
 a Docker container, chosen per project.
