@@ -105,6 +105,43 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.14
+
+            A maintenance release. Everything here is a fix to how a project
+            that *cannot stay up* is supervised and reported — the path where
+            getting it wrong is least visible and most confusing.
+
+            **A project that crashed and restarted now explains itself with the
+            output of the run that just failed.** Each restart began collecting
+            the replacement's output into a new place and kept reading the old
+            one, so every failure after the first was reported with words you
+            had already seen, and "gave up after 5 restarts" showed you the run
+            from five crashes ago. Attempts now share one excerpt, so what you
+            read is the sequence the crash loop actually produced.
+
+            **A project that fails to start no longer keeps restarting
+            invisibly.** If a host project died in the first moments of its
+            start, the application told you the start had failed — and then went
+            on restarting it up to five more times, against a port you had just
+            been told was free, with nothing in the interface able to stop it
+            because nothing knew it existed. A failed start now stops for good.
+
+            **A failure report waits for the last line rather than the first.**
+            The output of a dying process arrives a moment after the process
+            does, and the report used to be assembled as soon as anything had
+            arrived. It now waits for the output to finish — bounded, so a
+            project that leaves something else holding its output can delay the
+            report but never hang it.
+
+            **The release itself is checked more honestly.** 0.1.13 was built
+            and published with a `Cargo.lock` still naming 0.1.12 for all
+            sixteen of its own crates; nothing looked, and the build quietly
+            rewrote it. The version gate now reads the lock file too, so a
+            release cannot be cut from a tree whose pinned versions disagree
+            with the version on the box.
+
+            This release also carries everything in 0.1.13, below.
+
             ## What changed in 0.1.13
 
             **Projects can now run directly on the host, not only through
