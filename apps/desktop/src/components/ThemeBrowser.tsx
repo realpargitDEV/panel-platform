@@ -52,7 +52,7 @@ export default function ThemeBrowser({
             type="search"
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="Search 81 themes by name, colour or category"
+            placeholder={`Search ${THEMES.length} themes by name, colour or category`}
             aria-label="Search themes"
             className="h-9 w-full select-text rounded-[8px] border border-edge bg-raised pl-8 pr-3 text-[13px] text-ink placeholder:text-faint"
           />
