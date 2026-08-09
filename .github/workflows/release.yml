@@ -33,6 +33,12 @@ jobs:
       # matrix.
       - name: No file starts with a BOM
         run: bash scripts/check-no-bom.sh
+      # The notes become `latest.json`'s `notes`, and every client already
+      # installed refuses a manifest that exceeds the limit compiled into it.
+      # Failing the release is recoverable; shipping a manifest the fleet
+      # rejects is not.
+      - name: Release notes fit what installed clients accept
+        run: bash scripts/check-release-notes.sh
 
   build:
     needs: check-version
@@ -260,163 +266,7 @@ jobs:
             handling, while the import organiser and progress UI make multi-item
             imports easier to review and cancel.
 
-            This release also carries everything in 0.1.9, below.
-
-            ## What changed in 0.1.9
-
-            **The interface has been rebuilt.** The four dashboard-style
-            screens and the two-pane file view are gone, replaced by a
-            project-hosting interface and a proper editor workspace.
-
-            **A dashboard that reports the machine.** Live CPU, memory and disk
-            for the computer the projects run on, measured rather than
-            estimated, alongside project counts, an activity feed and a list of
-            anything that should be running and is not.
-
-            **Projects you can find.** Grid and list views, search, filters by
-            status and runtime, sorting, and start/stop/restart without opening
-            the project first.
-
-            **A project page with everything the application knows.** Seven
-            tabs — state, runtime and commands, deployments, container events,
-            ports, environment variables and limits. Most of this was already
-            recorded and had never been shown: uptime, restart counts, exit
-            codes, failure reasons, port mappings and build history all come
-            from the database as it stands.
-
-            **Creating a project is a four-step wizard.** Source, details,
-            runtime, review. What you type survives changing your mind about
-            where the files come from, errors appear next to the field that
-            caused them, and the review step tells you what will be detected
-            rather than making you guess.
-
-            **An editor that behaves like one.** A file tree with drag-and-drop
-            move and import, tabs with unsaved markers, Monaco with a minimap
-            and find-and-replace, a command palette, and the usual shortcuts.
-            Dropping a file that already exists now offers to replace, keep
-            both or skip, instead of failing.
-
-            **Activity.** Every start, stop, edit and failure the core recorded,
-            grouped by day and filterable.
-
-            Where the application cannot answer a question it now says so
-            rather than showing a convincing zero. Per-project CPU and memory
-            are not measured, there is no console or log collection, and
-            configuration is still read from `config.toml` at startup.
-
-            This release also carries everything in 0.1.7, below.
-
-            ## What changed in 0.1.7
-
-            **Dragging files and folders from your computer now imports them
-            reliably.** The file manager handles individual files, multiple
-            files, folders and complete project directories dropped from the
-            operating system, preserving nested subfolders and refreshing the
-            Explorer as soon as the import completes.
-
-            Imports are staged before they appear in the project, so cancelled
-            or failed transfers do not leave partially copied files behind. The
-            app now shows progress, supports cancel and retry, refuses accidental
-            overwrites or duplicate destinations, and reports clear errors for
-            paths it cannot safely copy.
-
-            This release also carries everything in 0.1.6, below.
-
-            ## What changed in 0.1.6
-
-            **Project consoles now have direct runtime controls.** Every
-            project console includes Start, Restart, Stop and Kill buttons like
-            the server control strip, with clear disabled states while Docker is
-            unavailable or the project is already changing state.
-
-            Stop still asks the container to shut down gracefully. Kill is a new
-            immediate Docker kill path for cases where the process is wedged,
-            and it leaves project files and volumes untouched.
-
-            This release also carries everything in 0.1.5, below.
-
-            ## What changed in 0.1.5
-
-            **The file manager now accepts drag-and-drop uploads.** Drop files
-            or folders onto the Explorer, choose the directory they should land
-            in, and the application streams each file into place with visible
-            progress. Multiple files can upload at once, failed transfers can be
-            retried, and in-progress uploads can be cancelled without leaving a
-            partial project file behind.
-
-            Uploads now protect existing project files. A dropped file is first
-            reserved as a hidden temporary sibling, written in chunks, and only
-            renamed into its final path after the upload is complete. If the
-            destination already exists at the start, or appears while the upload
-            is running, the upload fails clearly instead of overwriting the
-            user's work.
-
-            0.1.5 also carries everything in 0.1.4, below.
-
-            ## What changed in 0.1.4
-
-            **The Update button now works, start to finish.** Pressing it
-            downloads the release for your system, checks its signature against
-            a key built into the application, installs it, and starts the new
-            version. While that happens the window shows how much has arrived
-            of how much, then that it is verifying, then that it is installing —
-            rather than a button that says "Updating…" and nothing else.
-
-            The bug that made the progress bar sit still was found by running a
-            real update rather than by reading the code: the window was never
-            permitted to receive events from the core at all, so every progress
-            report was dropped on the floor. That permission is part of this
-            release.
-
-            **The application now looks for updates on its own** — once when it
-            starts and every six hours while it is open — and the Update button
-            is still there for asking immediately. Only one update can be
-            running at a time, enforced in the core rather than by hoping two
-            buttons in two places disagree politely.
-
-            What counts as an update has not changed and is worth being explicit
-            about: only a **published, stable release** newer than the one you
-            are running. Commits, tags, branches and draft releases are all
-            invisible to it, and a pre-release is only ever offered on the beta
-            channel.
-
-            Your projects, settings and database are untouched by an update. The
-            installer replaces the application; your data lives elsewhere and
-            stays where it is.
-
-            This release also carries everything in 0.1.3, below.
-
-            ## What changed in 0.1.3
-
-            **Creating a project no longer fails with "Value rejected by a
-            database constraint."**
-
-            0.1.0 — until now the only release anyone could install — wrote a
-            project type into the database that the schema does not allow, so
-            *every* attempt to create a project was refused and nothing was
-            saved. The column now takes a typed value rather than free text, so
-            the wrong word cannot be written at all, and the whole creation path
-            — all thirteen runtimes and every source kind — is covered by tests
-            that go through the code the Create button uses rather than through
-            values a test made up.
-
-            The code fix was ready in 0.1.2, but 0.1.1 and 0.1.2 were both left
-            as unpublished drafts, so no one ever received them. That is the
-            other half of this release: it is published.
-
-            The same mistake was found and fixed in one more place before it
-            could reach anyone: the status and health a project gets after
-            starting were passed through in Docker's spelling (`healthy`), which
-            the database also refuses. Those columns are typed now too.
-
-            Your existing data is kept. This release changes no table and adds
-            no migration; a database from an earlier version opens, upgrades and
-            keeps its projects, runtimes and environment variables.
-
-            **0.1.0 and 0.1.1 cannot update themselves** — their Update button
-            does nothing. If you are on one of those, install this release by
-            hand, once, using the instructions below. Updating from 0.1.2 works
-            from inside the application.
+            Earlier releases are listed at https://github.com/realpargitDEV/panel-platform/releases.
 
             ## Download
 

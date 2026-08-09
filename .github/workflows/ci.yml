@@ -66,4 +66,11 @@ jobs:
         shell: bash
         run: bash scripts/check-version.sh
 
+      # Caught here rather than only at tag time: the notes grow a section per
+      # release, and finding out they are too long while cutting a release is
+      # finding out too late.
+      - name: Release notes fit what installed clients accept
+        shell: bash
+        run: bash scripts/check-release-notes.sh
+
       - run: pnpm verify
