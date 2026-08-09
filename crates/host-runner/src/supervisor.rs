@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use crate::command::ProcessCommand;
 use crate::health::{Check, Health};
-use crate::output::{pump, Tail};
+use crate::output::{pump, pump_into, Pumps, Tail};
 
 /// How long a freshly spawned process is watched before it is called started.
 ///
@@ -39,6 +39,12 @@ pub const MAX_RESTARTS: u32 = 5;
 
 /// The first backoff, doubled per attempt: 1s, 2s, 4s, 8s, 16s.
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
+
+/// How long an exit waits for the child's last output before reporting it.
+///
+/// Short, because it delays every crash report, and bounded because a child
+/// that left a grandchild holding its pipes never closes them.
+const DRAIN: Duration = Duration::from_secs(2);
 
 /// What to run, where to log it, and what to do while it runs.
 #[derive(Debug, Clone)]
@@ -150,6 +156,13 @@ struct Shared {
     stopping: bool,
     /// How many times this project has been restarted after crashing.
     restarts: u32,
+    /// Set once an exit has been fully written down, output included.
+    ///
+    /// The status flips as soon as the child is reaped, because a start waiting
+    /// on the settle window must not be told a dead project is alive. The
+    /// child's last words arrive a moment later. This distinguishes "failed,
+    /// reason still being collected" from "failed, and it said nothing".
+    exit_recorded: bool,
 }
 
 /// A handle to one running project.
@@ -216,6 +229,45 @@ impl SupervisorHandle {
         state.stopping = true;
         state.pid
     }
+
+    /// Turn a start that died in its settle window into the error to report,
+    /// and take the supervision down with it.
+    ///
+    /// Both halves matter. A failed start returns an error and no handle, so
+    /// anything the supervision task did afterwards — restarting on the
+    /// project's restart policy, in particular — would be work nobody could
+    /// observe and nobody could stop. Ending it here is what keeps a project
+    /// that cannot start from becoming a process the registry has never heard
+    /// of, respawning against a port the user thinks is free.
+    async fn failed_start(&self, program: String) -> HostError {
+        // Wait for the child's own words before ending anything, or the report
+        // says only that it failed.
+        self.await_exit_recorded().await;
+        let observed = self.observe();
+        let _ = self.kill().await;
+
+        HostError::ExitedImmediately {
+            program,
+            code: observed.exit_code.unwrap_or(-1),
+            tail: self.tail(),
+        }
+    }
+
+    /// Wait, briefly, for an exit to be written down in full.
+    ///
+    /// The status flips the moment the child is reaped; its output lands once
+    /// the pumps have drained. Bounded by the same limit the drain itself uses,
+    /// so a pipe held open by a grandchild delays the report rather than
+    /// hanging the start.
+    async fn await_exit_recorded(&self) {
+        let deadline = std::time::Instant::now() + DRAIN + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            if self.state().exit_recorded {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
 }
 
 /// Start a project and supervise it.
@@ -228,7 +280,7 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
     let mut child = spawn(&config.command)?;
 
     let pid = child.id();
-    let tail = pump(
+    let (tail, pumps) = pump(
         child.stdout.take(),
         child.stderr.take(),
         config.log_path.clone(),
@@ -242,6 +294,7 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
         failure_reason: None,
         stopping: false,
         restarts: 0,
+        exit_recorded: false,
     }));
 
     let handle = SupervisorHandle {
@@ -252,7 +305,7 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
     // The supervision task owns the child from here. Nothing else may wait on
     // it: two waiters means one of them gets "no such child" and reports a
     // healthy project as vanished.
-    tokio::spawn(supervise(shared, config, tail.clone(), child));
+    tokio::spawn(supervise(shared, config, tail.clone(), child, pumps));
 
     // Watch the settle window, checking often enough that a healthy start is
     // not delayed by the full period for no reason.
@@ -261,11 +314,7 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
         let observed = handle.observe();
         if observed.status != HostStatus::Running {
             if observed.status == HostStatus::Failed {
-                return Err(HostError::ExitedImmediately {
-                    program,
-                    code: observed.exit_code.unwrap_or(-1),
-                    tail: handle.tail(),
-                });
+                return Err(handle.failed_start(program).await);
             }
             // Exited cleanly inside the window. A one-shot command run as a
             // project is unusual but not wrong, and it is not a failure.
@@ -288,6 +337,7 @@ async fn supervise(
     config: SupervisorConfig,
     tail: Tail,
     mut child: tokio::process::Child,
+    mut pumps: Pumps,
 ) {
     let mut attempt: u32 = 0;
 
@@ -295,6 +345,10 @@ async fn supervise(
         let exit = wait_while_polling_health(&shared, &config, &mut child).await;
         let code = exit.ok().and_then(|status| status.code()).map(i64::from);
 
+        // The exit itself is recorded at once, before the output is collected.
+        // A start watching the settle window must not be told a project that
+        // has already died is still running just because its last line has not
+        // arrived yet.
         {
             let mut state = lock(&shared);
             state.exit_code = code;
@@ -306,15 +360,27 @@ async fn supervise(
                 // non-zero code because the tree was force-killed, which is not
                 // a failure and must not be recorded as one.
                 state.status = HostStatus::Stopped;
+                state.exit_recorded = true;
                 return;
             }
             if code == Some(0) {
                 state.status = HostStatus::Stopped;
+                state.exit_recorded = true;
                 return;
             }
 
             state.status = HostStatus::Failed;
+        }
+
+        // Now the child's last words, which are the whole reason a failure is
+        // readable. The pumps are separate tasks, so this waits for them rather
+        // than reading a tail they have not finished filling.
+        pumps.drained(DRAIN).await;
+
+        {
+            let mut state = lock(&shared);
             state.failure_reason = tail.text();
+            state.exit_recorded = true;
 
             if !config.restart_on_crash {
                 return;
@@ -343,12 +409,15 @@ async fn supervise(
         match spawn(&config.command) {
             Ok(mut replacement) => {
                 let pid = replacement.id();
-                // A fresh pump per attempt: the previous child's pipes are
-                // closed, and its pump task has already ended.
-                pump(
+                // Fresh pumps per attempt, because the previous child's pipes
+                // are closed — but into the same tail, so the excerpt shown for
+                // the next failure is written by the child that failed rather
+                // than by the first one.
+                pumps = pump_into(
                     replacement.stdout.take(),
                     replacement.stderr.take(),
                     config.log_path.clone(),
+                    tail.clone(),
                 );
                 let mut state = lock(&shared);
                 state.status = HostStatus::Running;
@@ -356,6 +425,7 @@ async fn supervise(
                 state.exit_code = None;
                 state.failure_reason = None;
                 state.restarts = attempt;
+                state.exit_recorded = false;
                 drop(state);
                 child = replacement;
             }
@@ -366,6 +436,7 @@ async fn supervise(
                 let mut state = lock(&shared);
                 state.status = HostStatus::Failed;
                 state.failure_reason = Some(error.to_string());
+                state.exit_recorded = true;
                 return;
             }
         }
@@ -439,7 +510,7 @@ pub async fn run_step(
     log_path: PathBuf,
 ) -> Result<(), HostError> {
     let mut child = spawn(&command)?;
-    let tail = pump(child.stdout.take(), child.stderr.take(), log_path);
+    let (tail, mut pumps) = pump(child.stdout.take(), child.stderr.take(), log_path);
 
     let status = child
         .wait()
@@ -455,7 +526,7 @@ pub async fn run_step(
 
     // Let the pumps drain before the tail is read, or the reason the step
     // failed is missing from the message reporting that it failed.
-    settle_output(&tail).await;
+    pumps.drained(DRAIN).await;
 
     Err(HostError::StepFailed {
         phase,
@@ -483,20 +554,6 @@ fn spawn(command: &ProcessCommand) -> Result<tokio::process::Child, HostError> {
         program: command.program.clone(),
         source,
     })
-}
-
-/// Give the output pumps a moment to catch up.
-///
-/// The pumps are separate tasks, so a child can exit before its last line has
-/// been read. Reading the tail immediately would drop exactly the line that
-/// explains what went wrong.
-async fn settle_output(tail: &Tail) {
-    for _ in 0..40 {
-        if tail.text().is_some() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
 }
 
 #[cfg(test)]
@@ -858,6 +915,102 @@ mod tests {
         assert!(matches!(handle.observe().health, Health::Failing(_)));
 
         handle.kill().await.expect("kill");
+    }
+
+    /// A crash loop only explains itself if the output shown is the output of
+    /// the attempt that just failed. A tail belonging to the first child stops
+    /// filling the moment that child's pipes close, so every later failure would
+    /// be reported with words from a run the user has already seen.
+    #[tokio::test]
+    async fn each_restarted_attempt_adds_its_own_output_to_the_tail() {
+        let directory = tempfile::tempdir().expect("temp dir");
+
+        #[cfg(windows)]
+        let talks_then_crashes = command(
+            "cmd",
+            &["/C", "echo tick&& ping -n 2 127.0.0.1 >NUL && exit 9"],
+            directory.path(),
+        );
+        #[cfg(unix)]
+        let talks_then_crashes = command(
+            "sh",
+            &["-c", "echo tick; sleep 1; exit 9"],
+            directory.path(),
+        );
+
+        let handle = start(SupervisorConfig {
+            restart_on_crash: true,
+            backoff: Duration::from_millis(10),
+            ..SupervisorConfig::new(talks_then_crashes, directory.path().join("run.log"))
+        })
+        .await
+        .expect("start");
+
+        assert!(
+            wait_until(&handle, |observed| observed.restarts >= 2).await,
+            "the supervisor never reached a second restart"
+        );
+
+        // Two restarts means three attempts have run, and each said `tick`.
+        let ticks = handle
+            .tail()
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.contains("tick"))
+            .count();
+        assert!(
+            ticks >= 3,
+            "the tail held only {ticks} attempts' output, so a later failure \
+             would be reported with an earlier run's words"
+        );
+
+        handle.kill().await.expect("kill");
+    }
+
+    /// A failed start hands the caller an error and no handle. If the
+    /// supervision task outlived that, it would go on respawning a project
+    /// nothing holds a reference to — unstoppable, and invisible to the
+    /// registry that is supposed to know what is running.
+    #[tokio::test]
+    async fn a_failed_start_does_not_leave_a_restart_loop_running() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let marker = directory.path().join("attempts.txt");
+
+        #[cfg(windows)]
+        let always_fails = command(
+            "cmd",
+            &["/C", "echo attempt>>attempts.txt&& exit 4"],
+            directory.path(),
+        );
+        #[cfg(unix)]
+        let always_fails = command(
+            "sh",
+            &["-c", "echo attempt >> attempts.txt; exit 4"],
+            directory.path(),
+        );
+
+        start(SupervisorConfig {
+            restart_on_crash: true,
+            backoff: Duration::from_millis(10),
+            ..SupervisorConfig::new(always_fails, directory.path().join("run.log"))
+        })
+        .await
+        .expect_err("a program that exits at once has not started");
+
+        // Long enough for every one of the five restarts to have happened at a
+        // 10ms backoff, had anything still been driving them.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let attempts = std::fs::read_to_string(&marker)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.contains("attempt"))
+            .count();
+        assert_eq!(
+            attempts, 1,
+            "the process ran {attempts} times, so a start that failed left a \
+             restart loop nobody can stop"
+        );
     }
 
     /// Poll until the predicate holds, or give up after a bounded wait.

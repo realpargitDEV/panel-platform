@@ -82,6 +82,34 @@ pub fn log_path(logs_root: &Path, slug: &str, today: &str) -> PathBuf {
         .join(format!("run-{today}.log"))
 }
 
+/// The pumps running for one child, and the way to know they have finished.
+///
+/// Held so that a caller reporting a failure can wait for the child's last
+/// words to actually be recorded. Reading the tail the instant the child exits
+/// races the tasks carrying its output and drops exactly the line that explains
+/// what went wrong.
+#[derive(Debug)]
+pub struct Pumps {
+    writer: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Pumps {
+    /// Wait until everything the child wrote has been recorded, or until
+    /// `limit` passes.
+    ///
+    /// Bounded, because the writer ends when the pipes close and a child that
+    /// left a grandchild holding them never closes them. A failure report that
+    /// waited forever would be worse than one missing its last line. Giving up
+    /// detaches the writer rather than stopping it, so a late line still
+    /// reaches the log file.
+    pub async fn drained(&mut self, limit: std::time::Duration) {
+        let Some(writer) = self.writer.take() else {
+            return;
+        };
+        let _ = tokio::time::timeout(limit, writer).await;
+    }
+}
+
 /// Start pumping a child's streams into `path`, and answer with the tail.
 ///
 /// Returns as soon as the pumps are running; the child's output arrives on its
@@ -91,8 +119,26 @@ pub fn pump(
     stdout: Option<tokio::process::ChildStdout>,
     stderr: Option<tokio::process::ChildStderr>,
     path: PathBuf,
-) -> Tail {
+) -> (Tail, Pumps) {
     let tail = Tail::new();
+    let pumps = pump_into(stdout, stderr, path, tail.clone());
+    (tail, pumps)
+}
+
+/// Pump a child's streams into `path`, collecting into an existing tail.
+///
+/// This is what makes a restart legible. Each attempt is a new child with new
+/// pipes, so each needs its own pumps — but a fresh tail per attempt would mean
+/// the excerpt shown for the third crash was written by the first child, which
+/// stopped talking two failures ago. One tail across the attempts keeps the
+/// sequence, which is the interesting thing about a crash loop, and puts the
+/// newest lines last where a failure report needs them.
+pub fn pump_into(
+    stdout: Option<tokio::process::ChildStdout>,
+    stderr: Option<tokio::process::ChildStderr>,
+    path: PathBuf,
+    tail: Tail,
+) -> Pumps {
     // Bounded, so a project logging faster than the disk can take it applies
     // back-pressure to itself rather than growing this queue until the
     // application runs out of memory.
@@ -106,8 +152,9 @@ pub fn pump(
     }
     drop(sender);
 
-    tokio::spawn(write_lines(receiver, path, tail.clone()));
-    tail
+    Pumps {
+        writer: Some(tokio::spawn(write_lines(receiver, path, tail))),
+    }
 }
 
 /// Read one stream, line by line, into the channel.
@@ -218,16 +265,13 @@ mod tests {
             .stderr(std::process::Stdio::piped());
 
         let mut child = command.spawn().expect("spawn");
-        let tail = pump(child.stdout.take(), child.stderr.take(), path.clone());
+        let (tail, mut pumps) = pump(child.stdout.take(), child.stderr.take(), path.clone());
         let _ = child.wait().await;
 
-        // The pumps are separate tasks; give them a moment to drain.
-        for _ in 0..100 {
-            if tail.text().is_some() {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
+        // The pumps are separate tasks, so the child can exit before its last
+        // line has been read. Waiting for them is what makes this deterministic
+        // rather than a race that usually goes the right way.
+        pumps.drained(std::time::Duration::from_secs(5)).await;
 
         let captured = tail.text().unwrap_or_default();
         assert!(
@@ -265,16 +309,79 @@ mod tests {
             .stderr(std::process::Stdio::piped());
 
         let mut child = command.spawn().expect("spawn");
-        let tail = pump(child.stdout.take(), child.stderr.take(), path);
+        let (tail, mut pumps) = pump(child.stdout.take(), child.stderr.take(), path);
         let _ = child.wait().await;
-
-        for _ in 0..100 {
-            if tail.text().is_some() {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
+        pumps.drained(std::time::Duration::from_secs(5)).await;
 
         assert!(tail.text().unwrap_or_default().contains("EADDRINUSE"));
+    }
+
+    /// Successive children of one project share a tail, so the excerpt shown
+    /// for a crash loop is the sequence rather than only its first run.
+    #[tokio::test]
+    async fn attempts_sharing_a_tail_keep_the_whole_sequence() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("run.log");
+        let tail = Tail::new();
+
+        for attempt in 1..=3 {
+            let mut command;
+            #[cfg(windows)]
+            {
+                command = tokio::process::Command::new("cmd");
+                command.args(["/C", &format!("echo attempt {attempt}")]);
+            }
+            #[cfg(unix)]
+            {
+                command = tokio::process::Command::new("sh");
+                command.args(["-c", &format!("echo attempt {attempt}")]);
+            }
+            command
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+
+            let mut child = command.spawn().expect("spawn");
+            let mut pumps = pump_into(
+                child.stdout.take(),
+                child.stderr.take(),
+                path.clone(),
+                tail.clone(),
+            );
+            let _ = child.wait().await;
+            pumps.drained(std::time::Duration::from_secs(5)).await;
+        }
+
+        let captured = tail.text().unwrap_or_default();
+        for attempt in 1..=3 {
+            assert!(
+                captured.contains(&format!("attempt {attempt}")),
+                "attempt {attempt} is missing from {captured:?}"
+            );
+        }
+    }
+
+    /// A child whose grandchild holds the pipes open never closes them, so the
+    /// wait has to end on its own rather than hanging the failure report.
+    #[tokio::test]
+    async fn draining_gives_up_rather_than_waiting_on_a_pipe_that_never_closes() {
+        let (sender, receiver) = mpsc::channel::<String>(1);
+        let directory = tempfile::tempdir().expect("temp dir");
+        let mut pumps = Pumps {
+            writer: Some(tokio::spawn(write_lines(
+                receiver,
+                directory.path().join("run.log"),
+                Tail::new(),
+            ))),
+        };
+
+        let started = std::time::Instant::now();
+        pumps.drained(std::time::Duration::from_millis(200)).await;
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "draining waited on a stream that was never going to close"
+        );
+
+        // Giving up detaches the writer rather than stopping it.
+        drop(sender);
     }
 }
