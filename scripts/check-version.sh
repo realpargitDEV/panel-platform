@@ -47,6 +47,52 @@ for pair in \
   fi
 done
 
+# Cargo.lock pins the workspace's own crates alongside their dependencies, and
+# bumping `[workspace.package]` does not rewrite it — the next `cargo` command
+# does, quietly. So a release can be tagged from a tree whose lock file still
+# names the previous version, and nothing above would notice: `cargo build` has
+# no `--locked` here, so CI regenerates it and goes green while the committed
+# lock file describes a build nobody made. 0.1.13 shipped exactly that way.
+#
+# Each member's package name comes from its own manifest rather than a prefix
+# guess, so a crate renamed or added is covered without touching this script.
+stale=""
+while read -r member; do
+  [ -n "$member" ] || continue
+  manifest="$member/Cargo.toml"
+  [ -f "$manifest" ] || continue
+  name="$(sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)"
+  [ -n "$name" ] || continue
+  # The version recorded for this package in the lock file: find its block by
+  # name, then take the first `version` line after it.
+  locked="$(
+    awk -v want="$name" '
+      $0 == "name = \"" want "\"" { found = 1; next }
+      found && /^version = / {
+        gsub(/^version = "|"$/, "")
+        print
+        exit
+      }
+    ' Cargo.lock
+  )"
+  [ -n "$locked" ] || continue
+  if [ "$locked" != "$tauri_version" ]; then
+    stale="$stale  $name $locked"$'\n'
+    failed=1
+  fi
+done <<EOF
+$(sed -n '/^members[[:space:]]*=[[:space:]]*\[/,/^]/p' Cargo.toml |
+  sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p')
+EOF
+
+if [ -n "$stale" ]; then
+  echo "error: Cargo.lock still pins workspace crates at an old version:" >&2
+  printf '%s' "$stale" >&2
+  echo "hint: run 'cargo check --workspace' and commit the updated Cargo.lock" >&2
+else
+  report "Cargo.lock (workspace crates)" "$tauri_version"
+fi
+
 if [ "$#" -ge 1 ] && [ -n "${1:-}" ]; then
   tag="$1"
   # Tags are written `v0.1.0`; the manifests carry the bare version.
