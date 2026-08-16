@@ -140,6 +140,14 @@ string_enum! {
 string_enum! {
     /// Observed state. Distinct from [`DesiredState`]: the reconciler exists
     /// precisely because these two disagree after a crash or a reboot.
+    ///
+    /// `Crashed` and `Failed` are both bad endings and deliberately not the
+    /// same word. `Failed` is a project that never got off the ground — the
+    /// runtime is not installed, the port was taken, the entry file is not
+    /// there — and the fix is configuration. `Crashed` is a project that
+    /// started cleanly, ran, and then exited on its own, where the fix is in
+    /// the user's code. Collapsing the two forces the interface to guess which
+    /// happened, and it can only guess wrong half the time.
     ProjectStatus {
         Creating => "CREATING",
         Stopped => "STOPPED",
@@ -148,6 +156,7 @@ string_enum! {
         Stopping => "STOPPING",
         Restarting => "RESTARTING",
         Building => "BUILDING",
+        Crashed => "CRASHED",
         Failed => "FAILED",
         Unhealthy => "UNHEALTHY",
         Archived => "ARCHIVED",
@@ -166,14 +175,14 @@ string_enum! {
 }
 
 string_enum! {
-    /// How a project runs: inside a container, or as an ordinary process on
-    /// this machine.
+    /// How a project runs: as an ordinary process on this machine, or inside a
+    /// container.
     ///
-    /// `Docker` is the default, and is what every project created before this
-    /// existed is stored as — the column's default is what keeps their
-    /// behaviour identical. `Host` gives up the isolation, the resource limits
-    /// and the daemon that outlives the application, which is why it is never
-    /// selected without the user saying so.
+    /// `Host` is the default and the only value the interface produces. `Docker`
+    /// remains in the enum and in the schema's `CHECK` because
+    /// `docker-manager` still compiles and a hand-set row must stay readable,
+    /// but nothing a user can press writes it. Migration 0008 moved every
+    /// existing row to `Host`.
     RunMode {
         Docker => "DOCKER",
         Host => "HOST",
@@ -400,6 +409,6 @@ mod tests {
         for value in ProjectStatus::ALL {
             assert!(seen.insert(value.as_str()), "duplicate {value}");
         }
-        assert_eq!(seen.len(), 11);
+        assert_eq!(seen.len(), 12);
     }
 }

@@ -22,6 +22,7 @@ pub mod docker;
 pub mod error;
 pub mod info;
 pub mod paths;
+pub mod ports;
 pub mod probe;
 pub mod process;
 pub mod secure_storage;
@@ -31,6 +32,7 @@ pub use docker::{DockerEndpoint, DockerInstallHint, DockerProvider, SystemDocker
 pub use error::PlatformError;
 pub use info::{Capabilities, PlatformInfo};
 pub use paths::{platform_paths, PathProvider, StandardPaths};
+pub use ports::{is_free, owner_of, PortOwner};
 pub use probe::{FixedProbe, SystemProbe, SystemScanner};
 pub use process::{as_group_leader, descendants, is_alive, kill_tree, terminate_tree};
 pub use secure_storage::{

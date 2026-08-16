@@ -67,6 +67,14 @@ pub struct StartContext<'a> {
     pub project: &'a ProjectRecord,
     pub directory: &'a Path,
     pub app_version: &'a str,
+    /// The key a project's secret environment variables are stored under.
+    ///
+    /// Here rather than fetched inside the runner because the key belongs to
+    /// the installation, not to the project, and a runner that reached for the
+    /// keychain itself would be a second place that could open it. `None` is a
+    /// runnable state: the plaintext variables are still applied and the
+    /// secrets are reported as unavailable by name.
+    pub master_key: Option<&'a project_host_security::EncryptionKey>,
 }
 
 impl std::fmt::Debug for StartContext<'_> {
@@ -195,7 +203,9 @@ pub(crate) mod tests {
             autostart: false,
             restart_policy: "UNLESS_STOPPED".to_string(),
             network_mode: "INTERNET".to_string(),
-            run_mode: "DOCKER".to_string(),
+            run_mode: "HOST".to_string(),
+            priority: "NORMAL".to_string(),
+            keep_awake: false,
             memory_limit_mb: 512,
             cpu_limit_cores: 1.0,
             storage_limit_mb: 1024,

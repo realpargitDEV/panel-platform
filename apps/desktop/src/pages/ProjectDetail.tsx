@@ -15,6 +15,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   errorMessage,
+  setProjectPower,
+  type ProjectPriority,
   HOST_MODE_TRADE,
   isHostMode,
   killProject,
@@ -58,11 +60,21 @@ import {
   IconButton,
   Skeleton,
   Tabs,
+  Toggle,
 } from '../ui/primitives';
 import { toast } from '../ui/toast';
+import ProjectConsole from '../components/ProjectConsole';
+import Select from '../ui/Select';
 
 type TabId =
-  'overview' | 'deployments' | 'history' | 'networking' | 'environment' | 'resources' | 'settings';
+  | 'overview'
+  | 'console'
+  | 'deployments'
+  | 'history'
+  | 'networking'
+  | 'environment'
+  | 'resources'
+  | 'settings';
 
 export default function ProjectDetail({
   project,
@@ -241,6 +253,7 @@ export default function ProjectDetail({
         onSelect={setTab}
         tabs={[
           { id: 'overview', label: 'Overview' },
+          { id: 'console', label: 'Console' },
           { id: 'deployments', label: 'Deployments', badge: deployments?.length },
           { id: 'history', label: 'History', badge: events?.length },
           { id: 'networking', label: 'Networking', badge: detail?.ports.length },
@@ -276,8 +289,10 @@ export default function ProjectDetail({
           <Networking detail={detail} />
         ) : tab === 'environment' ? (
           <Environment detail={detail} />
+        ) : tab === 'console' ? (
+          <ProjectConsole projectId={project.id} />
         ) : tab === 'resources' ? (
-          <Resources detail={detail} />
+          <Resources detail={detail} project={project} onChanged={load} />
         ) : (
           <Settings detail={detail} onChanged={load} />
         )}
@@ -675,9 +690,18 @@ function Environment({ detail }: { detail: Detail }) {
 
 // ----------------------------------------------------------------- resources
 
-function Resources({ detail }: { detail: Detail }) {
+function Resources({
+  detail,
+  project,
+  onChanged,
+}: {
+  detail: Detail;
+  project: ProjectSummary;
+  onChanged: () => void;
+}) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <PowerCard detail={detail} project={project} onChanged={onChanged} />
       <Card>
         <CardHeader title="Limits" subtitle="What this project is allowed to use" />
         <div className="px-4 py-1">
@@ -718,6 +742,95 @@ function Resources({ detail }: { detail: Detail }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+/**
+ * What this project is worth when the machine is busy, and whether it is a
+ * reason to keep the machine awake.
+ *
+ * Neither control can stop or slow a project into failure. Priority moves the
+ * operating system's scheduling only — it is never a cap — and that is said on
+ * the card rather than left for the user to assume, because "Low" is a word
+ * that sounds like a limit.
+ */
+function PowerCard({
+  detail,
+  project,
+  onChanged,
+}: {
+  detail: Detail;
+  project: ProjectSummary;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  // The row is the authority: it is what the power manager reads. `project`
+  // carries the summary the list was drawn from, which can be a poll behind.
+  const priority = (detail.priority ?? 'NORMAL') as ProjectPriority;
+  const keepAwake = detail.keepAwake ?? false;
+  const host = detail.runMode === 'HOST';
+
+  async function apply(changes: { priority?: ProjectPriority; keepAwake?: boolean }) {
+    setBusy(true);
+    try {
+      await setProjectPower(project.id, changes);
+      onChanged();
+    } catch (error) {
+      toast.error('Could not change the power settings', errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Power" subtitle="How this project is treated when the machine is busy" />
+
+      {!host ? (
+        <p className="px-4 py-5 text-[13px] text-muted">
+          These apply to projects that run as a process on this machine. A container is scheduled by
+          the daemon, which this application does not manage.
+        </p>
+      ) : (
+        <div className="px-4 pb-4 pt-2">
+          <label className="block text-[12px] text-muted" htmlFor="project-priority">
+            Scheduling priority
+          </label>
+          <Select
+            id="project-priority"
+            value={priority}
+            disabled={busy}
+            onChange={(value) => void apply({ priority: value as ProjectPriority })}
+            options={[
+              { value: 'LOW', label: 'Low — yield to everything else' },
+              { value: 'NORMAL', label: 'Normal' },
+              { value: 'HIGH', label: 'High — keep this one responsive' },
+            ]}
+          />
+          <p className="mt-1.5 text-[12px] text-muted">
+            This changes the order the operating system runs things in. It is never a limit, and
+            nothing here can stop this project or make it fail.
+          </p>
+
+          <div className="mt-4 flex items-start justify-between gap-3 border-t border-edge pt-3">
+            <div className="min-w-0">
+              <p className="text-[13px] text-ink">Keep this machine awake</p>
+              <p className="mt-0.5 text-[12px] text-muted">
+                While this project is running, hold off automatic sleep. Off by default: stopping a
+                machine sleeping is something to opt into, per project.
+              </p>
+            </div>
+            <Toggle
+              checked={keepAwake}
+              disabled={busy}
+              onChange={(next) => void apply({ keepAwake: next })}
+              label="Keep this machine awake"
+            />
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

@@ -1,0 +1,27 @@
+[package]
+name = "project-host-static-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Only what a listener and a file read need. No HTTP framework: the surface
+# here is GET and HEAD of files under one directory, and a framework would be
+# more dependency than the whole crate is code.
+tokio = { version = "1.53.1", features = [
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "fs",
+    "macros",
+    "time",
+] }
+tracing = "0.1.41"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -16,14 +16,20 @@ import { useEffect, useState } from 'react';
 import {
   appSettings,
   errorMessage,
+  powerJournal,
   revealProjectPath,
+  setPowerMode,
   systemMetrics,
   type AppSettings,
+  type PowerJournalEntry,
+  type PowerMode,
+  type PowerStatus,
   type ProjectSummary,
   type SystemMetrics,
   type SystemStatus,
 } from '../api';
 import { formatBytes, formatDuration } from '../lib/format';
+import { batteryPhrase, powerLook, temperaturePhrase } from '../lib/power';
 import { installBusy } from '../update';
 import { useUpdate } from '../useUpdate';
 import Icon from '../ui/Icon';
@@ -49,7 +55,7 @@ type TabId =
   | 'appearance'
   | 'preferences'
   | 'advanced'
-  | 'docker'
+  | 'power'
   | 'storage'
   | 'networking'
   | 'updates'
@@ -71,8 +77,44 @@ export interface Preferences {
   developerMode: boolean;
 }
 
+/**
+ * The five modes, in the order they are offered.
+ *
+ * Automatic first because it is the recommended one, manual last because it is
+ * the one that asks the application to stop deciding.
+ */
+const POWER_MODES: { id: PowerMode; label: string; description: string }[] = [
+  {
+    id: 'automatic',
+    label: 'Automatic',
+    description: 'Decide from what the machine is doing. Recommended.',
+  },
+  {
+    id: 'performance',
+    label: 'Performance',
+    description: 'Always prefer your projects being responsive.',
+  },
+  {
+    id: 'balanced',
+    label: 'Balanced',
+    description: 'Stay in the middle whatever the machine is doing.',
+  },
+  {
+    id: 'efficiency',
+    label: 'Efficiency',
+    description: 'Always prefer using less. No project is ever stopped for this.',
+  },
+  {
+    id: 'manual',
+    label: 'Manual',
+    description:
+      'Watch and report, and change nothing automatically. Sleep is still held off for a project that asked.',
+  },
+];
+
 export default function Settings({
   status,
+  power,
   projects,
   preferences,
   onPreferences,
@@ -80,6 +122,7 @@ export default function Settings({
   onOpenUpdates,
 }: {
   status: SystemStatus | null;
+  power: PowerStatus | null;
   projects: ProjectSummary[] | null;
   preferences: Preferences;
   onPreferences: (next: Partial<Preferences>) => void;
@@ -91,7 +134,39 @@ export default function Settings({
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [journal, setJournal] = useState<PowerJournalEntry[]>([]);
   const update = useUpdate();
+
+  const powerSummary = powerLook(power);
+  const battery = batteryPhrase(power);
+  const temperature = temperaturePhrase(power);
+
+  // Read once when the tab is opened, and then on the shell's poll. Asked for
+  // from zero every time rather than with a cursor: this is the last few
+  // entries for a person to read, not a live feed, and a cursor kept across
+  // tab switches would show an empty list to somebody returning to the page.
+  useEffect(() => {
+    if (tab !== 'power') return undefined;
+
+    let cancelled = false;
+    const read = () => {
+      powerJournal(0)
+        .then((page) => {
+          if (!cancelled) setJournal(page.entries.slice(-20).reverse());
+        })
+        .catch(() => {
+          // A journal that cannot be read is not worth interrupting anyone
+          // over; the rest of the panel still reports the live state.
+        });
+    };
+
+    read();
+    const timer = setInterval(read, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [tab]);
   const checking = update.checking;
 
   useEffect(() => {
@@ -153,7 +228,7 @@ export default function Settings({
           { id: 'appearance', label: 'Appearance' },
           { id: 'preferences', label: 'Preferences' },
           { id: 'advanced', label: 'Advanced' },
-          { id: 'docker', label: 'Docker' },
+          { id: 'power', label: 'Power' },
           { id: 'storage', label: 'Storage' },
           { id: 'networking', label: 'Networking' },
           { id: 'updates', label: 'Updates' },
@@ -303,75 +378,130 @@ export default function Settings({
           </div>
         )}
 
-        {tab === 'docker' && (
+        {tab === 'power' && (
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
-              <CardHeader
-                title="Connection"
-                actions={
-                  <Button
-                    size="sm"
-                    icon="refresh"
-                    onClick={() => {
-                      // The shell polls system status every few seconds, so a
-                      // retry is a re-read rather than a special command.
-                      toast.info('Rechecking Docker', 'The status refreshes within a few seconds.');
-                    }}
-                  >
-                    Retry
-                  </Button>
-                }
-              />
+              <CardHeader title="How power is managed" />
+              <div className="px-4 pb-3 pt-2">
+                <p className="text-[12px] text-muted">
+                  Two things are changed and nothing else: whether this machine is allowed to sleep
+                  on its own, and how the operating system schedules your projects against
+                  everything else. Neither can stop a project, and no power plan or overlay is
+                  touched — a control that silently did nothing on a machine with a custom plan
+                  would be worse than not having one.
+                </p>
+
+                <div className="mt-3 grid gap-1.5">
+                  {POWER_MODES.map((option) => (
+                    <label
+                      key={option.id}
+                      className={`flex cursor-pointer items-start gap-2.5 rounded-[8px] border px-3 py-2.5 ${
+                        power?.mode === option.id
+                          ? 'border-accent/50 bg-accent-soft'
+                          : 'border-edge hover:bg-raised'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="power-mode"
+                        className="mt-1"
+                        checked={power?.mode === option.id}
+                        onChange={() => {
+                          void setPowerMode(option.id)
+                            .then(() => {
+                              toast.info(`Power mode set to ${option.label.toLowerCase()}`);
+                            })
+                            .catch((error: unknown) => {
+                              toast.error('Could not change the power mode', errorMessage(error));
+                            });
+                        }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[13px] text-ink">{option.label}</span>
+                        <span className="block text-[12px] text-muted">{option.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader title="What this machine is doing" />
               <div className="px-4 py-1">
                 <DataRow
-                  label="Status"
+                  label="In force"
                   value={
-                    status ? (
-                      <Badge tone={status.dockerAvailable ? 'ok' : 'warn'} dot>
-                        {status.dockerAvailable ? 'Connected' : 'Unavailable'}
+                    power !== null && power.measured ? (
+                      <Badge tone={powerSummary.tone === 'warn' ? 'warn' : 'neutral'} dot>
+                        {powerSummary.label}
                       </Badge>
                     ) : (
-                      '—'
+                      'measuring…'
                     )
                   }
                 />
-                <DataRow label="Version" value={status?.dockerVersion ?? 'not connected'} />
-                <DataRow label="Detail" value={status?.dockerSummary ?? '—'} />
                 <DataRow
-                  label="Enabled in configuration"
-                  value={settings ? (settings.dockerEnabled ? 'yes' : 'no') : '—'}
+                  label="Processor"
+                  value={
+                    power?.cpuPercent === null || power === null
+                      ? '—'
+                      : `${Math.round(power.cpuPercent)}%`
+                  }
                 />
+                {/* Absent rather than zero. Most Windows desktops expose no
+                    readable sensor, and 0°C would be an invented reading. */}
+                <DataRow label="Temperature" value={temperature ?? 'no readable sensor'} />
+                <DataRow label="Battery" value={battery ?? 'no battery'} />
+                <DataRow
+                  label="Holding sleep off"
+                  value={power?.sleepHeld === true ? 'yes' : 'no'}
+                />
+                <DataRow label="Projects running" value={String(power?.activeProjects ?? 0)} />
               </div>
-              {status && !status.dockerAvailable && (
+
+              {power !== null && power.measured && (
+                <div className="mx-4 mb-4 rounded-[8px] border border-edge bg-raised px-3 py-2.5">
+                  {/* The sentence the policy engine produced, verbatim. A
+                      profile shown without its reason explains nothing. */}
+                  <p className="text-[12px] text-muted">{power.reason}</p>
+                </div>
+              )}
+
+              {power?.preventSleep === true && !power.sleepHeld && (
                 <div className="mx-4 mb-4 rounded-[8px] border border-warn/30 bg-warn-soft px-3 py-2.5">
-                  <p className="text-[12px] font-medium text-warn">Projects cannot start</p>
+                  <p className="text-[12px] font-medium text-warn">Sleep is not being held</p>
                   <p className="mt-0.5 text-[12px] text-muted">
-                    {status.dockerHint ??
-                      'Install Docker and start it, then this page will pick it up.'}
+                    A project asked to keep this machine awake, but the system would not allow it.
+                    The machine may still sleep.
                   </p>
                 </div>
               )}
             </Card>
 
-            <Card>
-              <CardHeader title="What still works without Docker" />
-              <ul className="px-4 py-2">
-                {[
-                  'Creating projects, including cloning a repository',
-                  'Editing, uploading and organising project files',
-                  'Reading settings, activity and project history',
-                ].map((item) => (
-                  <li
-                    key={item}
-                    className="flex items-start gap-2 border-b border-edge/60 py-2 text-[13px] text-muted last:border-b-0"
-                  >
-                    <span className="mt-0.5 text-ok">
-                      <Icon name="check" size={14} />
-                    </span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
+            <Card className="lg:col-span-2">
+              <CardHeader title="Recent power changes" />
+              {journal.length === 0 ? (
+                <p className="px-4 py-3 text-[12px] text-muted">
+                  Nothing yet. Only changes are recorded — a machine doing the same thing for an
+                  hour produces one line, not eighteen hundred.
+                </p>
+              ) : (
+                <ul className="px-4 py-1">
+                  {journal.map((entry) => (
+                    <li
+                      key={entry.seq}
+                      className="border-b border-edge/60 py-2 last:border-b-0"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] text-ink">{entry.summary}</span>
+                        <span className="shrink-0 tabular text-[11px] text-muted">{entry.at}</span>
+                      </div>
+                      <p className="mt-0.5 text-[12px] text-muted">{entry.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           </div>
         )}

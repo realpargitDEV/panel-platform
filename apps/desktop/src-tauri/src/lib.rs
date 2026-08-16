@@ -945,6 +945,12 @@ pub struct RunningProjectDto {
     /// False for a Docker project, whose figure is its limit rather than a
     /// measurement. Shown so the interface never presents a bound as a reading.
     pub measured: bool,
+    /// When the current run started, RFC 3339. The window turns this into an
+    /// uptime rather than the core sending a number that is stale the moment
+    /// it is serialised.
+    pub started_at: Option<String>,
+    /// The project's primary published port, if it has one.
+    pub port: Option<i64>,
 }
 
 #[tauri::command]
@@ -953,18 +959,40 @@ async fn machine_load(state: tauri::State<'_, AppState>) -> CommandResult<Machin
     let machine = app.machine_usage().await;
     let reserve_bytes = app.reserve().bytes_for(machine.total_memory_bytes);
 
-    let running = project_host_core::lifecycle::running_projects(app)
-        .await
-        .into_iter()
-        .map(|project| RunningProjectDto {
+    // Uptime and port are read here rather than added to the governor's own
+    // `RunningProject`: that struct feeds the admission decision, and a field
+    // only the window needs has no business being part of what decides whether
+    // a project is allowed to start. The extra reads are one per *running*
+    // project, which is a handful, not one per project on the machine.
+    let mut running = Vec::new();
+    for project in project_host_core::lifecycle::running_projects(app).await {
+        let record = projects::find_project(app.database(), &project.project_id)
+            .await
+            .ok()
+            .flatten();
+
+        let port = projects::list_ports(app.database(), &project.project_id)
+            .await
+            .ok()
+            .and_then(|ports| {
+                ports
+                    .iter()
+                    .find(|port| port.is_primary)
+                    .or_else(|| ports.first())
+                    .and_then(|port| port.host_port.or(Some(port.container_port)))
+            });
+
+        running.push(RunningProjectDto {
             project_id: project.project_id,
             display_name: project.display_name,
             measured: project.run_mode == "HOST",
             run_mode: project.run_mode,
             memory_bytes: project.usage.memory_bytes,
             cpu_percent: project.usage.cpu_percent,
-        })
-        .collect();
+            started_at: record.and_then(|record| record.started_at),
+            port,
+        });
+    }
 
     Ok(MachineLoad {
         total_memory_bytes: machine.total_memory_bytes,
@@ -995,6 +1023,272 @@ async fn kill_project(state: tauri::State<'_, AppState>, project_id: String) -> 
     project_host_core::lifecycle::kill(app, &project_id)
         .await
         .map_err(CommandError::from)
+}
+
+// ---------------------------------------------------------------------- power
+
+/// What the power manager is doing and why.
+///
+/// The reason is carried all the way to the window rather than being
+/// reconstructed there. A profile shown without its sentence is the machine
+/// behaving differently for reasons the interface cannot explain, which is the
+/// thing this whole area exists to avoid.
+#[derive(Debug, Serialize)]
+pub struct PowerStatus {
+    pub mode: String,
+    pub profile: String,
+    pub reason: String,
+    /// What the policy asked for.
+    pub prevent_sleep: bool,
+    /// What actually happened. Not the same thing: a platform can refuse, and
+    /// showing the request as though it were the outcome would be a lie the
+    /// user only discovers when their machine sleeps.
+    pub sleep_held: bool,
+    /// False before the first tick, so the window can say "measuring" rather
+    /// than draw zeroes as though they were readings.
+    pub measured: bool,
+    pub cpu_percent: Option<f32>,
+    pub memory_used_bytes: u64,
+    pub memory_total_bytes: u64,
+    pub hottest_celsius: Option<f32>,
+    pub hottest_sensor: Option<String>,
+    pub battery_percent: Option<f32>,
+    pub charging: Option<bool>,
+    pub power_source: String,
+    pub active_projects: usize,
+    pub warnings: Vec<PowerWarningDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PowerWarningDto {
+    /// `thermal`, `low_battery` or `memory`.
+    pub kind: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PowerJournalPage {
+    pub entries: Vec<PowerJournalEntryDto>,
+    /// Pass back as `since` next time.
+    pub cursor: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PowerJournalEntryDto {
+    pub seq: u64,
+    /// RFC 3339, formatted here rather than in the power crate — which stores
+    /// epoch seconds precisely so it need not depend on the product's
+    /// timestamp format.
+    pub at: String,
+    pub summary: String,
+    pub reason: String,
+}
+
+fn power_warning_dto(warning: &project_host_power::policy::Warning) -> PowerWarningDto {
+    use project_host_power::policy::Warning;
+    match warning {
+        Warning::Thermal { message, .. } => PowerWarningDto {
+            kind: "thermal".to_string(),
+            message: message.clone(),
+        },
+        Warning::LowBattery { message, .. } => PowerWarningDto {
+            kind: "low_battery".to_string(),
+            message: message.clone(),
+        },
+        Warning::Memory { message, .. } => PowerWarningDto {
+            kind: "memory".to_string(),
+            message: message.clone(),
+        },
+    }
+}
+
+/// A one-line description of a journal event.
+fn power_event_summary(event: &project_host_power::journal::Event) -> String {
+    use project_host_power::journal::Event;
+    match event {
+        Event::ProfileChanged { from, to } => {
+            format!("Power profile changed from {} to {}", from.as_str(), to.as_str())
+        }
+        Event::WarningRaised { .. } => "A warning started applying".to_string(),
+        Event::WarningCleared { .. } => "A warning stopped applying".to_string(),
+        Event::SleepHoldChanged { held: true } => "Sleep is being held off".to_string(),
+        Event::SleepHoldChanged { held: false } => "Sleep is no longer being held off".to_string(),
+    }
+}
+
+#[tauri::command]
+async fn power_status(state: tauri::State<'_, AppState>) -> CommandResult<PowerStatus> {
+    let app: &AppState = &state;
+    let manager = app.power().read().await;
+
+    // Before the first tick there is nothing measured. Reported as such rather
+    // than by ticking here: a render must never be the thing that changes the
+    // machine's power behaviour.
+    let Some(snapshot) = manager.latest() else {
+        return Ok(PowerStatus {
+            mode: manager.mode().as_str().to_string(),
+            profile: project_host_power::Profile::Balanced.as_str().to_string(),
+            reason: "The machine has not been measured yet.".to_string(),
+            prevent_sleep: false,
+            sleep_held: false,
+            measured: false,
+            cpu_percent: None,
+            memory_used_bytes: 0,
+            memory_total_bytes: 0,
+            hottest_celsius: None,
+            hottest_sensor: None,
+            battery_percent: None,
+            charging: None,
+            power_source: "unknown".to_string(),
+            active_projects: 0,
+            warnings: Vec::new(),
+        });
+    };
+
+    Ok(PowerStatus {
+        mode: snapshot.mode.as_str().to_string(),
+        profile: snapshot.profile.as_str().to_string(),
+        reason: snapshot.reason.clone(),
+        prevent_sleep: snapshot.prevent_sleep,
+        sleep_held: snapshot.sleep_held,
+        measured: snapshot.sample.is_measured(),
+        cpu_percent: snapshot.sample.cpu_percent,
+        memory_used_bytes: snapshot.sample.memory_used_bytes,
+        memory_total_bytes: snapshot.sample.memory_total_bytes,
+        hottest_celsius: snapshot.sample.hottest_celsius,
+        hottest_sensor: snapshot.sample.hottest_sensor.clone(),
+        battery_percent: snapshot.sample.battery_percent,
+        charging: snapshot.sample.charging,
+        power_source: match snapshot.sample.power_source {
+            project_host_power::policy::PowerSource::Ac => "ac",
+            project_host_power::policy::PowerSource::Battery => "battery",
+            project_host_power::policy::PowerSource::Unknown => "unknown",
+        }
+        .to_string(),
+        active_projects: snapshot.active_projects,
+        warnings: snapshot.warnings.iter().map(power_warning_dto).collect(),
+    })
+}
+
+/// Choose how power is managed.
+///
+/// An unknown word is rejected rather than quietly treated as automatic: a
+/// window sending one has a bug, and silently running a different policy than
+/// the one it thinks it set is the hardest kind to find.
+#[tauri::command]
+async fn set_power_mode(state: tauri::State<'_, AppState>, mode: String) -> CommandResult<()> {
+    let app: &AppState = &state;
+    let parsed = project_host_power::Mode::parse(&mode)
+        .ok_or_else(|| CommandError::from(format!("`{mode}` is not a power mode")))?;
+
+    app.power().write().await.set_mode(parsed);
+    tracing::info!(mode = parsed.as_str(), "power mode changed");
+    Ok(())
+}
+
+#[tauri::command]
+async fn power_journal(
+    state: tauri::State<'_, AppState>,
+    since: u64,
+) -> CommandResult<PowerJournalPage> {
+    let app: &AppState = &state;
+    let (entries, cursor) = app.power().read().await.journal_since(since);
+
+    Ok(PowerJournalPage {
+        entries: entries
+            .into_iter()
+            .map(|entry| PowerJournalEntryDto {
+                seq: entry.seq,
+                at: project_host_database::time::format_unix_seconds(entry.at as i64),
+                summary: power_event_summary(&entry.event),
+                reason: entry.reason,
+            })
+            .collect(),
+        cursor,
+    })
+}
+
+/// Set a project's scheduling priority and whether it holds sleep off.
+///
+/// Both optional, so the window can change one without having to send the
+/// other and risk overwriting a setting it had not refreshed.
+#[tauri::command]
+async fn set_project_power(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    priority: Option<String>,
+    keep_awake: Option<bool>,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+
+    if let Some(word) = &priority {
+        let upper = word.to_ascii_uppercase();
+        if !matches!(upper.as_str(), "LOW" | "NORMAL" | "HIGH") {
+            return Err(CommandError::from(format!("`{word}` is not a priority")));
+        }
+    }
+
+    let update = projects::ProjectUpdate {
+        priority: priority.map(|word| word.to_ascii_uppercase()),
+        keep_awake,
+        ..Default::default()
+    };
+
+    projects::update_project(app.database(), &project_id, &update).await?;
+    Ok(())
+}
+
+// ------------------------------------------------------------------- console
+
+/// One project's output.
+#[derive(Debug, Serialize)]
+pub struct ProjectConsole {
+    pub lines: Vec<ConsoleLineDto>,
+    /// Pass back as `since` on the next poll. Zero for a file-backed console,
+    /// which has no cursor to advance.
+    pub cursor: u64,
+    /// Whether this came from a running supervisor. `false` means the project
+    /// is not running and this is the record of when it was — so a window can
+    /// offer "follow" only where following means anything.
+    pub live: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConsoleLineDto {
+    pub seq: u64,
+    pub at: String,
+    /// `stdout`, `stderr` or `system`.
+    pub stream: String,
+    pub text: String,
+}
+
+/// Read a project's console.
+///
+/// `since` is the cursor from the previous call, or zero to start. Ignored for
+/// a project that is not running: a file cannot answer it.
+#[tauri::command]
+async fn project_console(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    since: u64,
+) -> CommandResult<ProjectConsole> {
+    let app: &AppState = &state;
+    let console = project_host_core::logs::read(app, &project_id, since).await;
+
+    Ok(ProjectConsole {
+        lines: console
+            .lines
+            .into_iter()
+            .map(|line| ConsoleLineDto {
+                seq: line.seq,
+                at: line.at,
+                stream: line.stream.as_str().to_string(),
+                text: line.text,
+            })
+            .collect(),
+        cursor: console.cursor,
+        live: console.live,
+    })
 }
 
 // -------------------------------------------------------------- project files
@@ -1625,6 +1919,10 @@ pub struct ProjectDetail {
     pub desired_state: String,
     pub health: String,
     pub run_mode: String,
+    /// `LOW`, `NORMAL` or `HIGH`. Scheduling only — never a cap.
+    pub priority: String,
+    /// Whether this project running holds automatic sleep off.
+    pub keep_awake: bool,
     pub restart_policy: String,
     pub network_mode: String,
     pub autostart: bool,
@@ -1678,6 +1976,8 @@ async fn project_details(
         desired_state: record.desired_state,
         health: record.health,
         run_mode: record.run_mode,
+        priority: record.priority,
+        keep_awake: record.keep_awake,
         restart_policy: record.restart_policy,
         network_mode: record.network_mode,
         autostart: record.autostart,
@@ -2227,6 +2527,147 @@ async fn search_project_files(
         .map_err(CommandError::from)
 }
 
+// ------------------------------------------------------------------- discord
+
+/// One configured bot, as the Discord screen shows it.
+#[derive(Debug, Serialize)]
+pub struct DiscordBotDto {
+    pub id: String,
+    pub label: String,
+    pub application_id: String,
+    pub autostart: bool,
+    /// `stopped`, `connecting`, `connected` or `failed`.
+    pub status: String,
+    pub failure_reason: Option<String>,
+    pub uptime_seconds: Option<u64>,
+    pub reconnects: u32,
+    pub linked_servers: u32,
+    pub project_ids: Vec<String>,
+}
+
+impl From<project_host_core::bots::BotView> for DiscordBotDto {
+    fn from(view: project_host_core::bots::BotView) -> Self {
+        Self {
+            id: view.id,
+            label: view.label,
+            application_id: view.application_id,
+            autostart: view.autostart,
+            status: view.status,
+            failure_reason: view.failure_reason,
+            uptime_seconds: view.uptime_seconds,
+            reconnects: view.reconnects,
+            linked_servers: view.linked_servers,
+            project_ids: view.project_ids,
+        }
+    }
+}
+
+/// Whether this installation can hold a bot token at all.
+///
+/// The screen needs this before it offers to take one: a machine whose secure
+/// storage could not be opened must say so up front rather than accepting a
+/// token and failing to save it.
+#[derive(Debug, Serialize)]
+pub struct DiscordReadiness {
+    pub can_store_secrets: bool,
+    /// `os-keychain` or `restricted-file`. `None` when there is no key.
+    pub key_backend: Option<String>,
+    pub connected: u32,
+}
+
+#[tauri::command]
+async fn discord_readiness(state: tauri::State<'_, AppState>) -> CommandResult<DiscordReadiness> {
+    let app: &AppState = &state;
+    Ok(DiscordReadiness {
+        can_store_secrets: app.master_key().is_some(),
+        key_backend: app.key_backend().map(str::to_string),
+        connected: u32::try_from(app.discord().connected_count()).unwrap_or(u32::MAX),
+    })
+}
+
+#[tauri::command]
+async fn discord_bots(state: tauri::State<'_, AppState>) -> CommandResult<Vec<DiscordBotDto>> {
+    let app: &AppState = &state;
+    let bots = project_host_core::bots::list_bots(app.database(), app.discord())
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))?;
+    Ok(bots.into_iter().map(DiscordBotDto::from).collect())
+}
+
+/// Verify a token with Discord and store it encrypted.
+///
+/// The token arrives as a `String` because that is what crosses the IPC
+/// boundary, and becomes a `Secret` on the first line so nothing downstream can
+/// log it by accident.
+#[tauri::command]
+async fn add_discord_bot(
+    state: tauri::State<'_, AppState>,
+    label: String,
+    token: String,
+) -> CommandResult<String> {
+    let app: &AppState = &state;
+    let token = Secret::new(token);
+
+    let rest = project_host_discord_gateway::RestClient::new()
+        .map_err(|error| CommandError::from(error.user_facing()))?;
+
+    project_host_core::bots::add_bot(app.database(), app.master_key(), &rest, &label, token)
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))
+}
+
+#[tauri::command]
+async fn start_discord_bot(state: tauri::State<'_, AppState>, bot_id: String) -> CommandResult<()> {
+    let app: &AppState = &state;
+    project_host_core::bots::start_bot(app.database(), app.master_key(), app.discord(), &bot_id)
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))
+}
+
+#[tauri::command]
+async fn stop_discord_bot(state: tauri::State<'_, AppState>, bot_id: String) -> CommandResult<()> {
+    let app: &AppState = &state;
+    project_host_core::bots::stop_bot(app.discord(), &bot_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn forget_discord_bot(
+    state: tauri::State<'_, AppState>,
+    bot_id: String,
+) -> CommandResult<bool> {
+    let app: &AppState = &state;
+    project_host_core::bots::forget_bot(app.database(), app.discord(), &bot_id)
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))
+}
+
+#[tauri::command]
+async fn update_discord_bot(
+    state: tauri::State<'_, AppState>,
+    bot_id: String,
+    label: String,
+    autostart: bool,
+) -> CommandResult<bool> {
+    let app: &AppState = &state;
+    project_host_core::bots::update_bot(app.database(), &bot_id, &label, autostart)
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))
+}
+
+/// Choose which projects a bot reports on.
+#[tauri::command]
+async fn set_discord_bot_projects(
+    state: tauri::State<'_, AppState>,
+    bot_id: String,
+    project_ids: Vec<String>,
+) -> CommandResult<()> {
+    let app: &AppState = &state;
+    project_host_core::bots::set_bot_projects(app.database(), &bot_id, &project_ids)
+        .await
+        .map_err(|error| CommandError::from(error.user_facing()))
+}
+
 /// The configuration the window shows on the settings screen.
 ///
 /// Read-only for now. Every value here is loaded at startup from `config.toml`
@@ -2541,6 +2982,70 @@ async fn install_update(
     app.restart();
 }
 
+// ------------------------------------------------------------ static serving
+
+/// What a static-site process was asked to serve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaticServerRequest {
+    pub root: std::path::PathBuf,
+    pub port: u16,
+}
+
+/// Whether this process was started to serve a static site rather than to open
+/// a window.
+///
+/// A static project's start command is this very executable with
+/// `--serve-static <directory> --port <n>`, which is how a static site runs on
+/// a machine with no toolchain and no container daemon. The flag's spelling
+/// lives in `app-core` beside the code that produces it, so the two cannot
+/// drift into a project spawning an argument nothing handles.
+pub fn static_server_request() -> Option<StaticServerRequest> {
+    parse_static_arguments(std::env::args().skip(1))
+}
+
+/// The argument parse, split out so it can be tested without a process.
+fn parse_static_arguments<I>(arguments: I) -> Option<StaticServerRequest>
+where
+    I: IntoIterator<Item = String>,
+{
+    let arguments: Vec<String> = arguments.into_iter().collect();
+    let flag = project_host_core::runner::host::SERVE_STATIC_FLAG;
+
+    let index = arguments.iter().position(|value| value == flag)?;
+    let root = arguments.get(index + 1)?;
+    // A flag with no directory after it is a malformed invocation, not a
+    // request to serve the current working directory — which would publish
+    // whatever this process happened to be started in.
+    if root.starts_with("--") {
+        return None;
+    }
+
+    let port = arguments
+        .iter()
+        .position(|value| value == "--port")
+        .and_then(|at| arguments.get(at + 1))
+        .and_then(|value| value.parse().ok())?;
+
+    Some(StaticServerRequest {
+        root: std::path::PathBuf::from(root),
+        port,
+    })
+}
+
+/// Serve a static site until the process is stopped.
+///
+/// Loopback only. A static preview must not become a file server for whatever
+/// network the machine is on, and the project's port is reachable from the
+/// browser on this machine either way.
+pub fn serve_static(request: StaticServerRequest) -> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(project_host_static_server::serve(
+        request.root,
+        &format!("127.0.0.1:{}", request.port),
+    ))?;
+    Ok(())
+}
+
 /// Build and run the application.
 ///
 /// The runtime is started *before* the window so that a database that cannot be
@@ -2555,7 +3060,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     tokio_runtime.block_on(async {
         runtime.spawn_docker_refresher(shutdown_rx.clone());
-        runtime.spawn_usage_sampler(shutdown_rx);
+        runtime.spawn_usage_sampler(shutdown_rx.clone());
+        // The task that makes a stored status mean something. Without it the
+        // database is only ever written when a lifecycle call returns, so a
+        // project that dies on its own reads as running until somebody presses
+        // a button — which is the exact failure `reconcile` was written for.
+        runtime.spawn_reconciler(shutdown_rx.clone());
+        runtime.spawn_power_manager(shutdown_rx);
     });
 
     let state = runtime.state().clone();
@@ -2581,6 +3092,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             host_projects_running,
             set_project_run_mode,
             machine_load,
+            power_status,
+            set_power_mode,
+            power_journal,
+            set_project_power,
+            project_console,
             app_settings,
             check_for_update,
             install_update,
@@ -2603,6 +3119,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             copy_project_file,
             delete_project_file,
             search_project_files,
+            discord_readiness,
+            discord_bots,
+            add_discord_bot,
+            start_discord_bot,
+            stop_discord_bot,
+            forget_discord_bot,
+            update_discord_bot,
+            set_discord_bot_projects,
             inspect_import_paths,
             plan_import_destinations,
             project_root_path,

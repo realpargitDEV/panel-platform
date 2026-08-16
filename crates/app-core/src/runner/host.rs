@@ -69,6 +69,17 @@ impl HostRegistry {
         self.0.read().await.get(project_id).cloned()
     }
 
+    /// One project's supervisor, for anything that needs to read from it
+    /// without going through the runner.
+    ///
+    /// The console is the caller this exists for: reading a project's output is
+    /// not a lifecycle operation, and routing it through `ProjectRunner` would
+    /// have put a method on that trait which only one of its two
+    /// implementations could ever answer.
+    pub async fn handle(&self, project_id: &str) -> Option<SupervisorHandle> {
+        self.get(project_id).await
+    }
+
     async fn remove(&self, project_id: &str) -> Option<SupervisorHandle> {
         self.0.write().await.remove(project_id)
     }
@@ -120,6 +131,7 @@ impl ProjectRunner for HostRunner {
             db,
             project,
             directory,
+            master_key,
             ..
         } = ctx;
 
@@ -129,7 +141,14 @@ impl ProjectRunner for HostRunner {
                 LifecycleError::Scaffold("the project has no runtime row".to_string())
             })?;
 
-        let toolchain = resolve_toolchain(&runtime.runtime)?;
+        let is_static = runtime.runtime == STATIC;
+        // A static site is served by this application and has no toolchain to
+        // find, so the probe is skipped rather than answered hopefully.
+        let toolchain = if is_static {
+            Toolchain::NotRequired
+        } else {
+            resolve_toolchain(&runtime.runtime)?
+        };
         let port = primary_port(db, &project.id).await?;
         let log_path = project_host_host_runner::log_path(&self.logs_root, &project.slug, &today());
 
@@ -138,6 +157,31 @@ impl ProjectRunner for HostRunner {
         // processes fighting over one port.
         if let Some(previous) = self.registry.remove(&project.id).await {
             let _ = previous.stop(DEFAULT_GRACE).await;
+        }
+
+        // Only now can the port be asked about. Before the line above, a
+        // restart would find its own still-running process holding the port and
+        // refuse itself; after it, whatever still has the port is genuinely
+        // something else. The check also waits briefly for the operating system
+        // to hand the port back, which it does not always do on the same tick
+        // the process exits.
+        crate::ports::check(db, project)
+            .await
+            .map_err(LifecycleError::PortConflict)?;
+
+        // What the user configured on the project's settings screen. Read once
+        // and used for the install and build steps as well as the start: a
+        // dependency install that needs a private registry token needs it at
+        // install time, not only at run time.
+        let environment = crate::env::resolve(db, &project.id, master_key).await?;
+        if !environment.undecryptable_keys.is_empty() {
+            // Loud, because the failure it causes otherwise is a bot that
+            // cannot log in for reasons nothing in the interface explains.
+            tracing::warn!(
+                project = %project.id,
+                keys = ?environment.undecryptable_keys,
+                "these secret variables could not be decrypted and were not passed to the project"
+            );
         }
 
         // Install and build run to completion before the start command, and
@@ -149,17 +193,27 @@ impl ProjectRunner for HostRunner {
             let Some(text) = command.filter(|text| !text.trim().is_empty()) else {
                 continue;
             };
-            let step = build_command(&runtime, text, directory, &toolchain, port)?;
+            let step = build_command(&runtime, text, directory, &toolchain, port, &environment)?;
             project_host_host_runner::run_step(phase, step, log_path.clone()).await?;
         }
 
-        let command = build_command(
-            &runtime,
-            &runtime.start_command,
-            directory,
-            &toolchain,
-            port,
-        )?;
+        let command = if is_static {
+            static_command(
+                directory,
+                runtime.publish_dir.as_deref(),
+                port,
+                &environment,
+            )?
+        } else {
+            build_command(
+                &runtime,
+                &runtime.start_command,
+                directory,
+                &toolchain,
+                port,
+                &environment,
+            )?
+        };
 
         let mut config = SupervisorConfig::new(command, log_path);
         config.health = health_policy(&runtime, port);
@@ -208,21 +262,107 @@ impl ProjectRunner for HostRunner {
 /// the executables tried, instead of being an operating-system error about a
 /// file that does not exist.
 fn resolve_toolchain(runtime: &str) -> Result<Toolchain, LifecycleError> {
-    // `STATIC` needs no language toolchain but does need something to serve it,
-    // and `POLYGLOT` needs several at once. Neither can be answered by finding
-    // one executable, so both are refused rather than probed hopefully.
+    // A runtime with no candidate executable cannot be answered by finding one.
+    // `STATIC` is served by this application's own server and never reaches
+    // here; `POLYGLOT` needs several toolchains at once, and probing for one
+    // and failing would refuse a project that runs perfectly well. What checks
+    // such a project is the start command's own program, by name.
     if project_host_host_runner::candidates_for(runtime).is_empty() {
-        return Err(LifecycleError::UnsupportedInHostMode(runtime.to_string()));
+        return Ok(Toolchain::NotRequired);
     }
 
     match project_host_host_runner::probe(runtime, &MachineResolver) {
         found @ Toolchain::Found { .. } => Ok(found),
+        Toolchain::NotRequired => Ok(Toolchain::NotRequired),
         Toolchain::Missing { looked_for } => Err(LifecycleError::ToolchainMissing {
             runtime: runtime.to_string(),
             looked_for,
         }),
     }
 }
+
+/// The runtime wire value for a static site.
+const STATIC: &str = "STATIC";
+
+/// The command that serves a static project's files.
+///
+/// This application's own executable, in its static-server mode. Reaching for
+/// whatever the machine happened to have — `python -m http.server`,
+/// `npx serve` — was rejected: it would make a static site the only runtime
+/// whose ability to start depends on a language the project does not use, and
+/// the whole point of a static site is that it needs no toolchain.
+///
+/// The directory served is the project's `publish_dir` when it has one, and the
+/// project directory otherwise. A site built by a `build_command` puts its
+/// output in the former, and serving the source tree instead would show the
+/// user their unbuilt files and no error.
+fn static_command(
+    directory: &std::path::Path,
+    publish_dir: Option<&str>,
+    port: Option<u16>,
+    environment: &crate::env::Resolved,
+) -> Result<ProcessCommand, LifecycleError> {
+    let executable = std::env::current_exe().map_err(|error| {
+        LifecycleError::Scaffold(format!(
+            "this application could not find its own executable, so it cannot \
+             serve a static site: {error}"
+        ))
+    })?;
+
+    let root = match publish_dir.map(str::trim).filter(|value| !value.is_empty()) {
+        // Relative to the project, and refused if it could climb out of it: a
+        // `publish_dir` of `../..` would publish the user's whole disk on a
+        // port.
+        //
+        // Checked by *component*, not by comparing the joined path with the
+        // root. `directory.join("../..")` still begins with `directory` as a
+        // string, so `starts_with` says yes to exactly the path this is meant
+        // to refuse — the components have to be looked at before any joining
+        // happens.
+        Some(relative) => {
+            let safe = std::path::Path::new(relative)
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)));
+            if !safe {
+                return Err(LifecycleError::Scaffold(format!(
+                    "the publish directory `{relative}` is not inside the project"
+                )));
+            }
+            directory.join(relative)
+        }
+        None => directory.to_path_buf(),
+    };
+
+    // A static site has no other way to be told its port, and it must have one:
+    // without a port there is nothing to bind and nothing to open.
+    let port = port.ok_or_else(|| {
+        LifecycleError::Scaffold(
+            "this static site has no port allocated, so there is nothing to serve it on"
+                .to_string(),
+        )
+    })?;
+
+    let mut env = environment.values.clone();
+    env.insert("PORT".to_string(), port.to_string());
+
+    Ok(ProcessCommand {
+        program: executable.to_string_lossy().into_owned(),
+        args: vec![
+            SERVE_STATIC_FLAG.to_string(),
+            root.to_string_lossy().into_owned(),
+            "--port".to_string(),
+            port.to_string(),
+        ],
+        cwd: directory.to_path_buf(),
+        env,
+    })
+}
+
+/// The flag that puts this application into static-server mode.
+///
+/// Defined here and read by the desktop shell's `main`, so the two cannot drift
+/// apart into a project that spawns a flag nothing handles.
+pub const SERVE_STATIC_FLAG: &str = "--serve-static";
 
 /// The port this project was allocated, if it has one.
 ///
@@ -247,6 +387,7 @@ fn build_command(
     directory: &std::path::Path,
     toolchain: &Toolchain,
     port: Option<u16>,
+    environment: &crate::env::Resolved,
 ) -> Result<ProcessCommand, LifecycleError> {
     project_host_host_runner::start_command(CommandInputs {
         runtime: &runtime.runtime,
@@ -254,7 +395,10 @@ fn build_command(
         // Never `runtime.working_dir`: that is `/app`, a path inside an image.
         project_directory: directory,
         toolchain,
-        env: BTreeMap::new(),
+        // The same resolver the toolchain probe uses, so `npm` resolves to
+        // `npm.cmd` on Windows rather than to nothing.
+        resolver: &MachineResolver,
+        env: environment.values.clone(),
         port,
     })
     .map_err(LifecycleError::from)
@@ -288,6 +432,16 @@ fn today() -> String {
         .to_string()
 }
 
+/// What a supervisor handle is reporting, in this application's vocabulary.
+///
+/// The only way anything outside this module reads a handle. `reconcile` needs
+/// it to carry a crash into the row, and giving it the handle plus a private
+/// `translate` would have meant a second copy of the mapping — the exact thing
+/// this module's single translation point exists to prevent.
+pub fn observed_from(handle: &SupervisorHandle) -> Observed {
+    translate(&handle.observe())
+}
+
 /// `host-runner`'s vocabulary in this application's.
 ///
 /// The two are deliberately separate — see that crate's documentation — and this
@@ -297,6 +451,7 @@ fn translate(observed: &HostObserved) -> Observed {
         status: match observed.status {
             HostStatus::Running => ProjectStatus::Running,
             HostStatus::Stopped => ProjectStatus::Stopped,
+            HostStatus::Crashed => ProjectStatus::Crashed,
             HostStatus::Failed => ProjectStatus::Failed,
         },
         health: Some(match observed.health {
@@ -337,17 +492,95 @@ mod tests {
         }
     }
 
-    /// A static site has no language toolchain to find, and a polyglot project
-    /// has several. Both are refused by name rather than reported as a missing
-    /// executable that was never going to exist.
+    /// A runtime with no single toolchain is not a runtime that cannot run.
+    ///
+    /// This used to refuse, with a message telling the user to run the project
+    /// in Docker — for `STATIC`, the runtime a beginner is most likely to pick
+    /// first. A static site is now served by this application, and a polyglot
+    /// project is checked by whether its start command's own program exists.
     #[test]
-    fn runtimes_with_no_single_toolchain_are_refused_by_name() {
+    fn a_runtime_with_no_single_toolchain_is_not_refused() {
         for kind in ["STATIC", "POLYGLOT"] {
-            match resolve_toolchain(kind) {
-                Err(LifecycleError::UnsupportedInHostMode(named)) => assert_eq!(named, kind),
-                other => panic!("{kind} should be refused, got {other:?}"),
-            }
+            assert_eq!(
+                resolve_toolchain(kind).ok(),
+                Some(Toolchain::NotRequired),
+                "{kind} was refused"
+            );
         }
+    }
+
+    /// The whole reason the static server exists: a static project produces a
+    /// command that runs *this* application, so it needs nothing installed.
+    #[test]
+    fn a_static_site_is_served_by_this_application() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let command = static_command(
+            directory.path(),
+            None,
+            Some(20001),
+            &crate::env::Resolved::default(),
+        )
+        .expect("a command");
+
+        assert_eq!(
+            std::path::Path::new(&command.program),
+            std::env::current_exe().expect("this executable"),
+            "a static site must not depend on a toolchain the project does not use"
+        );
+        assert!(command.args.contains(&SERVE_STATIC_FLAG.to_string()));
+        assert!(command.args.contains(&"20001".to_string()));
+        assert_eq!(command.env.get("PORT").map(String::as_str), Some("20001"));
+    }
+
+    /// A built site publishes to `publish_dir`; serving the source tree instead
+    /// would show the user their unbuilt files and no error at all.
+    #[test]
+    fn a_built_site_serves_its_publish_directory() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let command = static_command(
+            directory.path(),
+            Some("dist"),
+            Some(20002),
+            &crate::env::Resolved::default(),
+        )
+        .expect("a command");
+
+        let served = command.args.get(1).cloned().unwrap_or_default();
+        assert!(served.ends_with("dist"), "served {served}");
+    }
+
+    /// A publish directory that climbs out of the project would publish the
+    /// user's disk on a port. Refused rather than clamped.
+    #[test]
+    fn a_publish_directory_outside_the_project_is_refused() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        for escape in ["../..", "../secrets", "dist/../..", "/etc", "C:\\Windows"] {
+            assert!(
+                static_command(
+                    directory.path(),
+                    Some(escape),
+                    Some(20003),
+                    &crate::env::Resolved::default(),
+                )
+                .is_err(),
+                "{escape} was allowed"
+            );
+        }
+    }
+
+    /// Without a port there is nothing to bind, and starting anyway would
+    /// produce a server nobody can reach and no explanation.
+    #[test]
+    fn a_static_site_without_a_port_is_refused_with_a_reason() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let error = static_command(
+            directory.path(),
+            None,
+            None,
+            &crate::env::Resolved::default(),
+        )
+        .expect_err("no port means nothing to serve on");
+        assert!(error.to_string().contains("port"), "{error}");
     }
 
     /// The refusal has to name what to install, not merely say no.
@@ -404,12 +637,74 @@ mod tests {
             version: None,
         };
         let directory = std::path::Path::new("projects/quiet-harbor");
-        let command = build_command(&record, "node index.js", directory, &toolchain, Some(8080))
-            .expect("a command");
+
+        // A program every machine running these tests has, so this pins the
+        // working directory rather than whether Node happens to be installed.
+        #[cfg(windows)]
+        let text = "cmd /C echo hello";
+        #[cfg(unix)]
+        let text = "sh -c true";
+
+        let mut environment = crate::env::Resolved::default();
+        environment
+            .values
+            .insert("DISCORD_TOKEN".to_string(), "from-the-project".to_string());
+
+        let command = build_command(
+            &record,
+            text,
+            directory,
+            &toolchain,
+            Some(8080),
+            &environment,
+        )
+        .expect("a command");
 
         assert_eq!(command.cwd, directory);
         assert!(!command.cwd.to_string_lossy().contains("/app"));
         assert_eq!(command.env.get("PORT").map(String::as_str), Some("8080"));
+    }
+
+    /// The other half of the same trap, and the bug that made every configured
+    /// variable useless: a project's own environment has to reach the command,
+    /// not merely be stored and displayed.
+    #[test]
+    fn a_projects_configured_variables_reach_the_command() {
+        let record = runtime("NODEJS");
+        let toolchain = Toolchain::Found {
+            executable: PathBuf::from("node"),
+            version: None,
+        };
+
+        #[cfg(windows)]
+        let text = "cmd /C echo hello";
+        #[cfg(unix)]
+        let text = "sh -c true";
+
+        let mut environment = crate::env::Resolved::default();
+        environment
+            .values
+            .insert("DISCORD_TOKEN".to_string(), "from-the-project".to_string());
+        environment
+            .values
+            .insert("LOG_LEVEL".to_string(), "debug".to_string());
+
+        let command = build_command(
+            &record,
+            text,
+            std::path::Path::new("projects/quiet-harbor"),
+            &toolchain,
+            None,
+            &environment,
+        )
+        .expect("a command");
+
+        assert_eq!(
+            command.env.get("DISCORD_TOKEN").map(String::as_str),
+            Some("from-the-project"),
+            "a configured variable did not reach the process"
+        );
+        assert_eq!(command.env.get("LOG_LEVEL").map(String::as_str), Some("debug"));
     }
 
     #[test]

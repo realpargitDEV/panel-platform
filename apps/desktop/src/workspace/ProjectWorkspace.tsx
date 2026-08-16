@@ -219,6 +219,15 @@ export default function ProjectWorkspace({
   /** Opens the update manager, which is rendered by the shell above this one. */
   onOpenUpdates: () => void;
 }) {
+  /**
+   * Whether the daemon's absence is actually this project's problem.
+   *
+   * A `HOST` project is a process on this machine; Docker has nothing to do
+   * with it. Testing `dockerAvailable` on its own is the mistake that left a
+   * Docker-less machine unable to start anything at all.
+   */
+  const blockedByDocker = project.runMode !== 'HOST' && !dockerAvailable;
+
   // ------------------------------------------------------------------ state
   const [listings, setListings] = useState<Record<string, FileEntry[]>>({});
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -2116,8 +2125,12 @@ export default function ProjectWorkspace({
         id: 'project.start',
         title: 'Start Project',
         category: 'Run',
-        enabled: !running && dockerAvailable && busyAction === null,
-        reason: dockerAvailable ? 'The project is already running' : 'Docker is not available',
+        // `needsDocker`, not `dockerAvailable`: a host project runs as a
+        // process on this machine and has never needed a daemon. Gating on
+        // the daemon alone disabled Start for every project on a machine
+        // without one — which, now that HOST is the default, is every project.
+        enabled: !running && !blockedByDocker && busyAction === null,
+        reason: blockedByDocker ? 'Docker is not available' : 'The project is already running',
         run: () => void runProject('start'),
       },
       {
@@ -2809,7 +2822,7 @@ export default function ProjectWorkspace({
       id: 'run',
       label: 'Start Project',
       icon: 'play',
-      enabled: project.status !== 'RUNNING' && dockerAvailable && busyAction === null,
+      enabled: project.status !== 'RUNNING' && !blockedByDocker && busyAction === null,
       run: () => runCommand('project.start'),
     },
   ];

@@ -9,6 +9,7 @@ import {
   healthLook,
   isFailed,
   needsAttention,
+  primaryRunAction,
   runControls,
   statusLook,
 } from './projects';
@@ -175,5 +176,43 @@ describe('runControls', () => {
     expect(runControls(withMode('DOCKER'), { busy: false, dockerAvailable: true })).toEqual({
       blocked: false,
     });
+  });
+});
+
+describe('primaryRunAction', () => {
+  it('offers Run when the project is down', () => {
+    const action = primaryRunAction('STOPPED');
+    expect(action.action).toBe('start');
+    expect(action.label).toBe('Run');
+    expect(action.tone).toBe('ok');
+  });
+
+  /** A green button that stops things is how people stop the wrong project. */
+  it('is never green once stopping is the primary action', () => {
+    const action = primaryRunAction('RUNNING');
+    expect(action.action).toBe('stop');
+    expect(action.tone).not.toBe('ok');
+  });
+
+  it('does nothing at all while a transition is in flight', () => {
+    for (const status of ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING']) {
+      const action = primaryRunAction(status);
+      expect(action.action, status).toBeNull();
+      expect(action.pending, status).toBe(true);
+      expect(action.icon, status).toBe('spinner');
+    }
+  });
+
+  /** After a crash the next move is to try again, not to be blocked. */
+  it('still offers Run after a failure, marked as a failure', () => {
+    for (const status of ['FAILED', 'CRASHED', 'BUILD_FAILED']) {
+      const action = primaryRunAction(status);
+      expect(action.action, status).toBe('start');
+      expect(action.tone, status).toBe('danger');
+    }
+  });
+
+  it('treats a status it has never heard of as runnable rather than stuck', () => {
+    expect(primaryRunAction('SOMETHING_NEW').action).toBe('start');
   });
 });

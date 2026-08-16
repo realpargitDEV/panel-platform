@@ -50,11 +50,36 @@
   --color-danger: #ef4444;
   --color-danger-soft: #2c1416;
 
-  --radius-card: 12px;
-  --radius-control: 8px;
+  /* The radius scale, tuned for a workspace rather than a marketing page.
+     The names are unchanged because eighty-one generated themes and every
+     component reference them; only the values moved. A 12px card inside a
+     12px panel inside a 12px pane is the "rounded box in a rounded box"
+     look this interface is explicitly not, and at these sizes a corner reads
+     as deliberate rather than as decoration. */
+  --radius-card: 7px;
+  --radius-control: 5px;
   /* One step softer than a control, for the elements that read as objects
      rather than as inputs: the workspace mark and the primary action. */
-  --radius-object: 10px;
+  --radius-object: 7px;
+  /* The smallest step, for things that sit flush against a border: tabs,
+     tree rows, inline chips. */
+  --radius-tight: 3px;
+
+  /* ---------------------------------------------------------- shell metrics
+
+     The workspace chrome is fixed furniture, and every part of it has to
+     agree on its own size: a 48px top bar and a 47px activity bar produce a
+     one-pixel seam that no amount of care in a component will fix. Declared
+     once, read everywhere. */
+  --h-topbar: 48px;
+  --w-activitybar: 48px;
+  --w-sidebar: 248px;
+  --h-tab: 36px;
+  --h-panel-header: 36px;
+  --h-statusbar: 24px;
+  --h-control: 30px;
+  --h-control-sm: 26px;
+  --h-row: 27px;
 
   /* The navigation rail. Two steps of the same charcoal ramp rather than one
      flat fill: a top-lit gradient of ~5 values reads as a panel with a light
@@ -123,8 +148,10 @@
    shape or depth gets these, so the trait tokens are always defined and no
    component has to guard against an empty `var()`. */
 :root {
-  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono-theme: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --font-ui: Inter, 'Segoe UI Variable', 'Segoe UI', ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, Roboto, sans-serif;
+  --font-mono-theme: 'JetBrains Mono', 'Cascadia Code', ui-monospace, 'Cascadia Mono',
+    SFMono-Regular, Consolas, monospace;
   --border-w: 1px;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
   --shadow-raised: 0 1px 1px rgb(0 0 0 / 0.2);

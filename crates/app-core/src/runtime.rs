@@ -35,6 +35,25 @@ const DOCKER_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_s
 /// a load worth measuring.
 const USAGE_SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// How often stored project statuses are reconciled against what the
+/// supervisors are actually observing.
+///
+/// Two seconds, matching the usage sampler. This is what makes a project that
+/// dies on its own appear as crashed without anybody pressing a button, so it
+/// is the interval a user experiences as "how long until the interface tells me
+/// the truth". The sweep itself is a map lookup per project and a write only
+/// when something changed, so the cost of doing it often is close to nothing.
+const RECONCILE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// How often the machine's power behaviour is reconsidered.
+///
+/// Five seconds rather than two, and the difference is deliberate. The usage
+/// sampler feeds a number on screen, so it has to keep up with what a person
+/// can see changing; this drives a moving average measured in minutes, and
+/// sampling it more often would only add readings to an average that is
+/// already smooth. It also bounds how often the priority commands can run.
+const POWER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     #[error("could not prepare directories: {0}")]
@@ -52,7 +71,17 @@ pub struct Runtime {
     paths: StandardPaths,
     refresher: Option<JoinHandle<()>>,
     sampler: Option<JoinHandle<()>>,
+    reconciler: Option<JoinHandle<()>>,
+    power: Option<JoinHandle<()>>,
     pub recovery: RecoveryReport,
+    /// What the startup reconciliation found: projects whose stored status
+    /// outlived the process it described, and which of those the user still
+    /// wants running.
+    ///
+    /// Held rather than logged and dropped, because the window asks for it —
+    /// "three projects were running when the application last closed, start
+    /// them again?" is a question only this answer can pose.
+    pub startup: crate::reconcile::StartupReport,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -125,6 +154,24 @@ impl Runtime {
             "assessed this machine"
         );
 
+        // Opened before the state so a failure is one clear log line rather
+        // than a surprise the first time a secret is needed. A machine whose
+        // keychain cannot be reached still runs; it just cannot hold tokens.
+        let master_key = match crate::keys::load_or_create_master_key(paths.config_dir()) {
+            Ok(loaded) => {
+                tracing::info!(
+                    backend = loaded.backend.as_str(),
+                    created = loaded.created,
+                    "master encryption key ready"
+                );
+                Some(loaded)
+            }
+            Err(error) => {
+                tracing::error!(%error, "no master key; features that store secrets are disabled");
+                None
+            }
+        };
+
         let state = AppState::new(
             config,
             database,
@@ -137,15 +184,44 @@ impl Runtime {
                 schema_version,
                 started_at_wall: time::now(),
             },
+            master_key,
         );
+
+        // Before the window opens, and after the database's own recovery has
+        // cleared the transient statuses. Anything still claiming to be up is
+        // describing a process from a previous run: the supervisor registry is
+        // empty at this point by construction, so there is nothing to check
+        // against and nothing to adopt.
+        let startup = crate::reconcile::at_startup(&state).await;
 
         Ok(Self {
             state,
             paths,
             refresher: None,
             sampler: None,
+            reconciler: None,
+            power: None,
             recovery,
+            startup,
         })
+    }
+
+    /// Start everything that should come up on its own.
+    ///
+    /// Separate from [`Runtime::start`] and called after the window exists, for
+    /// two reasons: a project's install step can take minutes, and a bot that
+    /// cannot connect should be visible in an open window rather than delaying
+    /// one. Nothing here can fail the launch — every failure is logged against
+    /// the project or bot it belongs to and the rest carry on.
+    pub async fn start_automatic_workloads(&self) {
+        crate::reconcile::start_autostart_projects(&self.state).await;
+
+        crate::bots::start_autostart_bots(
+            self.state.database(),
+            self.state.master_key(),
+            self.state.discord(),
+        )
+        .await;
     }
 
     pub fn state(&self) -> &AppState {
@@ -216,6 +292,58 @@ impl Runtime {
         }));
     }
 
+    /// Keep every project's stored status equal to what its supervisor sees.
+    ///
+    /// The task that makes "Running" mean a process is running. Without it the
+    /// database is only written when a lifecycle call returns, so a project
+    /// that dies an hour after it started reads as running until somebody
+    /// presses a button and finds out.
+    pub fn spawn_reconciler(&mut self, mut shutdown: watch::Receiver<bool>) {
+        if let Some(previous) = self.reconciler.take() {
+            previous.abort();
+        }
+
+        let state = self.state.clone();
+        self.reconciler = Some(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(RECONCILE_INTERVAL);
+            // Skipped, like the Docker refresher's: `at_startup` has just run.
+            ticker.tick().await;
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        crate::reconcile::sweep(&state).await;
+                    }
+                    _ = shutdown.changed() => break,
+                }
+            }
+        }));
+    }
+
+    /// Start the background power manager.
+    ///
+    /// The first tick is not skipped. A machine with a keep-awake project
+    /// already running — which is the state after the startup restart prompt —
+    /// should be holding sleep off from the first few seconds, not from the
+    /// first interval.
+    pub fn spawn_power_manager(&mut self, mut shutdown: watch::Receiver<bool>) {
+        if let Some(previous) = self.power.take() {
+            previous.abort();
+        }
+
+        let state = self.state.clone();
+        self.power = Some(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(POWER_INTERVAL);
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        crate::power_flow::tick(&state).await;
+                    }
+                    _ = shutdown.changed() => break,
+                }
+            }
+        }));
+    }
+
     /// Stop cleanly: stop host projects, flag the shutdown, checkpoint the WAL,
     /// close the pool.
     ///
@@ -235,6 +363,30 @@ impl Runtime {
         if let Some(sampler) = self.sampler.take() {
             sampler.abort();
         }
+        // Before the projects are stopped, so it cannot overwrite the statuses
+        // the stop is about to write with the ones it read a moment earlier.
+        if let Some(reconciler) = self.reconciler.take() {
+            reconciler.abort();
+        }
+        // Aborted before the hold is released, so a tick already in flight
+        // cannot re-take the assertion a moment after it is given up.
+        if let Some(power) = self.power.take() {
+            power.abort();
+        }
+        // Released explicitly rather than left to the drop. The process is
+        // about to exit and the operating system would clear the assertion
+        // anyway, but "anyway" is doing real work in that sentence on a
+        // platform that outlives the handle, and a machine that will not sleep
+        // after the application has closed is the worst bug this crate could
+        // have.
+        self.state.power().write().await.shutdown();
+
+        // Discord first, and politely. A close frame tells Discord the session
+        // is over; an abandoned socket leaves it resumable, and the bot shows
+        // as online to everyone in the server for a minute or so after the
+        // application has gone. Dropping the process without this is exactly
+        // the "bot showing online when disconnected" complaint.
+        self.state.discord().stop_all().await;
 
         let stopped = crate::lifecycle::stop_host_projects(&self.state).await;
         if !stopped.is_empty() {

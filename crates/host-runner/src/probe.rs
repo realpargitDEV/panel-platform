@@ -12,7 +12,12 @@
 use std::path::PathBuf;
 
 /// Where an executable lives on this machine, if it lives here at all.
-pub trait ExecutableResolver: Send + Sync {
+///
+/// `Debug` is a supertrait so that anything holding one — [`CommandInputs`],
+/// in particular — can derive its own, which the workspace lints require.
+///
+/// [`CommandInputs`]: crate::CommandInputs
+pub trait ExecutableResolver: Send + Sync + std::fmt::Debug {
     /// The absolute path `name` resolves to, or `None` if it is not on `PATH`.
     fn resolve(&self, name: &str) -> Option<PathBuf>;
 
@@ -37,11 +42,26 @@ pub enum Toolchain {
     /// Nothing was found, and this is everything that was tried — the message
     /// has to name what to install, not just say no.
     Missing { looked_for: Vec<String> },
+    /// This runtime has no single toolchain to look for, and that is not a
+    /// problem to report.
+    ///
+    /// `POLYGLOT` is the case: a project that genuinely needs several
+    /// toolchains cannot be answered by finding one executable, and probing for
+    /// one and failing would refuse a project that runs perfectly well. What
+    /// checks such a project is the start command's own program — if it says
+    /// `make build`, then `make` is what has to exist, and
+    /// [`crate::start_command`] says so by name when it does not.
+    NotRequired,
 }
 
 impl Toolchain {
     pub fn is_found(&self) -> bool {
         matches!(self, Toolchain::Found { .. })
+    }
+
+    /// Whether a command may be built against this. False only for `Missing`.
+    pub fn is_usable(&self) -> bool {
+        !matches!(self, Toolchain::Missing { .. })
     }
 }
 
@@ -95,6 +115,7 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
     struct FakeMachine {
         installed: Vec<&'static str>,
     }

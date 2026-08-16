@@ -91,6 +91,9 @@ async fn a_project(database: &Database, slug: &str) -> String {
 }
 
 async fn a_guild(database: &Database, guild_id: &str) -> String {
+    let bot = discord::add_bot(database, &credentials())
+        .await
+        .expect("bot");
     discord::link_guild(
         database,
         &NewGuildLink {
@@ -98,6 +101,7 @@ async fn a_guild(database: &Database, guild_id: &str) -> String {
             guild_name: "My Server".to_string(),
             linked_by_user_id: "111111111111111111".to_string(),
             allow_guild_owner: true,
+            bot_row_id: bot,
         },
     )
     .await
@@ -106,6 +110,7 @@ async fn a_guild(database: &Database, guild_id: &str) -> String {
 
 fn credentials() -> BotCredentials {
     BotCredentials {
+        label: "My Bot".to_string(),
         application_id: "999999999999999999".to_string(),
         token_cipher: vec![7u8; 64],
         // XChaCha20-Poly1305 nonces are 24 bytes, and the schema says so.
@@ -118,24 +123,29 @@ fn credentials() -> BotCredentials {
 #[tokio::test]
 async fn bot_credentials_round_trip_as_ciphertext() {
     let database = db().await;
-    discord::save_bot_credentials(&database, &credentials())
+    let id = discord::add_bot(&database, &credentials())
         .await
         .expect("save");
 
-    let loaded = discord::load_bot_credentials(&database)
+    let loaded = discord::find_bot(&database, &id)
         .await
         .expect("load")
         .expect("present");
-    assert_eq!(loaded, credentials());
+    assert_eq!(loaded.application_id, credentials().application_id);
+    assert_eq!(loaded.token_cipher, credentials().token_cipher);
+    assert_eq!(loaded.token_nonce, credentials().token_nonce);
+    assert_eq!(loaded.label, "My Bot");
+    assert!(!loaded.autostart, "a new bot does not start on its own");
 }
 
 #[tokio::test]
 async fn there_is_nowhere_to_store_a_bot_token_in_the_clear() {
-    // The structural claim: no column on `discord_bot` could hold a readable
+    // The structural claim: no column on `discord_bots` could hold a readable
     // token, so a future writer would have to alter the table to leak one.
+    // Widening the table to many rows in 0006 must not have weakened it.
     let database = db().await;
     let columns: Vec<String> =
-        sqlx::query_scalar("SELECT name FROM pragma_table_info('discord_bot') ORDER BY name")
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('discord_bots') ORDER BY name")
             .fetch_all(database.pool())
             .await
             .expect("pragma");
@@ -144,7 +154,10 @@ async fn there_is_nowhere_to_store_a_bot_token_in_the_clear() {
         columns,
         vec![
             "application_id".to_string(),
+            "autostart".to_string(),
+            "created_at".to_string(),
             "id".to_string(),
+            "label".to_string(),
             "token_cipher".to_string(),
             "token_nonce".to_string(),
             "updated_at".to_string(),
@@ -161,15 +174,15 @@ async fn a_nonce_of_the_wrong_length_is_refused_by_the_database() {
         token_nonce: vec![3u8; 12],
         ..credentials()
     };
-    assert!(discord::save_bot_credentials(&database, &wrong)
-        .await
-        .is_err());
+    assert!(discord::add_bot(&database, &wrong).await.is_err());
 }
 
 #[tokio::test]
-async fn saving_credentials_twice_replaces_rather_than_duplicates() {
+async fn re_adding_the_same_application_rotates_rather_than_duplicating() {
+    // Two rows for one Discord application would mean two connections
+    // identifying as the same bot, which Discord answers by closing one.
     let database = db().await;
-    discord::save_bot_credentials(&database, &credentials())
+    let first = discord::add_bot(&database, &credentials())
         .await
         .expect("save");
 
@@ -177,17 +190,16 @@ async fn saving_credentials_twice_replaces_rather_than_duplicates() {
         token_cipher: vec![9u8; 64],
         ..credentials()
     };
-    discord::save_bot_credentials(&database, &rotated)
-        .await
-        .expect("rotate");
+    let second = discord::add_bot(&database, &rotated).await.expect("rotate");
+    assert_eq!(first, second, "the same row should be reused");
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discord_bot")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discord_bots")
         .fetch_one(database.pool())
         .await
         .expect("count");
-    assert_eq!(count, 1, "the single-row CHECK should hold");
+    assert_eq!(count, 1);
 
-    let loaded = discord::load_bot_credentials(&database)
+    let loaded = discord::find_bot(&database, &first)
         .await
         .expect("load")
         .expect("present");
@@ -195,20 +207,62 @@ async fn saving_credentials_twice_replaces_rather_than_duplicates() {
 }
 
 #[tokio::test]
+async fn a_second_distinct_bot_is_kept_alongside_the_first() {
+    // The point of 0006: an installation may hold more than one.
+    let database = db().await;
+    discord::add_bot(&database, &credentials())
+        .await
+        .expect("first");
+
+    let other = BotCredentials {
+        label: "Private Bot".to_string(),
+        application_id: "888888888888888888".to_string(),
+        ..credentials()
+    };
+    discord::add_bot(&database, &other).await.expect("second");
+
+    let bots = discord::list_bots(&database).await.expect("list");
+    assert_eq!(bots.len(), 2);
+    assert_eq!(bots[0].label, "My Bot", "oldest first");
+    assert_eq!(bots[1].label, "Private Bot");
+}
+
+#[tokio::test]
+async fn forgetting_a_bot_takes_its_linked_servers_with_it() {
+    // The cascade the migration declares: a server whose bot is gone has
+    // nothing left that could reach it.
+    let database = db().await;
+    let bot = discord::add_bot(&database, &credentials())
+        .await
+        .expect("bot");
+    discord::link_guild(
+        &database,
+        &NewGuildLink {
+            guild_id: "555555555555555555".to_string(),
+            guild_name: "My Server".to_string(),
+            linked_by_user_id: "111111111111111111".to_string(),
+            allow_guild_owner: true,
+            bot_row_id: bot.clone(),
+        },
+    )
+    .await
+    .expect("link");
+
+    assert!(discord::forget_bot(&database, &bot).await.expect("forget"));
+    assert!(discord::list_guilds(&database)
+        .await
+        .expect("list")
+        .is_empty());
+}
+
+#[tokio::test]
 async fn forgetting_credentials_removes_the_row_entirely() {
     let database = db().await;
-    discord::save_bot_credentials(&database, &credentials())
+    let id = discord::add_bot(&database, &credentials())
         .await
         .expect("save");
-    discord::forget_bot_credentials(&database)
-        .await
-        .expect("forget");
-    assert_eq!(
-        discord::load_bot_credentials(&database)
-            .await
-            .expect("load"),
-        None
-    );
+    assert!(discord::forget_bot(&database, &id).await.expect("forget"));
+    assert_eq!(discord::find_bot(&database, &id).await.expect("load"), None);
 }
 
 // ---------------------------------------------------------------------- guilds
@@ -219,6 +273,9 @@ async fn linking_the_same_server_twice_updates_it_rather_than_failing() {
     // server. Failing with a uniqueness error would be unhelpful.
     let database = db().await;
     let first = a_guild(&database, "222222222222222222").await;
+    let bot = discord::list_bots(&database).await.expect("bots")[0]
+        .id
+        .clone();
 
     let second = discord::link_guild(
         &database,
@@ -227,6 +284,7 @@ async fn linking_the_same_server_twice_updates_it_rather_than_failing() {
             guild_name: "Renamed Server".to_string(),
             linked_by_user_id: "111111111111111111".to_string(),
             allow_guild_owner: false,
+            bot_row_id: bot,
         },
     )
     .await

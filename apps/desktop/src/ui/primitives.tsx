@@ -59,7 +59,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-[12px] border border-edge bg-surface ${
+      className={`rounded-[7px] border border-edge bg-surface ${
         interactive ? 'transition-colors hover:border-edge-strong' : ''
       } ${className}`}
     >
@@ -160,8 +160,8 @@ export function Button({
       disabled={disabled || pending}
       title={title}
       aria-busy={pending}
-      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[8px] font-medium transition-transform active:translate-y-px disabled:pointer-events-none disabled:opacity-40 ${
-        size === 'sm' ? 'h-7 px-2.5 text-[12px]' : 'h-8 px-3 text-[13px]'
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[5px] font-medium transition-colors duration-100 disabled:pointer-events-none disabled:opacity-40 ${
+        size === 'sm' ? 'h-[26px] px-2 text-[12px]' : 'h-[30px] px-2.5 text-[12.5px]'
       } ${full ? 'w-full' : ''} ${variants[variant]}`}
     >
       {pending ? (
@@ -199,8 +199,8 @@ export function IconButton({
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`inline-grid shrink-0 place-items-center rounded-[8px] disabled:pointer-events-none disabled:opacity-40 ${
-        size === 'sm' ? 'h-7 w-7' : 'h-8 w-8'
+      className={`inline-grid shrink-0 place-items-center rounded-[5px] disabled:pointer-events-none disabled:opacity-40 ${
+        size === 'sm' ? 'h-[26px] w-[26px]' : 'h-[30px] w-[30px]'
       } ${active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised hover:text-ink'}`}
     >
       <Icon name={icon} size={size === 'sm' ? 14 : 16} />
@@ -249,7 +249,7 @@ export function TextInput({
         onKeyDown={onKeyDown}
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={error ? true : undefined}
-        className={`h-9 w-full rounded-[8px] border bg-canvas px-3 text-[13px] text-ink placeholder:text-faint select-text focus:border-accent ${
+        className={`h-[30px] w-full rounded-[5px] border bg-canvas px-2.5 text-[12.5px] text-ink placeholder:text-faint select-text focus:border-accent ${
           error ? 'border-danger' : 'border-edge'
         } ${mono ? 'font-mono text-[12px]' : ''}`}
       />
@@ -425,14 +425,14 @@ export function Stat({
         type="button"
         onClick={onClick}
         title={hint}
-        className="rounded-[12px] border border-edge bg-surface px-4 py-3 text-left transition-colors hover:border-edge-strong hover:bg-raised"
+        className="rounded-[7px] border border-edge bg-surface px-3 py-2.5 text-left transition-colors hover:border-edge-strong hover:bg-raised"
       >
         {body}
       </button>
     );
   }
   return (
-    <div title={hint} className="rounded-[12px] border border-edge bg-surface px-4 py-3">
+    <div title={hint} className="rounded-[7px] border border-edge bg-surface px-3 py-2.5">
       {body}
     </div>
   );
@@ -442,7 +442,7 @@ export function Stat({
 
 /** A shape held while the real content loads. */
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div aria-hidden className={`skeleton rounded-[8px] ${className}`} />;
+  return <div aria-hidden className={`skeleton rounded-[5px] ${className}`} />;
 }
 
 /**
@@ -466,7 +466,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
-      <span className="mb-4 grid h-12 w-12 place-items-center rounded-[12px] border border-edge bg-raised text-muted">
+      <span className="mb-3 grid h-10 w-10 place-items-center rounded-[7px] border border-edge bg-raised text-muted">
         <Icon name={icon} size={22} />
       </span>
       <h3 className="text-[15px] font-medium">{title}</h3>
@@ -508,7 +508,7 @@ export function Banner({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[12px] border px-4 py-3 ${edge}`}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[7px] border px-3 py-2.5 ${edge}`}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${TONES[tone].dot}`} aria-hidden />
       <div className="min-w-[200px] flex-1">

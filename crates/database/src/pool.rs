@@ -10,7 +10,7 @@ use crate::error::{DatabaseError, Result};
 
 /// Schema version this build understands. Bumped alongside a migration that is
 /// not backward compatible.
-pub const SUPPORTED_SCHEMA_VERSION: u32 = 5;
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 8;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 

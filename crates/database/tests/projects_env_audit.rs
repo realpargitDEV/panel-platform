@@ -91,17 +91,22 @@ fn new_project(slug: &str) -> NewProject {
 
 // ---------------------------------------------------------------- projects
 
-/// Every project that existed before host mode did is a Docker project, and
-/// the column default is the only thing standing between them and a silent
-/// change of behaviour.
+/// A new project runs as a local process. Nothing a user can press produces
+/// anything else, and the column default is what makes that true for every
+/// caller rather than for whichever ones remembered to say so.
+///
+/// The `DOCKER` value is still stored and read back, because `docker-manager`
+/// still compiles and a hand-set row has to remain readable — it is simply no
+/// longer what anybody gets by default. Migration 0008 moved the rows that had
+/// it.
 #[tokio::test]
-async fn a_project_runs_under_docker_unless_it_is_told_otherwise() {
+async fn a_project_runs_as_a_local_process_unless_it_is_told_otherwise() {
     let database = db().await;
     let project = projects::create_project(&database, &new_project("bot"))
         .await
         .expect("create");
 
-    assert_eq!(project.run_mode, "DOCKER");
+    assert_eq!(project.run_mode, "HOST");
 
     projects::set_run_mode(&database, &project.id, RunMode::Host)
         .await

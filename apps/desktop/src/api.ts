@@ -106,10 +106,116 @@ export interface RunningProject {
   cpuPercent: number | null;
   /** False for a Docker project, whose figure is its limit, not a reading. */
   measured: boolean;
+  /** RFC 3339. The window derives uptime, so it never shows a stale number. */
+  startedAt: string | null;
+  /** The primary published port, if the project has one. */
+  port: number | null;
 }
 
 export async function machineLoad(): Promise<MachineLoad> {
   return toCamel<MachineLoad>(await invoke('machine_load'));
+}
+
+/** How power is managed: what the user asked for. */
+export type PowerMode = 'automatic' | 'performance' | 'balanced' | 'efficiency' | 'manual';
+
+/** What is actually in force. */
+export type PowerProfile = 'performance' | 'balanced' | 'efficiency';
+
+export interface PowerWarning {
+  kind: 'thermal' | 'low_battery' | 'memory';
+  message: string;
+}
+
+/** What the power manager is doing, and why. */
+export interface PowerStatus {
+  mode: PowerMode;
+  profile: PowerProfile;
+  /** Shown verbatim. A profile without its sentence explains nothing. */
+  reason: string;
+  /** What the policy asked for. */
+  preventSleep: boolean;
+  /**
+   * What actually happened. A platform can refuse, and showing the request as
+   * the outcome would be a lie the user finds out about when the machine sleeps.
+   */
+  sleepHeld: boolean;
+  /** False before the first tick. Say "measuring", do not draw zeroes. */
+  measured: boolean;
+  cpuPercent: number | null;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  hottestCelsius: number | null;
+  hottestSensor: string | null;
+  batteryPercent: number | null;
+  charging: boolean | null;
+  powerSource: 'ac' | 'battery' | 'unknown';
+  activeProjects: number;
+  warnings: PowerWarning[];
+}
+
+export interface PowerJournalEntry {
+  seq: number;
+  at: string;
+  summary: string;
+  reason: string;
+}
+
+export interface PowerJournalPage {
+  entries: PowerJournalEntry[];
+  /** Pass back as `since` on the next poll. */
+  cursor: number;
+}
+
+export async function powerStatus(): Promise<PowerStatus> {
+  return toCamel<PowerStatus>(await invoke('power_status'));
+}
+
+export async function setPowerMode(mode: PowerMode): Promise<void> {
+  await invoke('set_power_mode', { mode });
+}
+
+export async function powerJournal(since: number): Promise<PowerJournalPage> {
+  return toCamel<PowerJournalPage>(await invoke('power_journal', { since }));
+}
+
+export interface ConsoleLine {
+  seq: number;
+  at: string;
+  stream: 'stdout' | 'stderr' | 'system';
+  text: string;
+}
+
+export interface ProjectConsole {
+  lines: ConsoleLine[];
+  /** Pass back as `since` next time. Zero for a stopped project's file. */
+  cursor: number;
+  /** False when the project is not running and this is the historical record. */
+  live: boolean;
+}
+
+export async function projectConsole(projectId: string, since: number): Promise<ProjectConsole> {
+  return toCamel<ProjectConsole>(await invoke('project_console', { projectId, since }));
+}
+
+/** A project's scheduling priority. Never a hard limit — see `set_project_power`. */
+export type ProjectPriority = 'LOW' | 'NORMAL' | 'HIGH';
+
+/**
+ * Set one project's priority and whether it holds sleep off.
+ *
+ * Both optional so a caller can change one without sending a stale value for
+ * the other.
+ */
+export async function setProjectPower(
+  projectId: string,
+  changes: { priority?: ProjectPriority; keepAwake?: boolean },
+): Promise<void> {
+  await invoke('set_project_power', {
+    projectId,
+    priority: changes.priority ?? null,
+    keepAwake: changes.keepAwake ?? null,
+  });
 }
 
 /**
@@ -718,6 +824,10 @@ export interface ProjectDetail {
   desiredState: string;
   health: string;
   runMode: string;
+  /** Scheduling only, never a cap. */
+  priority: ProjectPriority;
+  /** Whether this project running holds automatic sleep off. */
+  keepAwake: boolean;
   restartPolicy: string;
   networkMode: string;
   autostart: boolean;
@@ -799,4 +909,84 @@ export interface AppSettings {
 
 export async function appSettings(): Promise<AppSettings> {
   return toCamel<AppSettings>(await invoke('app_settings'));
+}
+
+// -------------------------------------------------------------------- discord
+
+/** One configured Discord bot, and what its connection is doing. */
+export interface DiscordBot {
+  id: string;
+  label: string;
+  applicationId: string;
+  autostart: boolean;
+  /** `stopped`, `connecting`, `connected` or `failed`. */
+  status: string;
+  failureReason: string | null;
+  uptimeSeconds: number | null;
+  reconnects: number;
+  linkedServers: number;
+  /** The projects this bot reports on. */
+  projectIds: string[];
+}
+
+/**
+ * Whether this installation can hold a bot token at all.
+ *
+ * Asked before the screen offers to take one: a machine whose secure storage
+ * could not be opened must say so up front rather than accepting a token and
+ * failing to save it.
+ */
+export interface DiscordReadiness {
+  canStoreSecrets: boolean;
+  /** `os-keychain` or `restricted-file`. Null when there is no key. */
+  keyBackend: string | null;
+  connected: number;
+}
+
+export async function discordReadiness(): Promise<DiscordReadiness> {
+  return toCamel<DiscordReadiness>(await invoke('discord_readiness'));
+}
+
+export async function discordBots(): Promise<DiscordBot[]> {
+  return toCamel<DiscordBot[]>(await invoke('discord_bots'));
+}
+
+/**
+ * Verify a token with Discord and store it encrypted, returning the bot's id.
+ *
+ * Rejected before anything is written if Discord will not accept it, so a bot
+ * that appears in the list is one that worked at least once.
+ */
+export async function addDiscordBot(label: string, token: string): Promise<string> {
+  return invoke('add_discord_bot', { label, token });
+}
+
+export async function startDiscordBot(botId: string): Promise<void> {
+  return invoke('start_discord_bot', { botId });
+}
+
+export async function stopDiscordBot(botId: string): Promise<void> {
+  return invoke('stop_discord_bot', { botId });
+}
+
+export async function forgetDiscordBot(botId: string): Promise<boolean> {
+  return invoke('forget_discord_bot', { botId });
+}
+
+export async function updateDiscordBot(
+  botId: string,
+  label: string,
+  autostart: boolean,
+): Promise<boolean> {
+  return invoke('update_discord_bot', { botId, label, autostart });
+}
+
+/**
+ * Choose which projects a bot reports on.
+ *
+ * The whole set is sent, not a single add or remove: the window shows tick
+ * boxes, so what the user produced is a set.
+ */
+export async function setDiscordBotProjects(botId: string, projectIds: string[]): Promise<void> {
+  return invoke('set_discord_bot_projects', { botId, projectIds });
 }

@@ -8,17 +8,18 @@ import {
   startProject,
   stopProject,
   systemStatus,
+  powerStatus,
+  machineLoad,
+  type MachineLoad,
+  type PowerStatus,
   type ProjectSummary,
   type SystemStatus,
 } from './api';
-import { readRecent, recordRecent } from './lib/recent';
-import { isRunning } from './lib/projects';
+import { recordRecent } from './lib/recent';
+import { isRunning, runControls } from './lib/projects';
 import { toRequest, type Draft } from './lib/wizard';
 import Activity from './pages/Activity';
-import Discord from './pages/Discord';
 import NewProjectWizard, { CreatedSummary } from './pages/NewProjectWizard';
-import Overview from './pages/Overview';
-import ProjectDetail from './pages/ProjectDetail';
 import Projects from './pages/Projects';
 import {
   applyAppearance,
@@ -28,9 +29,17 @@ import {
 } from './lib/appearance';
 import ThemeEffects from './components/ThemeEffects';
 import Settings, { type Preferences } from './pages/Settings';
+import Discord from './pages/Discord';
+import ProjectDetail from './pages/ProjectDetail';
+import AppShell from './shell/AppShell';
+import {
+  loadShellLayout,
+  saveShellLayout,
+  type ShellLayout,
+  type ToolId,
+} from './shell/shellLayout';
 import CommandPalette from './shell/CommandPalette';
-import Sidebar, { type View } from './shell/Sidebar';
-import TopBar from './shell/TopBar';
+import Icon from './ui/Icon';
 import { isDeclined, useToolchainGate } from './components/useToolchainGate';
 import UpdateManager from './components/UpdateManager';
 import { installBusy } from './update';
@@ -101,8 +110,25 @@ function loadPreferences(): Preferences {
  * page owns its own data beyond that.
  */
 export default function App() {
-  const [view, setView] = useState<View>('overview');
+  /**
+   * Where the shell is pointed. Owned here rather than inside `AppShell` so the
+   * command palette can move it — a palette that cannot reach the navigation is
+   * half a palette.
+   */
+  const [layout, setLayout] = useState<ShellLayout>(() =>
+    loadShellLayout(typeof window === 'undefined' ? undefined : window.localStorage),
+  );
+  const patchLayout = useCallback((changes: Partial<ShellLayout>) => {
+    setLayout((previous) => {
+      const next = { ...previous, ...changes };
+      saveShellLayout(typeof window === 'undefined' ? undefined : window.localStorage, next);
+      return next;
+    });
+  }, []);
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [power, setPower] = useState<PowerStatus | null>(null);
+  /** Drives the status bar's CPU and memory figures. */
+  const [load, setLoad] = useState<MachineLoad | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -113,10 +139,7 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<Awaited<ReturnType<typeof createProject>> | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [dockerDismissed, setDockerDismissed] = useState(false);
-  const [recentIds, setRecentIds] = useState<string[]>(() =>
-    readRecent(typeof window === 'undefined' ? undefined : window.localStorage),
-  );
+  const [activityOpen, setActivityOpen] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(loadPreferences);
 
   const update = useUpdate();
@@ -142,9 +165,20 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextStatus, nextProjects] = await Promise.all([systemStatus(), listProjects()]);
+      const [nextStatus, nextProjects, nextPower] = await Promise.all([
+        systemStatus(),
+        listProjects(),
+        // Tolerated separately: the power manager is a background task, and a
+        // machine whose sensors will not answer must not cost the user their
+        // project list.
+        powerStatus().catch(() => null),
+      ]);
+      machineLoad()
+        .then(setLoad)
+        .catch(() => setLoad(null));
       setStatus(nextStatus);
       setProjects(nextProjects);
+      setPower(nextPower);
       setFailure(null);
       reportedFailure.current = false;
     } catch (error) {
@@ -232,22 +266,63 @@ export default function App() {
   const openProjectById = useCallback((id: string) => {
     setOpenProject(id);
     setEditing(false);
-    setView('projects');
-    setRecentIds(recordRecent(window.localStorage, id));
+    // Recorded even though nothing reads the list yet in the new shell: the
+    // record is what "recently opened" will be built from, and losing it while
+    // the surface is rebuilt would mean starting that history from empty.
+    recordRecent(window.localStorage, id);
   }, []);
 
   const project = openProject === null ? null : projects?.find((item) => item.id === openProject);
-  const running = projects?.filter((item) => isRunning(item.status)).length ?? 0;
-  const attention =
-    projects?.filter(
-      (item) => item.desiredState.toUpperCase() === 'RUNNING' && !isRunning(item.status),
-    ).length ?? 0;
 
   const { gate, guard } = useToolchainGate();
 
   /** Everything the palette can run. Each one is a real action of the shell. */
+
+  /**
+   * Run one lifecycle action and report it.
+   *
+   * At component level rather than inside the command list, because the top
+   * bar's Run control needs exactly the same behaviour — and two copies of
+   * "start it, refresh, toast" is how the palette and the button come to
+   * disagree about whether a start succeeded.
+   */
+  const [runBusy, setRunBusy] = useState(false);
+  const runAction = useCallback(
+    async (item: ProjectSummary, verb: string, action: (id: string) => Promise<unknown>) => {
+      setRunBusy(true);
+      try {
+        await action(item.id);
+        await refresh();
+        toast.success(`${item.displayName} ${verb}`);
+      } catch (error) {
+        // Declining an install is an answer, not a failure to report.
+        if (isDeclined(error)) return;
+        toast.error(
+          `Could not ${verb.replace(/ed$/, '')} ${item.displayName}`,
+          errorMessage(error),
+        );
+      } finally {
+        setRunBusy(false);
+      }
+    },
+    [refresh],
+  );
+
   const commands = useMemo<Command[]>(() => {
     const target = project ?? null;
+    // The same decision the Start button makes, from the same function. The
+    // palette used to test `dockerAvailable` on its own, which disabled Start
+    // for host projects on a machine with no Docker — every project, now that
+    // HOST is the default — while the button beside it worked. `busy` is false
+    // because the palette tracks no in-flight action of its own; a project
+    // mid-transition is already caught by its status.
+    const startBlock =
+      target === null
+        ? { blocked: true, reason: undefined }
+        : runControls(target, {
+            busy: false,
+            dockerAvailable: status?.dockerAvailable ?? false,
+          });
     return [
       {
         id: 'project.new',
@@ -255,57 +330,33 @@ export default function App() {
         category: 'Projects',
         run: () => setCreating(true),
       },
-      {
-        id: 'go.overview',
-        title: 'Go to Overview',
+      ...(
+        [
+          ['projects', 'Projects'],
+          ['processes', 'Processes'],
+          ['ports', 'Ports'],
+          ['environment', 'Environment'],
+          ['resources', 'Resources'],
+          ['settings', 'Settings'],
+        ] as [ToolId, string][]
+      ).map(([id, title]) => ({
+        id: `go.${id}`,
+        title: `Go to ${title}`,
         category: 'Go',
-        run: () => {
-          setOpenProject(null);
-          setView('overview');
-        },
-      },
-      {
-        id: 'go.projects',
-        title: 'Go to Projects',
-        category: 'Go',
-        run: () => {
-          setOpenProject(null);
-          setView('projects');
-        },
-      },
+        run: () => patchLayout({ tool: id, sidebarVisible: true }),
+      })),
       {
         id: 'go.activity',
         title: 'Go to Activity',
         category: 'Go',
-        run: () => {
-          setOpenProject(null);
-          setView('activity');
-        },
-      },
-      {
-        id: 'go.discord',
-        title: 'Go to Discord',
-        category: 'Go',
-        run: () => {
-          setOpenProject(null);
-          setView('discord');
-        },
-      },
-      {
-        id: 'go.settings',
-        title: 'Open Settings',
-        category: 'Go',
-        run: () => {
-          setOpenProject(null);
-          setView('settings');
-        },
+        run: () => setActivityOpen(true),
       },
       {
         id: 'view.sidebar',
         title: 'Toggle Sidebar',
         category: 'View',
         keybinding: 'Ctrl+B',
-        run: () => patchPreferences({ collapsedSidebar: !preferences.collapsedSidebar }),
+        run: () => patchLayout({ sidebarVisible: !layout.sidebarVisible }),
       },
       {
         id: 'app.refresh',
@@ -326,8 +377,11 @@ export default function App() {
         id: 'project.start',
         title: 'Start This Project',
         category: 'Projects',
-        enabled: target !== null && !isRunning(target.status) && (status?.dockerAvailable ?? false),
-        reason: target === null ? 'No project is open' : 'Not available right now',
+        enabled: target !== null && !isRunning(target.status) && !startBlock.blocked,
+        reason:
+          target === null
+            ? 'No project is open'
+            : (startBlock.reason ?? 'The project is already running'),
         run: () => {
           if (target) void runAction(target, 'started', guard(startProject));
         },
@@ -362,26 +416,11 @@ export default function App() {
       },
     ];
 
-    async function runAction(
-      item: ProjectSummary,
-      verb: string,
-      action: (id: string) => Promise<unknown>,
-    ) {
-      try {
-        await action(item.id);
-        await refresh();
-        toast.success(`${item.displayName} ${verb}`);
-      } catch (error) {
-        // Declining an install is an answer, not a failure to report.
-        if (isDeclined(error)) return;
-        toast.error(
-          `Could not ${verb.replace(/ed$/, '')} ${item.displayName}`,
-          errorMessage(error),
-        );
-      }
-    }
   }, [
     guard,
+    runAction,
+    patchLayout,
+    layout.sidebarVisible,
     patchPreferences,
     preferences.collapsedSidebar,
     project,
@@ -434,8 +473,7 @@ export default function App() {
           onLeave={() => setEditing(false)}
           onOpenSettings={() => {
             setEditing(false);
-            setOpenProject(null);
-            setView('settings');
+            patchLayout({ tool: 'settings', sidebarVisible: true });
           }}
           onOpenUpdates={openUpdates}
         />
@@ -459,80 +497,38 @@ export default function App() {
           shows through the gaps between panels rather than being painted over
           by the shell's own background. */}
       <ThemeEffects effect={effect} motion={preferences.appearance.motion} />
-      <div className="theme-effects-above flex h-full text-ink">
-        <Sidebar
-          view={view}
-          collapsed={preferences.collapsedSidebar}
-          projectCount={projects?.length ?? 0}
-          busyCount={
-            projects?.filter((item) =>
-              ['STARTING', 'STOPPING', 'RESTARTING', 'BUILDING', 'DEPLOYING'].includes(item.status),
-            ).length ?? 0
-          }
-          dockerAvailable={status?.dockerAvailable ?? false}
-          dockerSummary={status?.dockerSummary ?? 'Checking Docker…'}
-          onNavigate={(next) => {
-            setOpenProject(null);
-            setView(next);
-          }}
+      <div className="theme-effects-above h-full">
+        <AppShell
+          status={status}
+          power={power}
+          load={load}
+          projects={projects}
+          project={project ?? null}
+          failure={failure}
+          busy={runBusy}
+          updateAvailable={update.check?.state === 'available' ? update.check.newVersion : null}
+          layout={layout}
+          patch={patchLayout}
+          onOpenProject={openProjectById}
           onNewProject={() => setCreating(true)}
-          onToggleCollapsed={() =>
-            patchPreferences({ collapsedSidebar: !preferences.collapsedSidebar })
-          }
-        />
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar
-            version={status?.appVersion ?? '—'}
-            runningCount={running}
-            attentionCount={attention}
-            dockerAvailable={status?.dockerAvailable ?? false}
-            updateAvailable={update.check?.state === 'available' ? update.check.newVersion : null}
-            onOpenPalette={() => setPaletteOpen(true)}
-            onOpenSettings={() => {
-              setOpenProject(null);
-              setView('settings');
-            }}
-            onCheckUpdates={() => {
-              openUpdates();
-              void updateStore.check();
-            }}
-            onOpenActivity={() => {
-              setOpenProject(null);
-              setView('activity');
-            }}
-            onInstallUpdate={openUpdates}
-          />
-
-          {/* Keyed on the destination so React remounts the subtree when the
-            view changes, which is what re-runs the enter animation. Keyed on
-            the open project too, or moving between two projects would swap the
-            content with no transition at all. */}
-          <main
-            key={`${view}:${openProject ?? ''}`}
-            className="animate-view min-h-0 flex-1 overflow-y-auto"
-          >
-            {failure && (
-              <div className="border-b border-danger/30 bg-danger-soft px-8 py-2.5 text-[13px] text-danger">
-                {failure}
-              </div>
-            )}
-
-            {created && (
-              <div className="mx-auto w-full max-w-[1200px] px-8 pt-6">
-                <CreatedSummary
-                  created={created}
-                  onDismiss={() => setCreated(null)}
-                  onOpen={() => {
-                    const id = created.id;
-                    setCreated(null);
-                    openProjectById(id);
-                  }}
-                />
-              </div>
-            )}
-
-            {view === 'projects' && project ? (
+          onRefresh={() => void refresh()}
+          onOpenPalette={() => setPaletteOpen(true)}
+          onOpenActivity={() => setActivityOpen(true)}
+          onInstallUpdate={openUpdates}
+          onOpenFiles={() => {
+            if (project) setEditing(true);
+          }}
+          onStart={() => {
+            if (project) void runAction(project, 'started', guard(startProject));
+          }}
+          onStop={() => {
+            if (project) void runAction(project, 'stopped', stopProject);
+          }}
+          onRestart={() => {
+            if (project) void runAction(project, 'restarted', guard(restartProject));
+          }}
+          detailsPane={
+            project ? (
               <ProjectDetail
                 key={project.id}
                 project={project}
@@ -542,24 +538,48 @@ export default function App() {
                 onBack={() => setOpenProject(null)}
                 onOpenFiles={() => setEditing(true)}
               />
-            ) : view === 'overview' ? (
-              <Overview
-                status={status}
-                projects={projects}
-                recentIds={recentIds}
-                dockerDismissed={dockerDismissed}
-                onDismissDocker={() => setDockerDismissed(true)}
-                onOpenProject={openProjectById}
-                onNewProject={() => setCreating(true)}
-                onGoProjects={() => setView('projects')}
-                onGoActivity={() => setView('activity')}
-                onGoSettings={() => setView('settings')}
-                onRetryDocker={() => {
-                  void refresh();
-                  toast.info('Rechecking Docker');
-                }}
-              />
-            ) : view === 'projects' ? (
+            ) : null
+          }
+          discordPane={<Discord />}
+          settingsPane={
+            <Settings
+              status={status}
+              power={power}
+              projects={projects}
+              preferences={preferences}
+              onPreferences={patchPreferences}
+              onOpenUpdates={() => {
+                openUpdates();
+                void updateStore.check();
+              }}
+              onResetLayout={() => {
+                try {
+                  window.localStorage.removeItem(PREFERENCES_KEY);
+                  window.localStorage.removeItem('workspace.layout.v1');
+                  window.localStorage.removeItem('shell.layout.v1');
+                  window.localStorage.removeItem('panel.projectsView.v1');
+                } catch {
+                  // Nothing to do: the defaults apply on the next start anyway.
+                }
+                setPreferences(defaultPreferences);
+              }}
+            />
+          }
+          projectsPane={
+            <>
+              {created && (
+                <div className="border-b border-edge px-4 py-3">
+                  <CreatedSummary
+                    created={created}
+                    onDismiss={() => setCreated(null)}
+                    onOpen={() => {
+                      const id = created.id;
+                      setCreated(null);
+                      openProjectById(id);
+                    }}
+                  />
+                </div>
+              )}
               <Projects
                 projects={projects}
                 dockerAvailable={status?.dockerAvailable ?? false}
@@ -567,34 +587,52 @@ export default function App() {
                 onOpen={openProjectById}
                 onNewProject={() => setCreating(true)}
               />
-            ) : view === 'activity' ? (
-              <Activity projects={projects} onOpenProject={openProjectById} />
-            ) : view === 'discord' ? (
-              <Discord />
-            ) : (
-              <Settings
-                status={status}
-                projects={projects}
-                preferences={preferences}
-                onPreferences={patchPreferences}
-                onOpenUpdates={() => {
-                  openUpdates();
-                  void updateStore.check();
-                }}
-                onResetLayout={() => {
-                  try {
-                    window.localStorage.removeItem(PREFERENCES_KEY);
-                    window.localStorage.removeItem('workspace.layout.v1');
-                    window.localStorage.removeItem('panel.projectsView.v1');
-                  } catch {
-                    // Nothing to do: the defaults apply on the next start anyway.
-                  }
-                  setPreferences(defaultPreferences);
-                }}
-              />
-            )}
-          </main>
-        </div>
+            </>
+          }
+        />
+
+        {/* A slide-over rather than a tool: activity is something you glance
+            at and dismiss, and giving it a rail slot would put a permanent
+            entry on screen for an occasional question. */}
+        {activityOpen && (
+          <div
+            role="dialog"
+            aria-label="Activity"
+            className="fixed inset-0 z-40 flex justify-end bg-black/40"
+            onClick={() => setActivityOpen(false)}
+          >
+            <div
+              className="flex h-full w-[420px] max-w-[92vw] flex-col border-l border-edge bg-surface"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div
+                className="flex shrink-0 items-center justify-between border-b border-edge px-3"
+                style={{ height: 'var(--h-panel-header)' }}
+              >
+                <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+                  Activity
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close activity"
+                  onClick={() => setActivityOpen(false)}
+                  className="grid h-6 w-6 place-items-center rounded-[3px] text-muted hover:bg-raised hover:text-ink"
+                >
+                  <Icon name="close" size={13} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <Activity
+                  projects={projects}
+                  onOpenProject={(id) => {
+                    setActivityOpen(false);
+                    openProjectById(id);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {creating && (
           <NewProjectWizard
@@ -606,7 +644,7 @@ export default function App() {
             }}
             onCreated={(result, startNow) => {
               setCreated(result);
-              setRecentIds(recordRecent(window.localStorage, result.id));
+              recordRecent(window.localStorage, result.id);
               toast.success(`${result.displayName} created`);
               if (startNow) {
                 // A project created on a machine that lacks its language is the

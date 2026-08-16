@@ -105,6 +105,7 @@ async fn a_configured_guild(database: &Database) -> String {
             guild_name: "My Server".to_string(),
             linked_by_user_id: OWNER.to_string(),
             allow_guild_owner: true,
+            bot_row_id: a_bot(database).await,
         },
     )
     .await
@@ -123,6 +124,21 @@ async fn a_configured_guild(database: &Database) -> String {
     guild
 }
 
+/// A bot to hang linked servers off, since 0006 gives every server an owner.
+async fn a_bot(database: &Database) -> String {
+    storage::add_bot(
+        database,
+        &storage::BotCredentials {
+            label: "My Bot".to_string(),
+            application_id: "999999999999999999".to_string(),
+            token_cipher: vec![7u8; 64],
+            token_nonce: vec![3u8; 24],
+        },
+    )
+    .await
+    .expect("add bot")
+}
+
 // ------------------------------------------------------------- the bot token
 
 #[tokio::test]
@@ -131,16 +147,17 @@ async fn the_bot_token_survives_a_round_trip_through_encryption_and_storage() {
     let key = EncryptionKey::generate();
     let token = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.FgHiJkLmNoPqRsTuVwXyZ";
 
-    integration::save_bot_token(
+    let id = integration::add_bot(
         &database,
         &key,
+        "My Bot",
         "999999999999999999",
         &Secret::new(token.to_string()),
     )
     .await
     .expect("save");
 
-    let (application_id, loaded) = integration::load_bot_token(&database, &key)
+    let (application_id, loaded) = integration::load_bot_token(&database, &key, &id)
         .await
         .expect("load")
         .expect("present");
@@ -157,16 +174,17 @@ async fn the_stored_bot_token_is_not_readable_without_the_key() {
     let key = EncryptionKey::generate();
     let token = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.FgHiJkLmNoPqRsTuVwXyZ";
 
-    integration::save_bot_token(
+    let id = integration::add_bot(
         &database,
         &key,
+        "My Bot",
         "999999999999999999",
         &Secret::new(token.to_string()),
     )
     .await
     .expect("save");
 
-    let stored = storage::load_bot_credentials(&database)
+    let stored = storage::find_bot(&database, &id)
         .await
         .expect("load")
         .expect("present");
@@ -184,16 +202,17 @@ async fn the_stored_bot_token_is_not_readable_without_the_key() {
 #[tokio::test]
 async fn a_different_key_cannot_decrypt_the_token() {
     let database = db().await;
-    integration::save_bot_token(
+    let id = integration::add_bot(
         &database,
         &EncryptionKey::generate(),
+        "My Bot",
         "999999999999999999",
         &Secret::new("a-real-looking-token-value".to_string()),
     )
     .await
     .expect("save");
 
-    let error = integration::load_bot_token(&database, &EncryptionKey::generate())
+    let error = integration::load_bot_token(&database, &EncryptionKey::generate(), &id)
         .await
         .expect_err("a different key must not work");
     assert!(matches!(error, integration::IntegrationError::Decrypt));
@@ -203,7 +222,7 @@ async fn a_different_key_cannot_decrypt_the_token() {
 async fn an_unconfigured_integration_is_not_an_error() {
     // Discord is optional. "No bot" must be a normal answer.
     let database = db().await;
-    let loaded = integration::load_bot_token(&database, &EncryptionKey::generate())
+    let loaded = integration::load_bot_token(&database, &EncryptionKey::generate(), "bot_missing")
         .await
         .expect("no bot is fine");
     assert!(loaded.is_none());

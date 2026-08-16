@@ -11,19 +11,39 @@
 //! storage and the rules independently testable and stops a schema change from
 //! rippling into the authorisation logic.
 
-use project_host_api_types::ids::{GrantId, GuildLinkId};
+use project_host_api_types::ids::{BotId, GrantId, GuildLinkId};
 use sqlx::Row;
 
 use crate::error::{DatabaseError, Result};
 use crate::time;
 use crate::Database;
 
-/// The bot's credentials, encrypted.
+/// A bot's credentials, encrypted.
+///
+/// `id` is absent because this is what a caller supplies to create or update a
+/// bot; the stored row is a [`BotRecord`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BotCredentials {
+    pub label: String,
     pub application_id: String,
     pub token_cipher: Vec<u8>,
     pub token_nonce: Vec<u8>,
+}
+
+/// One stored bot, as it comes back out.
+///
+/// The ciphertext is included: the composition layer needs it to decrypt, and
+/// leaving it out would mean a second query on every connect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BotRecord {
+    pub id: String,
+    pub label: String,
+    pub application_id: String,
+    pub token_cipher: Vec<u8>,
+    pub token_nonce: Vec<u8>,
+    pub autostart: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// A linked Discord server.
@@ -34,6 +54,12 @@ pub struct GuildRecord {
     pub guild_name: String,
     pub linked_by_user_id: String,
     pub allow_guild_owner: bool,
+    /// Which bot reaches this server.
+    ///
+    /// `None` for a server linked before 0006, when there was only one bot and
+    /// the question could not be asked. Such a row is adopted by the first bot
+    /// attached to it rather than being guessed at on read.
+    pub bot_row_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -69,6 +95,8 @@ pub struct NewGuildLink {
     pub guild_name: String,
     pub linked_by_user_id: String,
     pub allow_guild_owner: bool,
+    /// The bot that will reach this server.
+    pub bot_row_id: String,
 }
 
 /// What to write when a project's channels have been created.
@@ -82,52 +110,224 @@ pub struct NewChannels {
     pub control_channel_name: String,
 }
 
-/// Store or replace the bot's credentials.
+/// Add a bot, returning its row id.
 ///
 /// The token is already encrypted. There is no column it could go into
 /// otherwise — see the migration.
-pub async fn save_bot_credentials(db: &Database, credentials: &BotCredentials) -> Result<()> {
+///
+/// A repeated `application_id` updates the existing row rather than adding a
+/// second one. Two rows for one Discord application would mean two connections
+/// identifying as the same bot, which Discord answers by closing one of them;
+/// treating the second save as a token rotation is both the likelier intent and
+/// the only outcome that works.
+pub async fn add_bot(db: &Database, credentials: &BotCredentials) -> Result<String> {
+    let id = BotId::generate().to_string();
+    let now = time::now();
+
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT id FROM discord_bots WHERE application_id = ?")
+            .bind(&credentials.application_id)
+            .fetch_optional(db.pool())
+            .await?;
+
+    if let Some(existing) = existing {
+        sqlx::query(
+            "UPDATE discord_bots
+                SET label = ?, token_cipher = ?, token_nonce = ?, updated_at = ?
+              WHERE id = ?",
+        )
+        .bind(&credentials.label)
+        .bind(&credentials.token_cipher)
+        .bind(&credentials.token_nonce)
+        .bind(&now)
+        .bind(&existing)
+        .execute(db.pool())
+        .await?;
+        return Ok(existing);
+    }
+
     sqlx::query(
-        "INSERT INTO discord_bot (id, application_id, token_cipher, token_nonce, updated_at)
-         VALUES (1, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-             application_id = excluded.application_id,
-             token_cipher   = excluded.token_cipher,
-             token_nonce    = excluded.token_nonce,
-             updated_at     = excluded.updated_at",
+        "INSERT INTO discord_bots
+            (id, label, application_id, token_cipher, token_nonce, autostart, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
     )
+    .bind(&id)
+    .bind(&credentials.label)
     .bind(&credentials.application_id)
     .bind(&credentials.token_cipher)
     .bind(&credentials.token_nonce)
-    .bind(time::now())
+    .bind(&now)
+    .bind(&now)
     .execute(db.pool())
     .await?;
-    Ok(())
+
+    Ok(id)
 }
 
-pub async fn load_bot_credentials(db: &Database) -> Result<Option<BotCredentials>> {
-    let row = sqlx::query(
-        "SELECT application_id, token_cipher, token_nonce FROM discord_bot WHERE id = 1",
+/// Every bot this installation knows about, oldest first.
+///
+/// Stable ordering so the list in the window does not reshuffle itself between
+/// reads.
+pub async fn list_bots(db: &Database) -> Result<Vec<BotRecord>> {
+    let rows = sqlx::query(
+        "SELECT id, label, application_id, token_cipher, token_nonce, autostart,
+                created_at, updated_at
+           FROM discord_bots
+          ORDER BY created_at, id",
     )
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows.iter().map(read_bot).collect())
+}
+
+/// One bot by row id.
+pub async fn find_bot(db: &Database, bot_row_id: &str) -> Result<Option<BotRecord>> {
+    let row = sqlx::query(
+        "SELECT id, label, application_id, token_cipher, token_nonce, autostart,
+                created_at, updated_at
+           FROM discord_bots
+          WHERE id = ?",
+    )
+    .bind(bot_row_id)
     .fetch_optional(db.pool())
     .await?;
 
-    Ok(row.map(|row| BotCredentials {
+    Ok(row.as_ref().map(read_bot))
+}
+
+fn read_bot(row: &sqlx::sqlite::SqliteRow) -> BotRecord {
+    BotRecord {
+        id: row.get("id"),
+        label: row.get("label"),
         application_id: row.get("application_id"),
         token_cipher: row.get("token_cipher"),
         token_nonce: row.get("token_nonce"),
-    }))
+        autostart: row.get::<i64, _>("autostart") != 0,
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
 }
 
-/// Forget the bot's credentials.
+/// Rename a bot, or change whether it starts with the application.
+pub async fn update_bot(
+    db: &Database,
+    bot_row_id: &str,
+    label: &str,
+    autostart: bool,
+) -> Result<bool> {
+    let affected = sqlx::query(
+        "UPDATE discord_bots SET label = ?, autostart = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(label)
+    .bind(i64::from(autostart))
+    .bind(time::now())
+    .bind(bot_row_id)
+    .execute(db.pool())
+    .await?
+    .rows_affected();
+
+    Ok(affected > 0)
+}
+
+/// Forget a bot and everything linked through it.
 ///
 /// Deleting the row rather than blanking the columns, so there is no window in
-/// which a zero-length ciphertext looks like a valid token.
-pub async fn forget_bot_credentials(db: &Database) -> Result<()> {
-    sqlx::query("DELETE FROM discord_bot WHERE id = 1")
+/// which a zero-length ciphertext looks like a valid token. The servers linked
+/// through it go with it, by the cascade the migration declares: a guild whose
+/// bot is gone has nothing left that could reach it.
+pub async fn forget_bot(db: &Database, bot_row_id: &str) -> Result<bool> {
+    let affected = sqlx::query("DELETE FROM discord_bots WHERE id = ?")
+        .bind(bot_row_id)
         .execute(db.pool())
+        .await?
+        .rows_affected();
+
+    Ok(affected > 0)
+}
+
+/// The projects a bot covers, oldest choice first.
+pub async fn list_bot_projects(db: &Database, bot_row_id: &str) -> Result<Vec<String>> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT project_id FROM discord_bot_projects
+          WHERE bot_row_id = ?
+          ORDER BY created_at, project_id",
+    )
+    .bind(bot_row_id)
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows)
+}
+
+/// Replace the set of projects a bot covers.
+///
+/// Written as a difference rather than a delete-then-insert so that a project
+/// that stays selected keeps its original `created_at`. That timestamp is the
+/// list's ordering, and a user who unticks one project should not find the
+/// others reshuffled underneath them.
+///
+/// In one transaction: a half-applied selection is a bot reporting on a set the
+/// user never chose.
+pub async fn set_bot_projects(
+    db: &Database,
+    bot_row_id: &str,
+    project_ids: &[String],
+) -> Result<()> {
+    let mut transaction = db.pool().begin().await?;
+    let now = time::now();
+
+    // Remove what is no longer selected. Done with a NOT IN built from bound
+    // parameters rather than string interpolation — these ids reach here from
+    // the window, and a query assembled by concatenation is the one place this
+    // module could be talked into running something else.
+    let placeholders = if project_ids.is_empty() {
+        // `NOT IN ()` is not valid SQL, and "nothing selected" means "remove
+        // everything", so the clause is simply omitted.
+        String::new()
+    } else {
+        format!(
+            " AND project_id NOT IN ({})",
+            std::iter::repeat_n("?", project_ids.len())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    let delete_sql = format!("DELETE FROM discord_bot_projects WHERE bot_row_id = ?{placeholders}");
+    let mut delete = sqlx::query(&delete_sql).bind(bot_row_id);
+    for id in project_ids {
+        delete = delete.bind(id);
+    }
+    delete.execute(&mut *transaction).await?;
+
+    for id in project_ids {
+        sqlx::query(
+            "INSERT INTO discord_bot_projects (bot_row_id, project_id, created_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(bot_row_id, project_id) DO NOTHING",
+        )
+        .bind(bot_row_id)
+        .bind(id)
+        .bind(&now)
+        .execute(&mut *transaction)
         .await?;
+    }
+
+    transaction.commit().await?;
     Ok(())
+}
+
+/// Which bots report on a project.
+pub async fn bots_for_project(db: &Database, project_id: &str) -> Result<Vec<String>> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT bot_row_id FROM discord_bot_projects WHERE project_id = ? ORDER BY created_at",
+    )
+    .bind(project_id)
+    .fetch_all(db.pool())
+    .await?;
+
+    Ok(rows)
 }
 
 /// Link a Discord server, returning the row id.
@@ -148,12 +348,14 @@ pub async fn link_guild(db: &Database, link: &NewGuildLink) -> Result<String> {
     if let Some(existing) = existing {
         sqlx::query(
             "UPDATE discord_guilds
-                SET guild_name = ?, linked_by_user_id = ?, allow_guild_owner = ?, updated_at = ?
+                SET guild_name = ?, linked_by_user_id = ?, allow_guild_owner = ?,
+                    bot_row_id = ?, updated_at = ?
               WHERE id = ?",
         )
         .bind(&link.guild_name)
         .bind(&link.linked_by_user_id)
         .bind(i64::from(link.allow_guild_owner))
+        .bind(&link.bot_row_id)
         .bind(&now)
         .bind(&existing)
         .execute(db.pool())
@@ -164,14 +366,15 @@ pub async fn link_guild(db: &Database, link: &NewGuildLink) -> Result<String> {
     sqlx::query(
         "INSERT INTO discord_guilds
             (id, guild_id, guild_name, linked_by_user_id, allow_guild_owner,
-             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+             bot_row_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&link.guild_id)
     .bind(&link.guild_name)
     .bind(&link.linked_by_user_id)
     .bind(i64::from(link.allow_guild_owner))
+    .bind(&link.bot_row_id)
     .bind(&now)
     .bind(&now)
     .execute(db.pool())
@@ -183,7 +386,7 @@ pub async fn link_guild(db: &Database, link: &NewGuildLink) -> Result<String> {
 pub async fn find_guild(db: &Database, guild_id: &str) -> Result<Option<GuildRecord>> {
     let row = sqlx::query(
         "SELECT id, guild_id, guild_name, linked_by_user_id, allow_guild_owner,
-                created_at, updated_at
+                bot_row_id, created_at, updated_at
            FROM discord_guilds WHERE guild_id = ?",
     )
     .bind(guild_id)
@@ -196,7 +399,7 @@ pub async fn find_guild(db: &Database, guild_id: &str) -> Result<Option<GuildRec
 pub async fn list_guilds(db: &Database) -> Result<Vec<GuildRecord>> {
     let rows = sqlx::query(
         "SELECT id, guild_id, guild_name, linked_by_user_id, allow_guild_owner,
-                created_at, updated_at
+                bot_row_id, created_at, updated_at
            FROM discord_guilds ORDER BY created_at",
     )
     .fetch_all(db.pool())
@@ -212,6 +415,7 @@ fn guild_from_row(row: sqlx::sqlite::SqliteRow) -> GuildRecord {
         guild_name: row.get("guild_name"),
         linked_by_user_id: row.get("linked_by_user_id"),
         allow_guild_owner: row.get::<i64, _>("allow_guild_owner") != 0,
+        bot_row_id: row.get("bot_row_id"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }

@@ -196,6 +196,7 @@ mod tests {
     use project_host_host_runner::probe::candidates_for;
     use project_host_platform::{LinuxInfo, PackageManager, WindowsInfo};
 
+    #[derive(Debug)]
     struct FakeMachine {
         installed: Vec<&'static str>,
     }
