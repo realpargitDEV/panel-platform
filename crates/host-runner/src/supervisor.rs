@@ -1118,7 +1118,17 @@ mod tests {
             "the supervisor never reached a second restart"
         );
 
-        // Two restarts means three attempts have run, and each said `tick`.
+        // Two restarts means the third attempt has been *spawned* — the counter
+        // moves at spawn time — not that it has spoken. Counting immediately
+        // races that child's `echo` through the pipe, which is how this test
+        // passed on Windows and failed on Linux instead of failing honestly on
+        // both. What is being asserted is that a third attempt's output reaches
+        // the tail at all, so wait for exactly that.
+        let reached = wait_for_tail(&handle, |tail| {
+            tail.lines().filter(|line| line.contains("tick")).count() >= 3
+        })
+        .await;
+
         let ticks = handle
             .tail()
             .unwrap_or_default()
@@ -1126,7 +1136,7 @@ mod tests {
             .filter(|line| line.contains("tick"))
             .count();
         assert!(
-            ticks >= 3,
+            reached,
             "the tail held only {ticks} attempts' output, so a later failure \
              would be reported with an earlier run's words"
         );
@@ -1187,6 +1197,23 @@ mod tests {
     ) -> bool {
         for _ in 0..300 {
             if predicate(&handle.observe()) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// [`wait_until`] for what the tail holds rather than what the state says.
+    ///
+    /// The two advance independently and in that order: the restart counter
+    /// moves when a replacement is *spawned*, the tail only once that
+    /// replacement has written something and the reader has picked it up. A
+    /// test about output must therefore wait on the output — waiting on the
+    /// counter and then reading the tail races the child's first write.
+    async fn wait_for_tail(handle: &SupervisorHandle, predicate: impl Fn(&str) -> bool) -> bool {
+        for _ in 0..300 {
+            if predicate(&handle.tail().unwrap_or_default()) {
                 return true;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
