@@ -320,15 +320,33 @@ fn static_command(
         // to refuse — the components have to be looked at before any joining
         // happens.
         Some(relative) => {
-            let safe = std::path::Path::new(relative)
-                .components()
-                .all(|component| matches!(component, std::path::Component::Normal(_)));
+            // Read the same way on every platform, because the value is not a
+            // path on *this* machine — it comes from the project's config and
+            // travels with the project. `std::path` alone would read it
+            // differently on each: a backslash is a separator on Windows and an
+            // ordinary character on Unix, so `..\..` climbs out on one and is a
+            // filename on the other, and `C:\Windows` is a drive-qualified path
+            // on one and a legal directory name on the other. Neither
+            // divergence is a hole — the Unix reading joins to something inside
+            // the project — but a publish directory that means two things is
+            // one nobody can reason about, and `file-manager`'s `SafePath`
+            // already refuses all of these everywhere.
+            let normalised = relative.replace('\\', "/");
+            let mut characters = normalised.chars();
+            let drive_qualified = matches!(
+                (characters.next(), characters.next()),
+                (Some(letter), Some(':')) if letter.is_ascii_alphabetic()
+            );
+            let safe = !drive_qualified
+                && std::path::Path::new(&normalised)
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::Normal(_)));
             if !safe {
                 return Err(LifecycleError::Scaffold(format!(
                     "the publish directory `{relative}` is not inside the project"
                 )));
             }
-            directory.join(relative)
+            directory.join(&normalised)
         }
         None => directory.to_path_buf(),
     };
@@ -554,7 +572,21 @@ mod tests {
     #[test]
     fn a_publish_directory_outside_the_project_is_refused() {
         let directory = tempfile::tempdir().expect("temp dir");
-        for escape in ["../..", "../secrets", "dist/../..", "/etc", "C:\\Windows"] {
+        // Every spelling is refused on every platform, which is the point: this
+        // test used to assert the Windows reading of `C:\Windows` everywhere,
+        // and passed on Windows only because `std::path` happened to agree
+        // there. On Linux the same string is a legal directory name.
+        for escape in [
+            "../..",
+            "../secrets",
+            "dist/../..",
+            "/etc",
+            "C:\\Windows",
+            "c:/windows",
+            "..\\..",
+            "dist\\..\\..",
+            "\\\\server\\share",
+        ] {
             assert!(
                 static_command(
                     directory.path(),
