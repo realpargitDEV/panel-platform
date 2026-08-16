@@ -88,7 +88,10 @@ fn listening_pid(port: u16) -> Option<u32> {
 /// the process table afterwards.
 #[cfg(windows)]
 fn windows_listening_pid(port: u16) -> Option<u32> {
-    let output = Command::new("netstat").args(["-ano", "-p", "TCP"]).output().ok()?;
+    let output = Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     parse_netstat(&text, port)
 }
@@ -142,7 +145,9 @@ fn parse_ss(text: &str) -> Option<u32> {
     let marker = "pid=";
     let start = text.find(marker)? + marker.len();
     let rest = text.get(start..)?;
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest.get(..end)?.parse().ok()
 }
 
@@ -153,12 +158,7 @@ fn parse_ss(text: &str) -> Option<u32> {
 #[cfg(not(windows))]
 fn lsof_listening_pid(port: u16) -> Option<u32> {
     let output = Command::new("lsof")
-        .args([
-            "-nP",
-            &format!("-iTCP:{port}"),
-            "-sTCP:LISTEN",
-            "-Fp",
-        ])
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-Fp"])
         .output()
         .ok()?;
     parse_lsof(&String::from_utf8_lossy(&output.stdout))

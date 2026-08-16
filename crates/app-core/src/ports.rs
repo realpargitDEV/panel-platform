@@ -93,10 +93,7 @@ const RELEASE_GRACE: std::time::Duration = std::time::Duration::from_millis(1500
 /// second is still possible, and is caught by the process failing to bind with
 /// its own error attached. What this removes is the overwhelmingly common case:
 /// a port that was already busy before Start was pressed.
-pub async fn check(
-    db: &Database,
-    project: &ProjectRecord,
-) -> Result<(), Box<Conflict>> {
+pub async fn check(db: &Database, project: &ProjectRecord) -> Result<(), Box<Conflict>> {
     let ports = match projects::list_ports(db, &project.id).await {
         Ok(ports) => ports,
         // A project whose ports cannot be read is not a port conflict. The
@@ -187,7 +184,8 @@ pub async fn suggest_free(app: &AppState, project_id: &str) -> Result<u16, PortE
 /// out, and the refusal names the range.
 pub async fn assign(app: &AppState, project_id: &str, port: u16) -> Result<(), String> {
     let pool = PortPool::new(app.config().port_pool_start, app.config().port_pool_end);
-    pool.validate_requested(port).map_err(|error| error.to_string())?;
+    pool.validate_requested(port)
+        .map_err(|error| error.to_string())?;
 
     if !project_host_platform::is_free(port) {
         let holder = identify(app.database(), port, project_id).await;
@@ -248,7 +246,10 @@ mod tests {
         }
         .message();
 
-        assert!(message.contains("another program on this machine"), "{message}");
+        assert!(
+            message.contains("another program on this machine"),
+            "{message}"
+        );
         assert!(!message.contains("pid"), "{message}");
     }
 

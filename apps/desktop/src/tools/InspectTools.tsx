@@ -58,7 +58,10 @@ export function PortsTool({
       />
       <ToolBody>
         {project === null ? (
-          <ToolEmpty message="No project open." action={{ label: 'Choose a project', onClick: onOpenProjects }} />
+          <ToolEmpty
+            message="No project open."
+            action={{ label: 'Choose a project', onClick: onOpenProjects }}
+          />
         ) : failure !== null ? (
           <p className="px-2.5 py-2 text-[12px] text-danger">{failure}</p>
         ) : detail === null ? (
@@ -143,7 +146,10 @@ export function EnvironmentTool({
       />
       <ToolBody>
         {project === null ? (
-          <ToolEmpty message="No project open." action={{ label: 'Choose a project', onClick: onOpenProjects }} />
+          <ToolEmpty
+            message="No project open."
+            action={{ label: 'Choose a project', onClick: onOpenProjects }}
+          />
         ) : failure !== null ? (
           <p className="px-2.5 py-2 text-[12px] text-danger">{failure}</p>
         ) : detail === null ? (
@@ -195,7 +201,9 @@ export function EnvironmentTool({
                       sent nothing, that is what is shown — never a guess. */}
                   {variable.isSecret && !shown
                     ? '••••••••••••'
-                    : (variable.value ?? <span className="not-italic text-faint">not stored here</span>)}
+                    : (variable.value ?? (
+                        <span className="not-italic text-faint">not stored here</span>
+                      ))}
                 </p>
               </div>
             );

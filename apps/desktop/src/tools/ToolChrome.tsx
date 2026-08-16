@@ -12,13 +12,7 @@ import type { ReactNode } from 'react';
 import Icon, { type IconName } from '../ui/Icon';
 
 /** The 36px bar at the top of a tool. */
-export function ToolHeader({
-  title,
-  actions,
-}: {
-  title: string;
-  actions?: ReactNode;
-}) {
+export function ToolHeader({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
     <div
       className="flex shrink-0 items-center justify-between gap-2 border-b border-edge px-2.5"

@@ -78,7 +78,8 @@ export default function ProjectOverviewTab({
   const look = statusLook(project.status);
   const running = project.status === 'RUNNING';
   const up = uptimeSeconds(live?.startedAt ?? detail?.startedAt ?? null);
-  const port = live?.port ?? detail?.ports.find((entry) => entry.hostPort !== null)?.hostPort ?? null;
+  const port =
+    live?.port ?? detail?.ports.find((entry) => entry.hostPort !== null)?.hostPort ?? null;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

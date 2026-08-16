@@ -516,14 +516,13 @@ mod tests {
             env: Default::default(),
         };
 
-        let handle = project_host_host_runner::start(
-            project_host_host_runner::SupervisorConfig::new(
+        let handle =
+            project_host_host_runner::start(project_host_host_runner::SupervisorConfig::new(
                 dying,
                 directory.path().join("run.log"),
-            ),
-        )
-        .await
-        .expect("start");
+            ))
+            .await
+            .expect("start");
 
         app.host_projects()
             .insert_for_test(&project, handle.clone())

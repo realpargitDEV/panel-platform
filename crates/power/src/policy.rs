@@ -449,7 +449,11 @@ impl PolicyEngine {
         let average = self.average_cpu();
         let on_battery = conditions.power_source == PowerSource::Battery;
 
-        if on_battery && conditions.battery_percent.is_some_and(|p| p < LOW_BATTERY_PERCENT) {
+        if on_battery
+            && conditions
+                .battery_percent
+                .is_some_and(|p| p < LOW_BATTERY_PERCENT)
+        {
             let percent = conditions.battery_percent.unwrap_or_default();
             return (
                 Profile::Efficiency,
@@ -479,8 +483,7 @@ impl PolicyEngine {
         if conditions.remote_session && !on_battery {
             return (
                 Profile::Performance,
-                "A remote session is active, so responsiveness is being kept up."
-                    .to_string(),
+                "A remote session is active, so responsiveness is being kept up.".to_string(),
             );
         }
 
@@ -697,14 +700,23 @@ mod tests {
 
         assert_eq!(decision.profile, Profile::Performance);
         assert!(decision.reason.contains("70%"), "{}", decision.reason);
-        assert!(decision.reason.contains("plugged in"), "{}", decision.reason);
+        assert!(
+            decision.reason.contains("plugged in"),
+            "{}",
+            decision.reason
+        );
     }
 
     /// The second: mostly idle, on battery.
     #[test]
     fn an_idle_machine_on_battery_asks_for_efficiency() {
         let mut engine = engine();
-        let decision = run(&mut engine, &idle_on_battery(), 10, Duration::from_millis(10));
+        let decision = run(
+            &mut engine,
+            &idle_on_battery(),
+            10,
+            Duration::from_millis(10),
+        );
 
         assert_eq!(decision.profile, Profile::Efficiency);
         assert!(decision.reason.contains("battery"), "{}", decision.reason);
@@ -1011,7 +1023,11 @@ mod tests {
 
         assert!(decision.changed);
         assert_eq!(decision.profile, Profile::Efficiency);
-        assert!(decision.reason.contains("Efficiency"), "{}", decision.reason);
+        assert!(
+            decision.reason.contains("Efficiency"),
+            "{}",
+            decision.reason
+        );
     }
 
     /// Before anything is measured there is no basis for a decision, and
@@ -1033,11 +1049,8 @@ mod tests {
     /// The average has to be an average, and readings have to fall out of it.
     #[test]
     fn readings_older_than_the_window_stop_counting() {
-        let mut engine = PolicyEngine::with_timings(
-            Duration::from_secs(10),
-            MIN_OBSERVATION,
-            COOLDOWN,
-        );
+        let mut engine =
+            PolicyEngine::with_timings(Duration::from_secs(10), MIN_OBSERVATION, COOLDOWN);
         let start = Instant::now();
 
         engine.record(100.0, start);
@@ -1065,7 +1078,10 @@ mod tests {
         };
         assert!(message.contains("19%"), "{message}");
         assert!(message.contains("3 projects are running"), "{message}");
-        assert!(message.contains("Connect the computer to power"), "{message}");
+        assert!(
+            message.contains("Connect the computer to power"),
+            "{message}"
+        );
         assert!(
             !message.to_lowercase().contains("stop"),
             "the warning threatened the user's projects: {message}"

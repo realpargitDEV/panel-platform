@@ -92,10 +92,7 @@ function RailButton({
       {/* A 2px bar rather than a filled pill: the pill is the shape that makes
           a compact rail look like a phone's tab bar. */}
       {active && (
-        <span
-          aria-hidden
-          className="absolute left-0 h-[18px] w-[2px] rounded-r-[2px] bg-accent"
-        />
+        <span aria-hidden className="absolute left-0 h-[18px] w-[2px] rounded-r-[2px] bg-accent" />
       )}
       <Icon name={entry.icon} size={18} />
       {entry.badge !== undefined && entry.badge > 0 && (

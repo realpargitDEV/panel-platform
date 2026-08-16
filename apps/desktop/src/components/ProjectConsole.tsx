@@ -149,12 +149,19 @@ export default function ProjectConsole({
       >
         {lines.length === 0 ? (
           <p className="py-6 text-center text-[12px] text-muted">
-            {live ? 'Nothing has been written yet.' : 'This project has not produced any output yet.'}
+            {live
+              ? 'Nothing has been written yet.'
+              : 'This project has not produced any output yet.'}
           </p>
         ) : (
           lines.map((line) => (
-            <div key={`${line.seq}-${line.at}`} className="flex gap-2.5 whitespace-pre-wrap break-all">
-              <span className="shrink-0 select-none tabular text-faint">{line.at.slice(11, 19)}</span>
+            <div
+              key={`${line.seq}-${line.at}`}
+              className="flex gap-2.5 whitespace-pre-wrap break-all"
+            >
+              <span className="shrink-0 select-none tabular text-faint">
+                {line.at.slice(11, 19)}
+              </span>
               <span className={STREAM_CLASS[line.stream]}>{line.text}</span>
             </div>
           ))
@@ -190,9 +197,7 @@ export default function ProjectConsole({
         }
       />
 
-      {failure !== null && (
-        <p className="px-4 pb-2 text-[12px] text-danger">{failure}</p>
-      )}
+      {failure !== null && <p className="px-4 pb-2 text-[12px] text-danger">{failure}</p>}
 
       <div
         ref={scroller}
@@ -207,7 +212,10 @@ export default function ProjectConsole({
           </p>
         ) : (
           lines.map((line) => (
-            <div key={`${line.seq}-${line.at}`} className="flex gap-2.5 whitespace-pre-wrap break-all">
+            <div
+              key={`${line.seq}-${line.at}`}
+              className="flex gap-2.5 whitespace-pre-wrap break-all"
+            >
               <span className="shrink-0 select-none tabular text-muted/70">
                 {line.at.slice(11, 19)}
               </span>

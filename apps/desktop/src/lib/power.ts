@@ -66,7 +66,12 @@ export function powerLook(status: PowerStatus | null): PowerLook {
   const first = status.warnings[0];
   if (first !== undefined) {
     return {
-      label: first.kind === 'thermal' ? 'Running hot' : first.kind === 'low_battery' ? 'Battery low' : 'Memory low',
+      label:
+        first.kind === 'thermal'
+          ? 'Running hot'
+          : first.kind === 'low_battery'
+            ? 'Battery low'
+            : 'Memory low',
       summary: first.message,
       tone: 'warn',
     };

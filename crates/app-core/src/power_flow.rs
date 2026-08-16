@@ -39,7 +39,8 @@ pub async fn running_projects(app: &AppState) -> Vec<RunningProject> {
             continue;
         }
 
-        let Ok(Some(row)) = project_host_database::projects::find_project(app.database(), &id).await
+        let Ok(Some(row)) =
+            project_host_database::projects::find_project(app.database(), &id).await
         else {
             tracing::debug!(project = %id, "running project has no readable row; left alone");
             continue;

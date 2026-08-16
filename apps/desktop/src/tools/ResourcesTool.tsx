@@ -58,36 +58,27 @@ export default function ResourcesTool({ power }: { power: PowerStatus | null }) 
           <div className="px-2.5 pt-1 pb-2">
             <Meter
               label="Memory"
-              value={measured ? `${formatBytes(usedBytes)} / ${formatBytes(load.totalMemoryBytes)}` : '—'}
+              value={
+                measured ? `${formatBytes(usedBytes)} / ${formatBytes(load.totalMemoryBytes)}` : '—'
+              }
               fraction={usedFraction}
               known={measured}
             />
             <Meter
               label="Processor"
               value={
-                load?.cpuPercent === null || load === null
-                  ? '—'
-                  : `${Math.round(load.cpuPercent)}%`
+                load?.cpuPercent === null || load === null ? '—' : `${Math.round(load.cpuPercent)}%`
               }
               fraction={load?.cpuPercent === null || load === null ? 0 : load.cpuPercent / 100}
               known={load?.cpuPercent !== null && load !== null}
             />
           </div>
 
-          <ToolFact
-            label="Cores"
-            value={load === null ? '—' : String(load.logicalCores)}
-          />
+          <ToolFact label="Cores" value={load === null ? '—' : String(load.logicalCores)} />
           {/* Named rather than folded into headroom: a user who sees free
               memory and is refused a start deserves to know what took it. */}
-          <ToolFact
-            label="Held back"
-            value={measured ? formatBytes(load.reserveBytes) : '—'}
-          />
-          <ToolFact
-            label="Headroom"
-            value={measured ? formatBytes(load.headroomBytes) : '—'}
-          />
+          <ToolFact label="Held back" value={measured ? formatBytes(load.reserveBytes) : '—'} />
+          <ToolFact label="Headroom" value={measured ? formatBytes(load.headroomBytes) : '—'} />
         </ToolSection>
 
         <ToolSection label="Power">

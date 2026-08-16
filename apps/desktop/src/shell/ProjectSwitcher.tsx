@@ -49,7 +49,10 @@ export default function ProjectSwitcher({
 
   const all = projects ?? [];
   const needle = query.trim().toLowerCase();
-  const matches = needle === '' ? all : all.filter((p) => p.displayName.toLowerCase().includes(needle) || p.slug.includes(needle));
+  const matches =
+    needle === ''
+      ? all
+      : all.filter((p) => p.displayName.toLowerCase().includes(needle) || p.slug.includes(needle));
 
   // Running first: when several are up, they are what the list is for.
   const ordered = [...matches].sort((left, right) => {

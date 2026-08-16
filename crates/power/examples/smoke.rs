@@ -34,9 +34,15 @@ async fn main() {
         sample.memory_total_bytes as f64 / 1e9,
         sample.memory_used_fraction() * 100.0
     );
-    println!("  hottest:       {:?} {:?}", sample.hottest_celsius, sample.hottest_sensor);
+    println!(
+        "  hottest:       {:?} {:?}",
+        sample.hottest_celsius, sample.hottest_sensor
+    );
     println!("  power source:  {:?}", sample.power_source);
-    println!("  battery:       {:?} charging={:?}", sample.battery_percent, sample.charging);
+    println!(
+        "  battery:       {:?} charging={:?}",
+        sample.battery_percent, sample.charging
+    );
 
     println!("\n== sleep hold ==");
     let mut hold = SleepHold::new();
@@ -50,7 +56,12 @@ async fn main() {
     println!("\n== priority command on this platform ==");
     for priority in [Priority::Low, Priority::Normal, Priority::High] {
         let command = power::priority_command(std::process::id(), priority);
-        println!("  {:<7} {} {:?}", priority.as_str(), command.program, command.args);
+        println!(
+            "  {:<7} {} {:?}",
+            priority.as_str(),
+            command.program,
+            command.args
+        );
     }
 
     // Against this process, which is the only one it is safe to reprioritise:
@@ -77,13 +88,18 @@ async fn main() {
     println!("  warnings:      {:?}", first.warnings);
 
     // A second tick with nothing running: the hold must be released.
-    let second = manager.tick(&[], false, now + Duration::from_secs(5), 5).await;
+    let second = manager
+        .tick(&[], false, now + Duration::from_secs(5), 5)
+        .await;
     println!("\n  with nothing running:");
     println!("  prevent_sleep: {}", second.prevent_sleep);
     println!("  sleep_held:    {}", second.sleep_held);
 
     let (entries, cursor) = manager.journal_since(0);
-    println!("\n== journal ({} entries, cursor {cursor}) ==", entries.len());
+    println!(
+        "\n== journal ({} entries, cursor {cursor}) ==",
+        entries.len()
+    );
     for entry in entries {
         println!("  [{}] {:?} — {}", entry.seq, entry.event, entry.reason);
     }

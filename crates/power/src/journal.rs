@@ -258,14 +258,21 @@ mod tests {
         for tick in 0..100 {
             journal.observe(tick, &decision(Profile::Balanced, false), &[]);
         }
-        assert!(journal.is_empty(), "{} entries for no change", journal.len());
+        assert!(
+            journal.is_empty(),
+            "{} entries for no change",
+            journal.len()
+        );
     }
 
     /// Launching is not an event on the machine.
     #[test]
     fn the_first_observation_is_a_baseline_rather_than_a_change() {
         let mut journal = Journal::new();
-        assert_eq!(journal.observe(0, &decision(Profile::Efficiency, true), &[]), 0);
+        assert_eq!(
+            journal.observe(0, &decision(Profile::Efficiency, true), &[]),
+            0
+        );
         assert!(journal.is_empty());
     }
 
@@ -273,7 +280,10 @@ mod tests {
     fn a_profile_change_is_recorded_once_with_its_reason() {
         let mut journal = Journal::new();
         journal.observe(0, &decision(Profile::Balanced, false), &[]);
-        assert_eq!(journal.observe(10, &decision(Profile::Performance, false), &[]), 1);
+        assert_eq!(
+            journal.observe(10, &decision(Profile::Performance, false), &[]),
+            1
+        );
 
         // And not again while it stays there.
         for tick in 11..30 {
@@ -301,7 +311,10 @@ mod tests {
         let hot = vec![thermal(95.0)];
 
         journal.observe(0, &decision(Profile::Balanced, false), &[]);
-        assert_eq!(journal.observe(1, &decision(Profile::Balanced, false), &hot), 1);
+        assert_eq!(
+            journal.observe(1, &decision(Profile::Balanced, false), &hot),
+            1
+        );
 
         for tick in 2..1_000 {
             journal.observe(tick, &decision(Profile::Balanced, false), &hot);
@@ -338,9 +351,18 @@ mod tests {
     fn sleep_being_held_and_released_is_recorded() {
         let mut journal = Journal::new();
         journal.observe(0, &decision(Profile::Balanced, false), &[]);
-        assert_eq!(journal.observe(1, &decision(Profile::Balanced, true), &[]), 1);
-        assert_eq!(journal.observe(2, &decision(Profile::Balanced, true), &[]), 0);
-        assert_eq!(journal.observe(3, &decision(Profile::Balanced, false), &[]), 1);
+        assert_eq!(
+            journal.observe(1, &decision(Profile::Balanced, true), &[]),
+            1
+        );
+        assert_eq!(
+            journal.observe(2, &decision(Profile::Balanced, true), &[]),
+            0
+        );
+        assert_eq!(
+            journal.observe(3, &decision(Profile::Balanced, false), &[]),
+            1
+        );
 
         let recent = journal.recent(1);
         assert!(matches!(

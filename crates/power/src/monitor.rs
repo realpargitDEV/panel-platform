@@ -240,7 +240,10 @@ fn slow_reading(inner: &mut Inner) -> SlowReading {
         if label.to_lowercase().contains("gpu") {
             gpu = Some(gpu.map_or(celsius, |current: f32| current.max(celsius)));
         }
-        if hottest.as_ref().is_none_or(|(current, _)| celsius > *current) {
+        if hottest
+            .as_ref()
+            .is_none_or(|(current, _)| celsius > *current)
+        {
             hottest = Some((celsius, label));
         }
     }

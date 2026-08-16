@@ -415,7 +415,6 @@ export default function App() {
         run: () => setEditing(true),
       },
     ];
-
   }, [
     guard,
     runAction,

@@ -94,7 +94,9 @@ export default function ProcessesTool({
                     {!project.measured && <span className="ml-1 not-tabular">limit</span>}
                   </span>
                   {/* Absent rather than zero: a container's CPU is not read. */}
-                  <span>{project.cpuPercent === null ? '—' : `${Math.round(project.cpuPercent)}%`}</span>
+                  <span>
+                    {project.cpuPercent === null ? '—' : `${Math.round(project.cpuPercent)}%`}
+                  </span>
                   <span>{up === null ? '—' : formatDuration(up)}</span>
                 </div>
               </button>

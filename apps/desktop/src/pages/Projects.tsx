@@ -36,15 +36,7 @@ import ProjectMark from '../ui/ProjectMark';
 import Icon from '../ui/Icon';
 import { Menu, useMenu } from '../ui/overlays';
 import Select from '../ui/Select';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  IconButton,
-  Skeleton,
-  TextInput,
-} from '../ui/primitives';
+import { Badge, Button, Card, EmptyState, IconButton, Skeleton, TextInput } from '../ui/primitives';
 import StatusDot from '../shell/StatusDot';
 import { toast } from '../ui/toast';
 
@@ -124,9 +116,7 @@ export default function Projects({
       >
         <h1 className="text-[13px] font-semibold text-ink">Projects</h1>
         <span className="truncate text-[11.5px] text-faint">
-          {projects === null
-            ? 'Loading…'
-            : `${projects.length} on this machine`}
+          {projects === null ? 'Loading…' : `${projects.length} on this machine`}
         </span>
         <span className="flex-1" />
         <IconButton icon="refresh" label="Refresh" size="sm" onClick={() => void onRefresh()} />
@@ -141,147 +131,135 @@ export default function Projects({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      {projects !== null && projects.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          <div className="min-w-[180px] max-w-[320px] flex-1">
-            <TextInput
-              value={options.query}
-              onChange={(query) => patch({ query })}
-              placeholder="Search projects"
-            />
-          </div>
-
-          <div className="w-[128px]">
-            <Select<StatusFilter>
-              value={options.status}
-              onChange={(status) => patch({ status })}
-              options={[
-                { value: 'all', label: 'Any status' },
-                { value: 'running', label: 'Running' },
-                { value: 'stopped', label: 'Stopped' },
-                { value: 'failed', label: 'Failed' },
-              ]}
-            />
-          </div>
-
-          <div className="w-[138px]">
-            <Select
-              value={options.runtime}
-              onChange={(runtime) => patch({ runtime })}
-              options={[
-                { value: 'all', label: 'Any runtime' },
-                ...runtimes.map((id) => ({ value: id, label: runtimeLabel(id) })),
-              ]}
-            />
-          </div>
-
-          <div className="w-[138px]">
-            <Select<SortKey>
-              value={options.sort}
-              onChange={(sort) => patch({ sort })}
-              options={[
-                { value: 'name', label: 'Sort by name' },
-                { value: 'status', label: 'Sort by status' },
-                { value: 'runtime', label: 'Sort by runtime' },
-              ]}
-            />
-          </div>
-
-          <div className="flex gap-0.5 rounded-[5px] border border-edge bg-raised p-0.5">
-            <IconButton
-              icon="grid"
-              label="Grid view"
-              size="sm"
-              active={mode === 'grid'}
-              onClick={() => setMode('grid')}
-            />
-            <IconButton
-              icon="list"
-              label="List view"
-              size="sm"
-              active={mode === 'list'}
-              onClick={() => setMode('list')}
-            />
-          </div>
-        </div>
-      )}
-
-      {projects === null && (
-        <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(260px,300px))]">
-          <Skeleton className="h-[132px]" />
-          <Skeleton className="h-[132px]" />
-          <Skeleton className="h-[132px]" />
-        </div>
-      )}
-
-      {projects !== null && projects.length === 0 && (
-        <Card>
-          <EmptyState
-            icon="projects"
-            title="No projects yet"
-            description="A project is a folder on this machine that Panel Platform builds, runs and keeps running — a bot, an API, a website, or anything else with a start command."
-            actions={
-              <>
-                <Button variant="primary" icon="plus" onClick={onNewProject}>
-                  Create project
-                </Button>
-                <Button icon="git" onClick={onNewProject}>
-                  Clone repository
-                </Button>
-                <Button icon="download" onClick={onNewProject}>
-                  From archive URL
-                </Button>
-              </>
-            }
-          >
-            <div className="mt-6 flex flex-wrap justify-center gap-1.5">
-              {['Node.js', 'Python', 'Go', 'Rust', 'Static site', 'Dockerfile'].map((example) => (
-                <span
-                  key={example}
-                  className="rounded-full border border-edge px-2.5 py-1 text-[12px] text-muted"
-                >
-                  {example}
-                </span>
-              ))}
-            </div>
-          </EmptyState>
-        </Card>
-      )}
-
-      {projects !== null && projects.length > 0 && visible.length === 0 && (
-        <Card>
-          <EmptyState
-            icon="search"
-            title="Nothing matches"
-            description={
-              isFiltered(options)
-                ? 'No project matches the current search and filters.'
-                : 'There is nothing to show.'
-            }
-            actions={<Button onClick={() => setOptions(defaultListOptions)}>Clear filters</Button>}
-          />
-        </Card>
-      )}
-
-      {visible.length > 0 &&
-        (mode === 'grid' ? (
-          <div className="stagger grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(260px,300px))]">
-            {visible.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                busy={busy === project.id}
-                dockerAvailable={dockerAvailable}
-                onOpen={() => onOpen(project.id)}
-                onAct={act}
+        {projects !== null && projects.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <div className="min-w-[180px] max-w-[320px] flex-1">
+              <TextInput
+                value={options.query}
+                onChange={(query) => patch({ query })}
+                placeholder="Search projects"
               />
-            ))}
+            </div>
+
+            <div className="w-[128px]">
+              <Select<StatusFilter>
+                value={options.status}
+                onChange={(status) => patch({ status })}
+                options={[
+                  { value: 'all', label: 'Any status' },
+                  { value: 'running', label: 'Running' },
+                  { value: 'stopped', label: 'Stopped' },
+                  { value: 'failed', label: 'Failed' },
+                ]}
+              />
+            </div>
+
+            <div className="w-[138px]">
+              <Select
+                value={options.runtime}
+                onChange={(runtime) => patch({ runtime })}
+                options={[
+                  { value: 'all', label: 'Any runtime' },
+                  ...runtimes.map((id) => ({ value: id, label: runtimeLabel(id) })),
+                ]}
+              />
+            </div>
+
+            <div className="w-[138px]">
+              <Select<SortKey>
+                value={options.sort}
+                onChange={(sort) => patch({ sort })}
+                options={[
+                  { value: 'name', label: 'Sort by name' },
+                  { value: 'status', label: 'Sort by status' },
+                  { value: 'runtime', label: 'Sort by runtime' },
+                ]}
+              />
+            </div>
+
+            <div className="flex gap-0.5 rounded-[5px] border border-edge bg-raised p-0.5">
+              <IconButton
+                icon="grid"
+                label="Grid view"
+                size="sm"
+                active={mode === 'grid'}
+                onClick={() => setMode('grid')}
+              />
+              <IconButton
+                icon="list"
+                label="List view"
+                size="sm"
+                active={mode === 'list'}
+                onClick={() => setMode('list')}
+              />
+            </div>
           </div>
-        ) : (
-          <Card className="overflow-hidden">
-            <ul className="stagger">
+        )}
+
+        {projects === null && (
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(260px,300px))]">
+            <Skeleton className="h-[132px]" />
+            <Skeleton className="h-[132px]" />
+            <Skeleton className="h-[132px]" />
+          </div>
+        )}
+
+        {projects !== null && projects.length === 0 && (
+          <Card>
+            <EmptyState
+              icon="projects"
+              title="No projects yet"
+              description="A project is a folder on this machine that Panel Platform builds, runs and keeps running — a bot, an API, a website, or anything else with a start command."
+              actions={
+                <>
+                  <Button variant="primary" icon="plus" onClick={onNewProject}>
+                    Create project
+                  </Button>
+                  <Button icon="git" onClick={onNewProject}>
+                    Clone repository
+                  </Button>
+                  <Button icon="download" onClick={onNewProject}>
+                    From archive URL
+                  </Button>
+                </>
+              }
+            >
+              <div className="mt-6 flex flex-wrap justify-center gap-1.5">
+                {['Node.js', 'Python', 'Go', 'Rust', 'Static site', 'Dockerfile'].map((example) => (
+                  <span
+                    key={example}
+                    className="rounded-full border border-edge px-2.5 py-1 text-[12px] text-muted"
+                  >
+                    {example}
+                  </span>
+                ))}
+              </div>
+            </EmptyState>
+          </Card>
+        )}
+
+        {projects !== null && projects.length > 0 && visible.length === 0 && (
+          <Card>
+            <EmptyState
+              icon="search"
+              title="Nothing matches"
+              description={
+                isFiltered(options)
+                  ? 'No project matches the current search and filters.'
+                  : 'There is nothing to show.'
+              }
+              actions={
+                <Button onClick={() => setOptions(defaultListOptions)}>Clear filters</Button>
+              }
+            />
+          </Card>
+        )}
+
+        {visible.length > 0 &&
+          (mode === 'grid' ? (
+            <div className="stagger grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(260px,300px))]">
               {visible.map((project) => (
-                <ProjectRow
+                <ProjectCard
                   key={project.id}
                   project={project}
                   busy={busy === project.id}
@@ -290,9 +268,23 @@ export default function Projects({
                   onAct={act}
                 />
               ))}
-            </ul>
-          </Card>
-        ))}
+            </div>
+          ) : (
+            <Card className="overflow-hidden">
+              <ul className="stagger">
+                {visible.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    busy={busy === project.id}
+                    dockerAvailable={dockerAvailable}
+                    onOpen={() => onOpen(project.id)}
+                    onAct={act}
+                  />
+                ))}
+              </ul>
+            </Card>
+          ))}
 
         {gate}
       </div>

@@ -10,7 +10,9 @@ import {
   type LayoutStorage,
 } from './shellLayout';
 
-function storage(initial: Record<string, string> = {}): LayoutStorage & { map: Map<string, string> } {
+function storage(
+  initial: Record<string, string> = {},
+): LayoutStorage & { map: Map<string, string> } {
   const map = new Map(Object.entries(initial));
   return {
     map,

@@ -489,10 +489,7 @@ export default function Settings({
               ) : (
                 <ul className="px-4 py-1">
                   {journal.map((entry) => (
-                    <li
-                      key={entry.seq}
-                      className="border-b border-edge/60 py-2 last:border-b-0"
-                    >
+                    <li key={entry.seq} className="border-b border-edge/60 py-2 last:border-b-0">
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="text-[13px] text-ink">{entry.summary}</span>
                         <span className="shrink-0 tabular text-[11px] text-muted">{entry.at}</span>

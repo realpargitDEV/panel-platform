@@ -31,11 +31,7 @@ export function uptimeSeconds(startedAt: string | null, now: Date = new Date()):
   return seconds < 0 ? 0 : seconds;
 }
 
-export default function RunningPanel({
-  onOpenProject,
-}: {
-  onOpenProject?: (id: string) => void;
-}) {
+export default function RunningPanel({ onOpenProject }: { onOpenProject?: (id: string) => void }) {
   const [load, setLoad] = useState<MachineLoad | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   /** Re-rendered on a timer so uptimes count up between polls. */
@@ -69,15 +65,17 @@ export default function RunningPanel({
         <CardHeader
           title="Running now"
           subtitle="Every project this machine is carrying"
-          actions={<Badge tone={running.length > 0 ? 'ok' : 'neutral'} dot>{running.length}</Badge>}
+          actions={
+            <Badge tone={running.length > 0 ? 'ok' : 'neutral'} dot>
+              {running.length}
+            </Badge>
+          }
         />
 
         {failure !== null && <p className="px-4 pb-2 text-[12px] text-danger">{failure}</p>}
 
         {running.length === 0 ? (
-          <p className="px-4 py-6 text-center text-[13px] text-muted">
-            Nothing is running.
-          </p>
+          <p className="px-4 py-6 text-center text-[13px] text-muted">Nothing is running.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">

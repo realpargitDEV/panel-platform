@@ -459,7 +459,10 @@ mod tests {
 
         let text = String::from_utf8_lossy(&response);
         assert!(text.starts_with("HTTP/1.1 200 OK"), "{text}");
-        assert!(text.contains("Content-Type: text/html; charset=utf-8"), "{text}");
+        assert!(
+            text.contains("Content-Type: text/html; charset=utf-8"),
+            "{text}"
+        );
         assert!(text.contains("Content-Length: 14"), "{text}");
         assert!(text.ends_with("<h1>hello</h1>"), "{text}");
     }
@@ -606,10 +609,7 @@ mod tests {
             .expect("write");
 
         let mut received = String::new();
-        client
-            .read_to_string(&mut received)
-            .await
-            .expect("read");
+        client.read_to_string(&mut received).await.expect("read");
 
         assert!(received.starts_with("HTTP/1.1 200 OK"), "{received}");
         assert!(received.ends_with("<p>served</p>"), "{received}");

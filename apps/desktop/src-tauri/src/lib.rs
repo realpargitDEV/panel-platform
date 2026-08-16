@@ -1107,7 +1107,11 @@ fn power_event_summary(event: &project_host_power::journal::Event) -> String {
     use project_host_power::journal::Event;
     match event {
         Event::ProfileChanged { from, to } => {
-            format!("Power profile changed from {} to {}", from.as_str(), to.as_str())
+            format!(
+                "Power profile changed from {} to {}",
+                from.as_str(),
+                to.as_str()
+            )
         }
         Event::WarningRaised { .. } => "A warning started applying".to_string(),
         Event::WarningCleared { .. } => "A warning stopped applying".to_string(),

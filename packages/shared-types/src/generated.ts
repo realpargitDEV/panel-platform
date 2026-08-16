@@ -396,8 +396,8 @@ export interface PlatformCapabilities {
   storage_quota_enforcement: boolean;
 }
 
-/** Observed state. Distinct from [`DesiredState`]: the reconciler exists precisely because these two disagree after a crash or a reboot. */
-export type ProjectStatus = 'CREATING' | 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'RESTARTING' | 'BUILDING' | 'FAILED' | 'UNHEALTHY' | 'ARCHIVED' | 'DELETING';
+/** Observed state. Distinct from [`DesiredState`]: the reconciler exists precisely because these two disagree after a crash or a reboot.  `Crashed` and `Failed` are both bad endings and deliberately not the same word. `Failed` is a project that never got off the ground — the runtime is not installed, the port was taken, the entry file is not there — and the fix is configuration. `Crashed` is a project that started cleanly, ran, and then exited on its own, where the fix is in the user's code. Collapsing the two forces the interface to guess which happened, and it can only guess wrong half the time. */
+export type ProjectStatus = 'CREATING' | 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'RESTARTING' | 'BUILDING' | 'CRASHED' | 'FAILED' | 'UNHEALTHY' | 'ARCHIVED' | 'DELETING';
 
 /** Row shape for the project list. Deliberately smaller than [`ProjectDetail`] so listing many projects stays cheap. */
 export interface ProjectDetail {

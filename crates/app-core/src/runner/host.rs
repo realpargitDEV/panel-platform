@@ -704,7 +704,10 @@ mod tests {
             Some("from-the-project"),
             "a configured variable did not reach the process"
         );
-        assert_eq!(command.env.get("LOG_LEVEL").map(String::as_str), Some("debug"));
+        assert_eq!(
+            command.env.get("LOG_LEVEL").map(String::as_str),
+            Some("debug")
+        );
     }
 
     #[test]

@@ -148,10 +148,12 @@
    shape or depth gets these, so the trait tokens are always defined and no
    component has to guard against an empty `var()`. */
 :root {
-  --font-ui: Inter, 'Segoe UI Variable', 'Segoe UI', ui-sans-serif, system-ui, -apple-system,
+  --font-ui:
+    Inter, 'Segoe UI Variable', 'Segoe UI', ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, Roboto, sans-serif;
-  --font-mono-theme: 'JetBrains Mono', 'Cascadia Code', ui-monospace, 'Cascadia Mono',
-    SFMono-Regular, Consolas, monospace;
+  --font-mono-theme:
+    'JetBrains Mono', 'Cascadia Code', ui-monospace, 'Cascadia Mono', SFMono-Regular, Consolas,
+    monospace;
   --border-w: 1px;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
   --shadow-raised: 0 1px 1px rgb(0 0 0 / 0.2);

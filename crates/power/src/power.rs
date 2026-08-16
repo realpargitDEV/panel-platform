@@ -330,8 +330,14 @@ mod tests {
 
     #[test]
     fn efficiency_moves_everything_down_without_dropping_high_to_the_bottom() {
-        assert_eq!(effective(Priority::High, Profile::Efficiency), Priority::Normal);
-        assert_eq!(effective(Priority::Normal, Profile::Efficiency), Priority::Low);
+        assert_eq!(
+            effective(Priority::High, Profile::Efficiency),
+            Priority::Normal
+        );
+        assert_eq!(
+            effective(Priority::Normal, Profile::Efficiency),
+            Priority::Low
+        );
         assert_eq!(effective(Priority::Low, Profile::Efficiency), Priority::Low);
     }
 

@@ -52,10 +52,7 @@ export default function ShellStatusBar({
           CPU {load?.cpuPercent === null || load === null ? '—' : `${Math.round(load.cpuPercent)}%`}
         </span>
         <span className="tabular">
-          RAM{' '}
-          {measured
-            ? formatBytes(load.totalMemoryBytes - load.availableMemoryBytes)
-            : '—'}
+          RAM {measured ? formatBytes(load.totalMemoryBytes - load.availableMemoryBytes) : '—'}
         </span>
       </button>
 
