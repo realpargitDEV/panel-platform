@@ -111,6 +111,61 @@ jobs:
           # otherwise the two most prominent links on the page are the two
           # nobody wanting to *use* the application should click.
           releaseBody: |
+            ## What changed in 0.1.15
+
+            **Your projects run on your machine, not in a container.** Host mode is now
+            how a project runs: the application starts the process itself, watches it,
+            restarts it when it dies and stops it when you quit. Docker is no longer
+            something you install before you can run your own code on your own computer.
+            Existing projects are moved to it by the upgrade; the container path still
+            compiles, but nothing in the interface produces it any more.
+
+            **A static site serves itself.** Every other runtime brings its own way of
+            running — a Node project runs `node`, a Python project runs `python` — but a
+            static site is a directory of files, and under Docker the container's web
+            server was what served them. Without a container a static project could not
+            start at all. The application now carries a small read-only HTTP server and
+            uses it, so a static site needs neither a container nor a language it does not
+            use. It serves the built output when the project has a publish directory, and
+            refuses one that would climb out of the project rather than putting your disk
+            on a port.
+
+            **Discord bots actually connect.** A bot is added by its token, which is
+            checked against Discord before it is stored and then kept encrypted with a key
+            that survives restarts — so a bot is entered once, not daily. Each connection
+            is supervised the way a project is: it reconnects on its own, and what it is
+            doing is visible rather than guessed at.
+
+            **"Running" now means running.** A project that started cleanly and then died
+            of its own bug used to read `Running` until somebody pressed a button, and when
+            it did change it said `Failed` — the same word used for a project that never
+            started at all. Those are different situations with different answers, so a
+            project that dies after starting is now `Crashed`, and stored status is
+            reconciled against what is actually happening rather than only written when a
+            button is pressed.
+
+            **The machine is somebody's computer, and the application treats it as one.**
+            It samples what the machine is doing and adjusts: a project can be given a
+            lower or higher scheduling priority, and a project you mark as needing to stay
+            available holds off sleep while it runs. Both are off by default, because a
+            priority nobody chose is not a preference and a machine that stops sleeping
+            should do so because you asked. Nothing here can stop a project — where saving
+            power and keeping a project available conflict, the project wins.
+
+            **A port conflict says who has the port.** Running projects as local processes
+            means they bind real ports, so a conflict is ordinary rather than exotic. The
+            application names the process already listening instead of reporting that the
+            start failed.
+
+            **Every project has its own console.** Output is per project, sequenced and
+            kept, so five projects running at once produce five consoles that cannot
+            interleave.
+
+            **The interface has been rebuilt around the project you are working on.** An
+            activity rail and a project switcher replace the old sidebar and title bar,
+            workspace tabs keep what you had open, and run controls and status sit where
+            you are already looking rather than on a separate overview page.
+
             ## What changed in 0.1.14
 
             A maintenance release. Everything here is a fix to how a project

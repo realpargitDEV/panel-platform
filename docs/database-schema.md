@@ -51,6 +51,10 @@ crates/database/migrations/
   0002_discord.sql
   0003_remote_sources.sql
   0004_runtimes.sql
+  0005_run_mode.sql
+  0006_discord_bots.sql
+  0007_discord_bot_projects.sql
+  0008_local_runtime.sql
 ```
 
 The application applies pending migrations at startup before serving, and refuses
@@ -89,7 +93,9 @@ drift.
 | `ProjectType`          | `DISCORD_BOT`, `NODE_APP`, `PYTHON_APP`, `WEBSITE`, `STATIC_SITE`, `REST_API`, `WORKER`, `SERVICE`                                                      |
 | `Runtime`              | `NODEJS`, `TYPESCRIPT`, `BUN`, `DENO`, `PYTHON`, `GO`, `RUST`, `JAVA`, `PHP`, `RUBY`, `DOTNET`, `STATIC`, `POLYGLOT`                                    |
 | `PackageManager`       | `PNPM`, `NPM`, `YARN`, `BUN`, `DENO`, `PIP`, `POETRY`, `UV`, `PIPENV`, `GO_MODULES`, `CARGO`, `MAVEN`, `GRADLE`, `COMPOSER`, `BUNDLER`, `NUGET`, `NONE` |
-| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING`                       |
+| `ProjectStatus`        | `CREATING`, `STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `RESTARTING`, `BUILDING`, `CRASHED`, `FAILED`, `UNHEALTHY`, `ARCHIVED`, `DELETING`            |
+| `RunMode`              | `DOCKER`, `HOST`                                                                                                                                        |
+| `Priority`             | `LOW`, `NORMAL`, `HIGH`                                                                                                                                 |
 | `DesiredState`         | `RUNNING`, `STOPPED`, `ARCHIVED`                                                                                                                        |
 | `RestartPolicy`        | `NO`, `ON_FAILURE`, `UNLESS_STOPPED`, `ALWAYS`                                                                                                          |
 | `NetworkMode`          | `NONE`, `INTERNAL`, `LAN`, `INTERNET`                                                                                                                   |
