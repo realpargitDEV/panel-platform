@@ -30,7 +30,7 @@ project gets a log channel and a control panel, with role-based permissions.
 
 ## Download the app
 
-### ➡ [**Download the latest release**](https://github.com/realpargitDEV/panel-platform/releases/latest)
+### ➡ [**Download the latest release**](https://github.com/paar-git/panel-platform/releases/latest)
 
 Or download the setup program for your system from that page — it works out
 which file you need, checks it against the project's signature, and starts the
