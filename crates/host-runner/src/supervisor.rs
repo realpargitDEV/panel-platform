@@ -40,6 +40,17 @@ pub const MAX_RESTARTS: u32 = 5;
 /// The first backoff, doubled per attempt: 1s, 2s, 4s, 8s, 16s.
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 
+/// How long an attempt has to survive before it stops counting as part of a
+/// crash loop.
+///
+/// Without this the restart counter only ever rises, so a project that runs
+/// perfectly for three weeks and then crashes five times over those weeks is
+/// declared a crash loop and abandoned. A crash loop is a *rate*, not a total:
+/// five failures in a minute is one, five failures in a month is five ordinary
+/// crashes. An attempt that stayed up this long has demonstrated it can, so the
+/// count starts again from there.
+const STABLE_RUN: Duration = Duration::from_secs(60);
+
 /// How long an exit waits for the child's last output before reporting it.
 ///
 /// Short, because it delays every crash report, and bounded because a child
@@ -64,6 +75,12 @@ pub struct SupervisorConfig {
     /// most worth pinning, because without it a project that cannot start
     /// becomes a machine that cannot idle.
     pub backoff: Duration,
+    /// How long an attempt must survive before the crash-loop count resets.
+    ///
+    /// Configurable for the same reason `backoff` is: pinning "a project that
+    /// ran for a while is not in a crash loop" at the real sixty seconds would
+    /// be a minute-long test.
+    pub stable_run: Duration,
 }
 
 impl SupervisorConfig {
@@ -75,6 +92,7 @@ impl SupervisorConfig {
             health: None,
             restart_on_crash: false,
             backoff: FIRST_BACKOFF,
+            stable_run: STABLE_RUN,
         }
     }
 }
@@ -90,10 +108,22 @@ pub struct HealthPolicy {
     pub start_period: Duration,
 }
 
+/// What a supervised project is doing.
+///
+/// `Crashed` and `Failed` are separate for the reason `ProjectStatus` keeps
+/// them separate one layer up: a project that ran and then died is a different
+/// situation, with a different fix, from one that could not be run at all.
+/// Here the distinction is precise rather than a judgement — `Crashed` is only
+/// ever written for a child that was spawned, survived its settle window, and
+/// then exited without being asked to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostStatus {
     Running,
     Stopped,
+    /// Was up, then exited on its own with a non-zero code.
+    Crashed,
+    /// Could not be run: the program vanished between attempts, or the crash
+    /// loop reached its cap and supervision gave up.
     Failed,
 }
 
@@ -154,8 +184,14 @@ struct Shared {
     /// failure the moment the exit code was non-zero — which on Windows it is,
     /// because the process was force-killed.
     stopping: bool,
-    /// How many times this project has been restarted after crashing.
+    /// How many times this project has been restarted after crashing, in
+    /// total. Reported, and only ever rises — it is the history, not the
+    /// crash-loop measure.
     restarts: u32,
+    /// How many attempts have failed *in a row* without one of them surviving
+    /// [`SupervisorConfig::stable_run`]. This is what the cap is measured
+    /// against, because a crash loop is a rate and not a total.
+    consecutive_failures: u32,
     /// Set once an exit has been fully written down, output included.
     ///
     /// The status flips as soon as the child is reaped, because a start waiting
@@ -199,6 +235,20 @@ impl SupervisorHandle {
     /// The last lines the project printed.
     pub fn tail(&self) -> Option<String> {
         self.tail.text()
+    }
+
+    /// This project's console: the lines after `seq`, and the cursor to ask
+    /// with next time.
+    ///
+    /// Per handle, which is per project, which is the whole point — five
+    /// projects running at once have five of these and nothing joins them.
+    pub fn logs_since(&self, seq: u64) -> (Vec<crate::output::LogLine>, u64) {
+        self.tail.since(seq)
+    }
+
+    /// Everything currently retained for this project.
+    pub fn logs(&self) -> Vec<crate::output::LogLine> {
+        self.tail.all()
     }
 
     /// Ask the project to stop, and end it if it will not.
@@ -294,6 +344,7 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
         failure_reason: None,
         stopping: false,
         restarts: 0,
+        consecutive_failures: 0,
         exit_recorded: false,
     }));
 
@@ -301,6 +352,16 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
         shared: Arc::clone(&shared),
         tail: tail.clone(),
     };
+
+    // The console reads as one story or it reads as nothing. Without these
+    // notes a restart looks like output that stops and then resumes for no
+    // reason, and a crash looks like output that simply ends.
+    tail.note(&format!(
+        "started {} (pid {})",
+        config.command.program,
+        pid.map(|pid| pid.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    ));
 
     // The supervision task owns the child from here. Nothing else may wait on
     // it: two waiters means one of them gets "no such child" and reports a
@@ -313,7 +374,13 @@ pub async fn start(config: SupervisorConfig) -> Result<SupervisorHandle, HostErr
     while std::time::Instant::now() < deadline {
         let observed = handle.observe();
         if observed.status != HostStatus::Running {
-            if observed.status == HostStatus::Failed {
+            // Anything but a clean exit inside the settle window is a start
+            // that did not take. The supervision task will have written
+            // CRASHED, because from inside the loop every unasked-for exit
+            // looks the same — but a child that never survived its first
+            // second did not crash, it failed to start, and that is what the
+            // caller is told.
+            if observed.status != HostStatus::Stopped {
                 return Err(handle.failed_start(program).await);
             }
             // Exited cleanly inside the window. A one-shot command run as a
@@ -339,11 +406,15 @@ async fn supervise(
     mut child: tokio::process::Child,
     mut pumps: Pumps,
 ) {
-    let mut attempt: u32 = 0;
+    // When the attempt currently being waited on was spawned. Compared against
+    // `stable_run` on exit, which is what turns the crash-loop count from a
+    // total into a rate.
+    let mut attempt_started = std::time::Instant::now();
 
     loop {
         let exit = wait_while_polling_health(&shared, &config, &mut child).await;
         let code = exit.ok().and_then(|status| status.code()).map(i64::from);
+        let ran_for = attempt_started.elapsed();
 
         // The exit itself is recorded at once, before the output is collected.
         // A start watching the settle window must not be told a project that
@@ -361,15 +432,28 @@ async fn supervise(
                 // a failure and must not be recorded as one.
                 state.status = HostStatus::Stopped;
                 state.exit_recorded = true;
+                drop(state);
+                tail.note("stopped as requested");
                 return;
             }
             if code == Some(0) {
                 state.status = HostStatus::Stopped;
                 state.exit_recorded = true;
+                drop(state);
+                tail.note("exited with code 0");
                 return;
             }
 
-            state.status = HostStatus::Failed;
+            // It was up and it is not any more, without being asked. That is a
+            // crash, whatever happens next.
+            state.status = HostStatus::Crashed;
+
+            // An attempt that stayed up is evidence the project *can* run, so
+            // the loop counter starts again from here. Without this a project
+            // that crashes once a week is abandoned on its sixth week.
+            if ran_for >= config.stable_run {
+                state.consecutive_failures = 0;
+            }
         }
 
         // Now the child's last words, which are the whole reason a failure is
@@ -377,34 +461,58 @@ async fn supervise(
         // than reading a tail they have not finished filling.
         pumps.drained(DRAIN).await;
 
-        {
+        tail.note(&format!(
+            "exited unexpectedly with code {} after {}s",
+            code.map(|code| code.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            ran_for.as_secs()
+        ));
+
+        let backoff = {
             let mut state = lock(&shared);
             state.failure_reason = tail.text();
             state.exit_recorded = true;
 
             if !config.restart_on_crash {
+                drop(state);
+                tail.note("not restarting: this project's restart policy is off");
                 return;
             }
-            if attempt >= MAX_RESTARTS {
+            if state.consecutive_failures >= MAX_RESTARTS {
                 // Give up, and say so in the reason rather than leaving the
                 // user to infer it from a restart count that stopped moving.
+                // The status becomes FAILED rather than staying CRASHED: this
+                // project is not coming back on its own, and that is a
+                // different thing to report.
+                state.status = HostStatus::Failed;
                 state.failure_reason = Some(format!(
-                    "gave up after {MAX_RESTARTS} restarts\n{}",
+                    "gave up after {MAX_RESTARTS} restarts in quick succession\n{}",
                     tail.text().unwrap_or_default()
+                ));
+                drop(state);
+                tail.note(&format!(
+                    "crash loop: {MAX_RESTARTS} restarts in quick succession, all of them \
+                     ending the same way. Not restarting again — fix the project and start it."
                 ));
                 return;
             }
-        }
 
-        // Backoff, doubling. `saturating_mul` rather than a shift, so a future
-        // larger cap cannot overflow the duration.
-        let backoff = config.backoff.saturating_mul(1u32 << attempt.min(16));
+            // Backoff, doubling with the *consecutive* failures. Computed under
+            // the same lock that read the count, so the two cannot disagree.
+            // `saturating_mul` rather than a shift, so a future larger cap
+            // cannot overflow the duration.
+            config
+                .backoff
+                .saturating_mul(1u32 << state.consecutive_failures.min(16))
+        };
+
+        tail.note(&format!("restarting in {}ms", backoff.as_millis()));
+
         if !sleep_unless_stopping(&shared, backoff).await {
             lock(&shared).status = HostStatus::Stopped;
+            tail.note("stopped while waiting to restart");
             return;
         }
-
-        attempt = attempt.saturating_add(1);
 
         match spawn(&config.command) {
             Ok(mut replacement) => {
@@ -419,24 +527,37 @@ async fn supervise(
                     config.log_path.clone(),
                     tail.clone(),
                 );
+                attempt_started = std::time::Instant::now();
+
                 let mut state = lock(&shared);
                 state.status = HostStatus::Running;
                 state.pid = pid;
                 state.exit_code = None;
                 state.failure_reason = None;
-                state.restarts = attempt;
+                state.restarts = state.restarts.saturating_add(1);
+                state.consecutive_failures = state.consecutive_failures.saturating_add(1);
                 state.exit_recorded = false;
+                let attempt = state.restarts;
                 drop(state);
+
+                tail.note(&format!(
+                    "restarted (attempt {attempt}, pid {})",
+                    pid.map(|pid| pid.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                ));
                 child = replacement;
             }
             Err(error) => {
                 // The program vanished between attempts — uninstalled, or the
                 // directory was removed. Another attempt would fail the same
-                // way.
+                // way. This is a failure to *run*, not a crash of something
+                // that ran.
                 let mut state = lock(&shared);
                 state.status = HostStatus::Failed;
                 state.failure_reason = Some(error.to_string());
                 state.exit_recorded = true;
+                drop(state);
+                tail.note(&format!("could not be restarted: {error}"));
                 return;
             }
         }
@@ -750,7 +871,11 @@ mod tests {
         wait_until(&handle, |observed| observed.status != HostStatus::Running).await;
 
         let observed = handle.observe();
-        assert_eq!(observed.status, HostStatus::Failed);
+        assert_eq!(
+            observed.status,
+            HostStatus::Crashed,
+            "a project that ran and then died crashed; it did not fail to run"
+        );
         assert_eq!(observed.exit_code, Some(9));
         assert_eq!(observed.restarts, 0, "nothing asked for a restart");
     }
@@ -825,6 +950,48 @@ mod tests {
         );
     }
 
+    /// A crash loop is a rate, not a total.
+    ///
+    /// Every attempt here survives longer than `stable_run`, so however many
+    /// times it crashes it is never a loop and is never given up on. Without
+    /// the reset, a project that crashes once a week would be abandoned on its
+    /// sixth week — with a message blaming a crash loop that never happened.
+    ///
+    /// `stable_run` is 50ms here against a command that lives for about a
+    /// second, so the margin is twenty-fold rather than a race.
+    #[tokio::test]
+    async fn attempts_that_stay_up_are_not_a_crash_loop_however_many_there_are() {
+        let directory = tempfile::tempdir().expect("temp dir");
+
+        let handle = start(SupervisorConfig {
+            restart_on_crash: true,
+            backoff: Duration::from_millis(10),
+            stable_run: Duration::from_millis(50),
+            ..SupervisorConfig::new(
+                crashes_after_a_moment(directory.path()),
+                directory.path().join("run.log"),
+            )
+        })
+        .await
+        .expect("start");
+
+        // More restarts than the cap allows, every one of them after a run that
+        // counts as stable.
+        let kept_going = wait_until(&handle, |observed| observed.restarts > MAX_RESTARTS).await;
+        assert!(
+            kept_going,
+            "supervision stopped restarting a project that was staying up between crashes"
+        );
+
+        assert_ne!(
+            handle.observe().status,
+            HostStatus::Failed,
+            "a project that keeps coming back up was declared a crash loop"
+        );
+
+        handle.kill().await.expect("kill");
+    }
+
     /// A project that survives its start and then crashes is restarted, and the
     /// restart is counted.
     #[tokio::test]
@@ -867,7 +1034,7 @@ mod tests {
         .expect("start");
 
         // Wait for the crash, which puts the supervisor into its backoff.
-        wait_until(&handle, |observed| observed.status == HostStatus::Failed).await;
+        wait_until(&handle, |observed| observed.status == HostStatus::Crashed).await;
 
         handle.kill().await.expect("kill");
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -951,7 +1118,17 @@ mod tests {
             "the supervisor never reached a second restart"
         );
 
-        // Two restarts means three attempts have run, and each said `tick`.
+        // Two restarts means the third attempt has been *spawned* — the counter
+        // moves at spawn time — not that it has spoken. Counting immediately
+        // races that child's `echo` through the pipe, which is how this test
+        // passed on Windows and failed on Linux instead of failing honestly on
+        // both. What is being asserted is that a third attempt's output reaches
+        // the tail at all, so wait for exactly that.
+        let reached = wait_for_tail(&handle, |tail| {
+            tail.lines().filter(|line| line.contains("tick")).count() >= 3
+        })
+        .await;
+
         let ticks = handle
             .tail()
             .unwrap_or_default()
@@ -959,7 +1136,7 @@ mod tests {
             .filter(|line| line.contains("tick"))
             .count();
         assert!(
-            ticks >= 3,
+            reached,
             "the tail held only {ticks} attempts' output, so a later failure \
              would be reported with an earlier run's words"
         );
@@ -1020,6 +1197,23 @@ mod tests {
     ) -> bool {
         for _ in 0..300 {
             if predicate(&handle.observe()) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// [`wait_until`] for what the tail holds rather than what the state says.
+    ///
+    /// The two advance independently and in that order: the restart counter
+    /// moves when a replacement is *spawned*, the tail only once that
+    /// replacement has written something and the reader has picked it up. A
+    /// test about output must therefore wait on the output — waiting on the
+    /// counter and then reading the tail races the child's first write.
+    async fn wait_for_tail(handle: &SupervisorHandle, predicate: impl Fn(&str) -> bool) -> bool {
+        for _ in 0..300 {
+            if predicate(&handle.tail().unwrap_or_default()) {
                 return true;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;

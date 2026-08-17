@@ -20,13 +20,20 @@
     )
 )]
 
+pub mod bots;
 pub mod config;
+pub mod env;
 pub mod health;
 pub mod images;
 pub mod integration;
+pub mod keys;
 pub mod lifecycle;
 pub mod logging;
+pub mod logs;
+pub mod ports;
+pub mod power_flow;
 pub mod provisioning;
+pub mod reconcile;
 pub mod runner;
 pub mod runtime;
 pub mod runtime_plan;

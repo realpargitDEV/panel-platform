@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::probe::Toolchain;
+use crate::probe::{ExecutableResolver, Toolchain};
 
 /// A command ready to be spawned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,18 @@ pub enum CommandError {
     NoStartCommand,
     #[error("the start command `{0}` could not be read as a command")]
     Unparsable(String),
+    /// The first word of the start command is not a program on this machine.
+    ///
+    /// Distinct from [`CommandError::ToolchainMissing`], which is about the
+    /// language. A machine can have Node and still not have `pnpm`, and telling
+    /// the user to install Node would send them to fix something that is not
+    /// broken.
+    #[error(
+        "`{program}` is not a program on this machine. \
+         It is the first word of the start command `{command}`; \
+         install it, or change the start command to something that is installed."
+    )]
+    ProgramNotFound { program: String, command: String },
 }
 
 /// Everything needed to build one command.
@@ -45,6 +57,14 @@ pub struct CommandInputs<'a> {
     /// Where the project's files actually are on this machine.
     pub project_directory: &'a Path,
     pub toolchain: &'a Toolchain,
+    /// How a bare program name becomes a path this machine can execute.
+    ///
+    /// Needed because the start command's first word is usually *not* the
+    /// language toolchain. `npm start` runs `npm`, not `node`, and on Windows
+    /// `npm` is `npm.cmd` — a name `CreateProcess` will not find, because its
+    /// own `PATH` search only ever appends `.exe`. Resolving here is what makes
+    /// `npm start`, `pnpm dev` and `yarn serve` work on Windows at all.
+    pub resolver: &'a dyn ExecutableResolver,
     pub env: BTreeMap<String, String>,
     /// The host port allocated to this project, passed through the
     /// environment. There is no port mapping without a container: the process
@@ -65,7 +85,7 @@ pub fn start_command(inputs: CommandInputs<'_>) -> Result<ProcessCommand, Comman
     if words.is_empty() {
         return Err(CommandError::NoStartCommand);
     }
-    let program = words.remove(0);
+    let program = resolve_program(&words.remove(0), inputs.command, inputs.resolver)?;
 
     let mut env = inputs.env;
     if let Some(port) = inputs.port {
@@ -79,6 +99,36 @@ pub fn start_command(inputs: CommandInputs<'_>) -> Result<ProcessCommand, Comman
         cwd: inputs.project_directory.to_path_buf(),
         env,
     })
+}
+
+/// Turn the start command's first word into something spawnable.
+///
+/// Three cases, in order:
+///
+/// * A word that already contains a separator is a path the user wrote. It is
+///   passed through untouched — resolving it against `PATH` would be ignoring
+///   what they said.
+/// * A bare name is resolved against `PATH`, with the platform's executable
+///   suffixes. This is the case that matters: `npm` on Windows is `npm.cmd`.
+/// * A bare name that resolves to nothing is refused *by name*, before anything
+///   is spawned, rather than becoming an operating-system error about a file
+///   that does not exist.
+fn resolve_program(
+    word: &str,
+    command: &str,
+    resolver: &dyn ExecutableResolver,
+) -> Result<String, CommandError> {
+    if word.contains('/') || word.contains('\\') {
+        return Ok(word.to_string());
+    }
+
+    match resolver.resolve(word) {
+        Some(path) => Ok(path.to_string_lossy().into_owned()),
+        None => Err(CommandError::ProgramNotFound {
+            program: word.to_string(),
+            command: command.to_string(),
+        }),
+    }
 }
 
 /// Split a command line into words, respecting single and double quotes.
@@ -142,16 +192,49 @@ mod tests {
         }
     }
 
+    /// A machine that has whatever the test says it has, at a predictable path.
+    ///
+    /// `installed` holds the name *as the machine spells it*, so a test can
+    /// describe a Windows box where `npm` is only ever `npm.cmd`.
+    #[derive(Debug)]
+    struct FakeMachine {
+        installed: Vec<&'static str>,
+    }
+
+    impl ExecutableResolver for FakeMachine {
+        fn resolve(&self, name: &str) -> Option<PathBuf> {
+            self.installed
+                .iter()
+                .find(|entry| entry.split('.').next() == Some(name))
+                .map(|entry| PathBuf::from(format!("/usr/bin/{entry}")))
+        }
+
+        fn version(&self, _executable: &Path) -> Option<String> {
+            None
+        }
+    }
+
+    /// The ordinary machine most tests want: everything they mention is there.
+    fn anything() -> FakeMachine {
+        FakeMachine {
+            installed: vec![
+                "node", "npm", "pnpm", "yarn", "python", "python3", "go", "cargo", "bun",
+            ],
+        }
+    }
+
     fn inputs<'a>(
         runtime: &'a str,
         command: &'a str,
         toolchain: &'a Toolchain,
+        resolver: &'a dyn ExecutableResolver,
     ) -> CommandInputs<'a> {
         CommandInputs {
             runtime,
             command,
             project_directory: Path::new("/projects/demo"),
             toolchain,
+            resolver,
             env: BTreeMap::new(),
             port: None,
         }
@@ -164,7 +247,9 @@ mod tests {
     #[test]
     fn the_container_working_directory_never_reaches_a_host_command() {
         let toolchain = found();
-        let command = start_command(inputs("NODEJS", "npm start", &toolchain)).expect("command");
+        let machine = anything();
+        let command =
+            start_command(inputs("NODEJS", "npm start", &toolchain, &machine)).expect("command");
 
         assert_eq!(command.cwd, PathBuf::from("/projects/demo"));
         assert!(
@@ -177,11 +262,75 @@ mod tests {
     #[test]
     fn a_command_is_split_into_a_program_and_its_arguments() {
         let toolchain = found();
-        let command =
-            start_command(inputs("NODEJS", "node server.js --port 3000", &toolchain)).expect("c");
+        let machine = anything();
+        let command = start_command(inputs(
+            "NODEJS",
+            "node server.js --port 3000",
+            &toolchain,
+            &machine,
+        ))
+        .expect("c");
 
-        assert_eq!(command.program, "node");
+        assert!(command.program.ends_with("node"), "{}", command.program);
         assert_eq!(command.args, vec!["server.js", "--port", "3000"]);
+    }
+
+    /// The defect this resolution exists for. On Windows `npm` is `npm.cmd`,
+    /// and `CreateProcess` only ever appends `.exe` to a bare name — so
+    /// `Command::new("npm")` fails to find an npm that is plainly installed,
+    /// and every Node project started with `npm start` reported a program that
+    /// was right there as missing.
+    #[test]
+    fn a_program_that_is_only_a_script_on_this_machine_is_still_found() {
+        let toolchain = found();
+        let windows = FakeMachine {
+            installed: vec!["node.exe", "npm.cmd", "pnpm.cmd"],
+        };
+
+        let command = start_command(inputs("NODEJS", "npm run start", &toolchain, &windows))
+            .expect("command");
+        assert!(
+            command.program.ends_with("npm.cmd"),
+            "the bare name was not resolved: {}",
+            command.program
+        );
+        assert_eq!(command.args, vec!["run", "start"]);
+    }
+
+    /// A machine can have Node and not have pnpm. Saying "NODEJS is not
+    /// installed" would send the user to fix something that is not broken, so
+    /// the missing program is named instead.
+    #[test]
+    fn a_missing_program_is_named_rather_than_blamed_on_the_language() {
+        let toolchain = found();
+        let without_pnpm = FakeMachine {
+            installed: vec!["node", "npm"],
+        };
+
+        match start_command(inputs("NODEJS", "pnpm dev", &toolchain, &without_pnpm)) {
+            Err(CommandError::ProgramNotFound { program, command }) => {
+                assert_eq!(program, "pnpm");
+                assert_eq!(command, "pnpm dev");
+            }
+            other => panic!("expected ProgramNotFound, got {other:?}"),
+        }
+    }
+
+    /// A path the user wrote is what the user meant. Resolving it against
+    /// `PATH` would silently run a different program with the same file name.
+    #[test]
+    fn a_program_written_as_a_path_is_passed_through_untouched() {
+        let toolchain = found();
+        let nothing = FakeMachine { installed: vec![] };
+
+        let command = start_command(inputs(
+            "GENERIC",
+            "./bin/server --config prod.toml",
+            &toolchain,
+            &nothing,
+        ))
+        .expect("command");
+        assert_eq!(command.program, "./bin/server");
     }
 
     /// Without a container there is no port mapping, so the process has to be
@@ -189,9 +338,10 @@ mod tests {
     #[test]
     fn the_allocated_port_is_passed_through_the_environment() {
         let toolchain = found();
+        let machine = anything();
         let command = start_command(CommandInputs {
             port: Some(8081),
-            ..inputs("NODEJS", "npm start", &toolchain)
+            ..inputs("NODEJS", "npm start", &toolchain, &machine)
         })
         .expect("command");
 
@@ -201,13 +351,14 @@ mod tests {
     #[test]
     fn the_projects_own_environment_is_kept_and_port_does_not_erase_it() {
         let toolchain = found();
+        let machine = anything();
         let mut env = BTreeMap::new();
         env.insert("TOKEN".to_string(), "secret".to_string());
 
         let command = start_command(CommandInputs {
             env,
             port: Some(9000),
-            ..inputs("NODEJS", "npm start", &toolchain)
+            ..inputs("NODEJS", "npm start", &toolchain, &machine)
         })
         .expect("command");
 
@@ -221,10 +372,12 @@ mod tests {
     #[test]
     fn quoted_arguments_survive_splitting() {
         let toolchain = found();
+        let machine = anything();
         let command = start_command(inputs(
             "PYTHON",
             "python -m http.server --directory \"My Projects/site\"",
             &toolchain,
+            &machine,
         ))
         .expect("command");
 
@@ -238,8 +391,14 @@ mod tests {
     #[test]
     fn single_quotes_work_the_same_way() {
         let toolchain = found();
-        let command = start_command(inputs("NODEJS", "node -e 'console.log(1)'", &toolchain))
-            .expect("command");
+        let machine = anything();
+        let command = start_command(inputs(
+            "NODEJS",
+            "node -e 'console.log(1)'",
+            &toolchain,
+            &machine,
+        ))
+        .expect("command");
 
         assert_eq!(command.args, vec!["-e", "console.log(1)"]);
     }
@@ -247,8 +406,9 @@ mod tests {
     #[test]
     fn an_unclosed_quote_is_refused_rather_than_guessed_at() {
         let toolchain = found();
+        let machine = anything();
         assert!(matches!(
-            start_command(inputs("NODEJS", "node \"server.js", &toolchain)),
+            start_command(inputs("NODEJS", "node \"server.js", &toolchain, &machine)),
             Err(CommandError::Unparsable(_))
         ));
     }
@@ -260,8 +420,9 @@ mod tests {
         let missing = Toolchain::Missing {
             looked_for: vec!["go".to_string()],
         };
+        let machine = anything();
 
-        match start_command(inputs("GO", "go run .", &missing)) {
+        match start_command(inputs("GO", "go run .", &missing, &machine)) {
             Err(CommandError::ToolchainMissing {
                 runtime,
                 looked_for,
@@ -278,7 +439,8 @@ mod tests {
         let missing = Toolchain::Missing {
             looked_for: vec!["python3".to_string(), "python".to_string()],
         };
-        let error = start_command(inputs("PYTHON", "python app.py", &missing))
+        let machine = anything();
+        let error = start_command(inputs("PYTHON", "python app.py", &missing, &machine))
             .expect_err("must be refused");
 
         assert_eq!(
@@ -290,8 +452,9 @@ mod tests {
     #[test]
     fn an_empty_start_command_is_refused() {
         let toolchain = found();
+        let machine = anything();
         assert_eq!(
-            start_command(inputs("NODEJS", "   ", &toolchain)),
+            start_command(inputs("NODEJS", "   ", &toolchain, &machine)),
             Err(CommandError::NoStartCommand)
         );
     }
@@ -299,10 +462,16 @@ mod tests {
     #[test]
     fn extra_whitespace_between_arguments_is_not_an_argument() {
         let toolchain = found();
-        let command =
-            start_command(inputs("NODEJS", "  node    server.js  ", &toolchain)).expect("c");
+        let machine = anything();
+        let command = start_command(inputs(
+            "NODEJS",
+            "  node    server.js  ",
+            &toolchain,
+            &machine,
+        ))
+        .expect("c");
 
-        assert_eq!(command.program, "node");
+        assert!(command.program.ends_with("node"));
         assert_eq!(command.args, vec!["server.js"]);
     }
 }

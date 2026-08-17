@@ -1,0 +1,38 @@
+[package]
+name = "project-host-power"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+tracing = "0.1.41"
+tokio = { version = "1.53.1", features = ["time", "rt", "sync", "process"] }
+# The machine's own numbers. The same crate `resources` and `platform` already
+# use, with the feature groups this crate needs on top of theirs: components for
+# temperature, networks for activity.
+sysinfo = { version = "0.36.1", default-features = false, features = [
+    "system",
+    "disk",
+    "component",
+    "network",
+] }
+# Battery state. The workspace forbids `unsafe`, so reading a battery — which is
+# a platform API call on every operating system — cannot be done here directly.
+# This crate does it behind a safe interface on Windows, macOS and Linux, and
+# reports absence rather than failing on a desktop that has no battery.
+starship-battery = "0.11.1"
+# Sleep prevention through each platform's intended mechanism:
+# `SetThreadExecutionState` on Windows, an IOKit power assertion on macOS, and
+# the session manager's inhibit interface on Linux. Same reason as above — every
+# one of those is FFI this workspace may not write.
+keepawake = "0.6.0"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time"] }

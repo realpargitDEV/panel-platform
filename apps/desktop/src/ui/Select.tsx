@@ -196,7 +196,7 @@ export default function Select<T extends string>({
         disabled={disabled}
         onClick={() => (open ? close() : setOpen(true))}
         onKeyDown={onKeyDown}
-        className={`flex h-9 w-full items-center gap-2 rounded-[8px] border bg-canvas px-3 text-left text-[13px] disabled:pointer-events-none disabled:opacity-40 ${
+        className={`flex h-[30px] w-full items-center gap-2 rounded-[5px] border bg-canvas px-2.5 text-left text-[12.5px] disabled:pointer-events-none disabled:opacity-40 ${
           error ? 'border-danger' : open ? 'border-accent' : 'border-edge hover:border-edge-strong'
         }`}
       >
@@ -226,7 +226,7 @@ export default function Select<T extends string>({
             maxHeight: placement?.maxHeight,
             visibility: placement ? 'visible' : 'hidden',
           }}
-          className="fixed z-[70] flex flex-col overflow-hidden rounded-[10px] border border-edge bg-overlay shadow-[0_12px_36px_rgba(0,0,0,0.5)]"
+          className="fixed z-[70] flex flex-col overflow-hidden rounded-[7px] border border-edge bg-overlay shadow-[0_12px_36px_rgba(0,0,0,0.5)]"
         >
           {searchable && (
             <div className="shrink-0 border-b border-edge p-2">
@@ -237,7 +237,7 @@ export default function Select<T extends string>({
                 onKeyDown={onKeyDown}
                 placeholder="Search…"
                 aria-label="Search options"
-                className="h-7 w-full rounded-[6px] border border-edge bg-canvas px-2 text-[12px] text-ink placeholder:text-faint select-text focus:border-accent"
+                className="h-[26px] w-full rounded-[5px] border border-edge bg-canvas px-2 text-[12px] text-ink placeholder:text-faint select-text focus:border-accent"
               />
             </div>
           )}

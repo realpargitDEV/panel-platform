@@ -45,6 +45,7 @@ impl ProjectRunner for DockerRunner {
             project,
             directory,
             app_version,
+            ..
         } = ctx;
         let runner = self.connect().await?;
 

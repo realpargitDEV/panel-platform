@@ -63,6 +63,13 @@ pub struct ProjectRecord {
     /// as `DOCKER` from the column default.
     pub run_mode: String,
 
+    /// `LOW`, `NORMAL` or `HIGH`. What the resource manager should sacrifice
+    /// last when the machine is under pressure. Never a hard limit — it moves
+    /// the operating system's scheduling priority and nothing else.
+    pub priority: String,
+    /// Whether this project running is a reason to hold automatic sleep off.
+    pub keep_awake: bool,
+
     pub memory_limit_mb: i64,
     pub cpu_limit_cores: f64,
     pub storage_limit_mb: i64,
@@ -206,6 +213,8 @@ fn project_from_row(row: &sqlx::sqlite::SqliteRow) -> ProjectRecord {
         restart_policy: row.get("restart_policy"),
         network_mode: row.get("network_mode"),
         run_mode: row.get("run_mode"),
+        priority: row.get("priority"),
+        keep_awake: row.get::<i64, _>("keep_awake") == 1,
         memory_limit_mb: row.get("memory_limit_mb"),
         cpu_limit_cores: row.get("cpu_limit_cores"),
         storage_limit_mb: row.get("storage_limit_mb"),
@@ -226,7 +235,7 @@ const PROJECT_COLUMNS: &str = "id, slug, display_name, description, project_type
      status, desired_state, health, container_id, container_name, image_tag,
      network_name, volume_name, source_type, directory,
      source_url, source_ref, source_commit, autostart, restart_policy,
-     network_mode, run_mode,
+     network_mode, run_mode, priority, keep_awake,
      memory_limit_mb, cpu_limit_cores, storage_limit_mb, process_limit,
      started_at, stopped_at, last_exit_code, last_failure_at, last_failure_reason,
      restart_count, archived_at, created_at, updated_at";
@@ -618,6 +627,109 @@ pub async fn record_stopped(
     Ok(())
 }
 
+/// Which project claims a host port, if any does.
+///
+/// Asked when a start finds a port already bound, so the refusal can name the
+/// other project rather than saying only that the port is busy. Archived
+/// projects are included deliberately: an archived project's port is still
+/// reserved, and "it belongs to a project you archived" is a more useful answer
+/// than "something has it".
+pub async fn project_holding_port(
+    database: &Database,
+    host_port: u16,
+    excluding: &str,
+) -> Result<Option<ProjectRecord>> {
+    let row = sqlx::query(&format!(
+        "SELECT {PROJECT_COLUMNS} FROM projects
+         WHERE id != ? AND id IN (
+             SELECT project_id FROM project_ports WHERE host_port = ?
+         )
+         LIMIT 1"
+    ))
+    .bind(excluding)
+    .bind(i64::from(host_port))
+    .fetch_optional(database.pool())
+    .await?;
+    Ok(row.as_ref().map(project_from_row))
+}
+
+/// Change the host port a project's primary mapping uses.
+///
+/// Only the primary. A project publishing several ports has one the interface
+/// treats as *the* port — the one shown, health-checked and passed as `PORT` —
+/// and the others are not something the user is offered a control for.
+///
+/// The `UNIQUE (host_port, protocol, bind_address)` constraint is what stops
+/// two projects claiming one port, so a clash here surfaces as a database error
+/// rather than being checked for and then raced.
+pub async fn set_primary_host_port(
+    database: &Database,
+    project_id: &str,
+    host_port: u16,
+) -> Result<()> {
+    let ports = list_ports(database, project_id).await?;
+    let target = ports
+        .iter()
+        .find(|port| port.is_primary)
+        .or_else(|| ports.first())
+        .ok_or(DatabaseError::NotFound {
+            entity: "project port",
+        })?;
+
+    sqlx::query("UPDATE project_ports SET host_port = ? WHERE id = ?")
+        .bind(i64::from(host_port))
+        .bind(&target.id)
+        .execute(database.pool())
+        .await?;
+
+    sqlx::query("UPDATE projects SET updated_at = ? WHERE id = ?")
+        .bind(time::now())
+        .bind(project_id)
+        .execute(database.pool())
+        .await?;
+    Ok(())
+}
+
+/// Record that a project which *was* running died on its own.
+///
+/// Separate from [`record_stopped`] because the two are different events with
+/// different answers. A project that never got off the ground is FAILED — the
+/// runtime is missing, the port was taken, the entry file is not there — and the
+/// fix is configuration. A project that started cleanly, ran, and then exited
+/// non-zero is CRASHED, and the fix is in the user's own code. Writing both as
+/// FAILED forced the interface to guess which had happened, and it guessed by
+/// showing the same sentence for both.
+///
+/// `started_at` is deliberately left alone: it is when this run began, and a
+/// crash does not change that. `stopped_at` is when it ended.
+pub async fn record_crashed(
+    database: &Database,
+    project_id: &str,
+    exit_code: Option<i64>,
+    failure_reason: Option<&str>,
+) -> Result<()> {
+    let now = time::now();
+    sqlx::query(
+        "UPDATE projects
+         SET status = 'CRASHED',
+             stopped_at = ?,
+             last_exit_code = ?,
+             last_failure_at = ?,
+             last_failure_reason = ?,
+             updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(&now)
+    .bind(exit_code)
+    .bind(&now)
+    .bind(failure_reason)
+    .bind(&now)
+    .bind(project_id)
+    .execute(database.pool())
+    .await?;
+    Ok(())
+}
+
 pub async fn increment_restart_count(database: &Database, project_id: &str) -> Result<i64> {
     sqlx::query(
         "UPDATE projects SET restart_count = restart_count + 1, updated_at = ? WHERE id = ?",
@@ -649,6 +761,9 @@ pub struct ProjectUpdate {
     pub autostart: Option<bool>,
     pub restart_policy: Option<String>,
     pub network_mode: Option<String>,
+    /// `LOW`, `NORMAL` or `HIGH`.
+    pub priority: Option<String>,
+    pub keep_awake: Option<bool>,
     pub memory_limit_mb: Option<i64>,
     pub cpu_limit_cores: Option<f64>,
     pub storage_limit_mb: Option<i64>,
@@ -672,6 +787,8 @@ pub async fn update_project(
             autostart        = COALESCE(?, autostart),
             restart_policy   = COALESCE(?, restart_policy),
             network_mode     = COALESCE(?, network_mode),
+            priority         = COALESCE(?, priority),
+            keep_awake       = COALESCE(?, keep_awake),
             memory_limit_mb  = COALESCE(?, memory_limit_mb),
             cpu_limit_cores  = COALESCE(?, cpu_limit_cores),
             storage_limit_mb = COALESCE(?, storage_limit_mb),
@@ -686,6 +803,8 @@ pub async fn update_project(
     .bind(update.autostart.map(i64::from))
     .bind(&update.restart_policy)
     .bind(&update.network_mode)
+    .bind(&update.priority)
+    .bind(update.keep_awake.map(i64::from))
     .bind(update.memory_limit_mb)
     .bind(update.cpu_limit_cores)
     .bind(update.storage_limit_mb)

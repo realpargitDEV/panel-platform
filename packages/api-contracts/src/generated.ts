@@ -326,7 +326,7 @@ export const platformCapabilitiesSchema = z.object({
   storage_quota_enforcement: z.boolean(),
 });
 
-export const projectStatusSchema = z.enum(['CREATING', 'STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'RESTARTING', 'BUILDING', 'FAILED', 'UNHEALTHY', 'ARCHIVED', 'DELETING']);
+export const projectStatusSchema = z.enum(['CREATING', 'STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'RESTARTING', 'BUILDING', 'CRASHED', 'FAILED', 'UNHEALTHY', 'ARCHIVED', 'DELETING']);
 
 export const projectDetailSchema = z.object({
   archived_at: z.string().nullable().optional(),

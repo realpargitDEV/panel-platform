@@ -11,6 +11,9 @@ use crate::config::AppConfig;
 use crate::runner::host::HostRegistry;
 use project_host_resources::{MachineUsage, Reserve, SystemUsage, UsageSource};
 
+use crate::keys::MasterKey;
+use project_host_discord_gateway::Supervisor;
+
 /// Everything a command handler needs. Cheap to clone: one `Arc`.
 #[derive(Clone)]
 pub struct AppState(Arc<Inner>);
@@ -54,6 +57,26 @@ pub struct Inner {
     pub machine_usage: RwLock<MachineUsage>,
     /// How much memory is held back from the budget.
     pub reserve: Reserve,
+    /// Every Discord bot this process is connected as.
+    ///
+    /// Process-scoped for the same reason `host_projects` is: a live gateway
+    /// session belongs to *this* process, so nothing outside it could hold a
+    /// meaningful handle.
+    pub discord: Supervisor,
+    /// Sleep behaviour and scheduling priority for this machine.
+    ///
+    /// Behind a lock because it is genuinely mutable state — a moving average,
+    /// a cooldown, what each project was last set to — and one writer (the
+    /// background tick) contends with occasional readers (the window asking
+    /// what the current profile is). A `RwLock` rather than a `Mutex` so that
+    /// rendering never waits on another render.
+    pub power: RwLock<project_host_power::PowerManager>,
+    /// The key every stored secret is encrypted under.
+    ///
+    /// `None` when secure storage could not be opened. That is a degraded but
+    /// runnable state — projects still work — so it is reported rather than
+    /// fatal, and the features that need a key say why they are unavailable.
+    pub master_key: Option<MasterKey>,
 }
 
 /// Who this process is: the facts fixed at startup that never change.
@@ -78,6 +101,7 @@ impl AppState {
         docker_status: DockerStatus,
         assessment: Assessment,
         identity: Identity,
+        master_key: Option<MasterKey>,
     ) -> Self {
         Self(Arc::new(Inner {
             config,
@@ -97,6 +121,11 @@ impl AppState {
             // anything has been measured.
             machine_usage: RwLock::new(MachineUsage::unknown()),
             reserve: Reserve::default(),
+            discord: Supervisor::new(),
+            power: RwLock::new(project_host_power::PowerManager::new(Arc::new(
+                project_host_power::monitor::MachineMonitor::new(),
+            ))),
+            master_key,
         }))
     }
 
@@ -160,6 +189,30 @@ impl AppState {
 
     pub fn database(&self) -> &Database {
         &self.0.database
+    }
+
+    /// Every Discord bot this process is connected as.
+    pub fn discord(&self) -> &Supervisor {
+        &self.0.discord
+    }
+
+    /// Sleep behaviour and scheduling priority.
+    ///
+    /// Returned as the lock rather than a snapshot because both readers and the
+    /// background tick need it, and a method per question would put the whole
+    /// power interface on `AppState`.
+    pub fn power(&self) -> &RwLock<project_host_power::PowerManager> {
+        &self.0.power
+    }
+
+    /// The key stored secrets are encrypted under, if there is one.
+    pub fn master_key(&self) -> Option<&project_host_security::EncryptionKey> {
+        self.0.master_key.as_ref().map(|held| &held.key)
+    }
+
+    /// Which mechanism is holding the key, for the window to report honestly.
+    pub fn key_backend(&self) -> Option<&'static str> {
+        self.0.master_key.as_ref().map(|held| held.backend.as_str())
     }
 
     /// The resource limits a newly created project should start with.

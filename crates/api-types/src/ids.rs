@@ -149,6 +149,13 @@ prefixed_id!(
 prefixed_id!(
     /// One "this role or person may do this much" rule.
     GrantId, "grt");
+prefixed_id!(
+    /// One Discord bot this installation can connect as.
+    ///
+    /// Distinct from the Discord application id it carries: that one is
+    /// Discord's, and an installation may hold a token for an application it
+    /// later replaces.
+    BotId, "bot");
 
 #[cfg(test)]
 mod tests {

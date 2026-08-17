@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 project-host-core = { version = "0.1.0", path = "../../../crates/app-core" }
 project-host-database = { version = "0.1.0", path = "../../../crates/database" }
+project-host-power = { version = "0.1.0", path = "../../../crates/power" }
 project-host-api-types = { version = "0.1.0", path = "../../../crates/api-types" }
 project-host-docker-manager = { version = "0.1.0", path = "../../../crates/docker-manager" }
 project-host-file-manager = { version = "0.1.0", path = "../../../crates/file-manager" }
@@ -27,7 +28,11 @@ project-host-project-manager = { version = "0.1.0", path = "../../../crates/proj
 # Only for `Secret`: a token from the creation form is wrapped the moment it is
 # read, so nothing downstream can print it by accident.
 project-host-security = { version = "0.1.0", path = "../../../crates/security" }
+project-host-discord-gateway = { version = "0.1.0", path = "../../../crates/discord-gateway" }
 project-host-updater = { version = "0.1.0", path = "../../../crates/updater" }
+# Serving a static project, in the second mode this executable runs in. See
+# `static_server_request` in `lib.rs`.
+project-host-static-server = { version = "0.1.0", path = "../../../crates/static-server" }
 # Only used to fetch the release manifest. rustls rather than the platform TLS
 # stack so the same code path runs on Windows and Linux.
 reqwest = { version = "0.12", default-features = false, features = [

@@ -66,13 +66,6 @@ pub enum LifecycleError {
         looked_for: Vec<String>,
     },
 
-    /// A runtime that host mode cannot serve. `STATIC` needs an HTTP server
-    /// this application does not have, and `POLYGLOT` needs several toolchains
-    /// at once — neither is a missing executable, and reporting one would send
-    /// the user to install something that would not help.
-    #[error("host mode cannot run {0} projects yet; run this one in Docker")]
-    UnsupportedInHostMode(String),
-
     #[error("{0}")]
     Host(#[from] project_host_host_runner::HostError),
 
@@ -84,6 +77,14 @@ pub enum LifecycleError {
     /// of projects makes every `Result` in this module that size.
     #[error("{}", .0.message())]
     NotEnoughMemory(Box<Shortfall>),
+
+    /// The port this project binds is already held. Reported before anything is
+    /// spawned, so the message names the port and its holder rather than being
+    /// an `EADDRINUSE` buried in the project's own output.
+    ///
+    /// Boxed for the same reason as above.
+    #[error("{}", .0.message())]
+    PortConflict(Box<crate::ports::Conflict>),
 }
 
 /// The runner a project's `run_mode` column asks for.
@@ -260,6 +261,10 @@ pub async fn start_forcing(
     // Before anything is written or spawned. A refusal must leave the project
     // exactly as it was: writing STARTING and then refusing would leave a row
     // claiming a start that never began.
+    //
+    // The *port* check is not here but inside the host runner, because it can
+    // only be asked once the project's own previous process has been stopped —
+    // on a restart the port it wants is the port it is still holding.
     if !force {
         admit_project(app, &project).await?;
     }
@@ -274,6 +279,7 @@ pub async fn start_forcing(
             project: &project,
             directory: &directory,
             app_version: &app_version,
+            master_key: app.master_key(),
         })
         .await;
 
@@ -506,6 +512,7 @@ pub async fn restart(app: &AppState, project_id: &str) -> Result<String, Lifecyc
             project: &project,
             directory: &directory,
             app_version: &app_version,
+            master_key: app.master_key(),
         })
         .await;
 
@@ -554,6 +561,10 @@ mod tests_with_state {
                 schema_version: 5,
                 started_at_wall: project_host_database::time::now(),
             },
+            // No key: these tests never store a secret, and a test that
+            // silently acquired one from the real keychain would be reaching
+            // outside its sandbox.
+            None,
         )
     }
 

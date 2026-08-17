@@ -48,39 +48,42 @@ pub enum IntegrationError {
 /// right key.
 const BOT_TOKEN_AAD: &[u8] = b"project-host:discord-bot-token";
 
-/// Encrypt and store the bot token.
+/// Encrypt and store a bot token, returning the bot's row id.
 ///
 /// The plaintext arrives as a [`Secret`], so it cannot be logged on the way in,
 /// and leaves this function as ciphertext that the storage layer cannot read.
-pub async fn save_bot_token(
+pub async fn add_bot(
     db: &Database,
     key: &EncryptionKey,
+    label: &str,
     application_id: &str,
     token: &Secret<String>,
-) -> Result<(), IntegrationError> {
+) -> Result<String, IntegrationError> {
     let ciphertext = encrypt(key, token, BOT_TOKEN_AAD).map_err(|_| IntegrationError::Encrypt)?;
 
-    storage::save_bot_credentials(
+    let id = storage::add_bot(
         db,
         &storage::BotCredentials {
+            label: label.to_string(),
             application_id: application_id.to_string(),
             token_cipher: ciphertext.bytes,
             token_nonce: ciphertext.nonce,
         },
     )
     .await?;
-    Ok(())
+    Ok(id)
 }
 
-/// Load and decrypt the bot token.
+/// Load and decrypt one bot's token.
 ///
-/// Returns `Ok(None)` when no bot has been configured, which is a normal state
-/// and not an error — the integration is optional.
+/// Returns `Ok(None)` when there is no such bot, which is a normal state and
+/// not an error — a connection may be asked for after its bot was forgotten.
 pub async fn load_bot_token(
     db: &Database,
     key: &EncryptionKey,
+    bot_row_id: &str,
 ) -> Result<Option<(String, Secret<String>)>, IntegrationError> {
-    let Some(stored) = storage::load_bot_credentials(db).await? else {
+    let Some(stored) = storage::find_bot(db, bot_row_id).await? else {
         return Ok(None);
     };
 

@@ -196,3 +196,53 @@ export function runControls(
   }
   return { blocked: false };
 }
+
+// ------------------------------------------------------------ the Run control
+
+/**
+ * What the one prominent button should do right now.
+ *
+ * There is exactly one of these decisions in the product, because the top bar,
+ * the project card and the overview all show the same control and any
+ * disagreement between them is a bug the user experiences as the app lying.
+ *
+ * The button is never green once stopping is the primary action: a green
+ * control that stops something is how people stop a project they meant to
+ * restart.
+ */
+export interface RunAction {
+  /** What pressing it does. `null` while nothing should happen. */
+  action: 'start' | 'stop' | null;
+  label: string;
+  /** `play`, `stop`, or `spinner` while the core is mid-transition. */
+  icon: 'play' | 'stop' | 'spinner' | 'warn';
+  tone: 'ok' | 'neutral' | 'danger' | 'accent';
+  /** True while a transition is in flight, so the control cannot be pressed twice. */
+  pending: boolean;
+}
+
+export function primaryRunAction(status: string): RunAction {
+  switch (status.toUpperCase()) {
+    case 'RUNNING':
+      return { action: 'stop', label: 'Stop', icon: 'stop', tone: 'neutral', pending: false };
+    case 'STARTING':
+      return { action: null, label: 'Starting', icon: 'spinner', tone: 'accent', pending: true };
+    case 'STOPPING':
+      return { action: null, label: 'Stopping', icon: 'spinner', tone: 'accent', pending: true };
+    case 'RESTARTING':
+      return { action: null, label: 'Restarting', icon: 'spinner', tone: 'accent', pending: true };
+    case 'BUILDING':
+      return { action: null, label: 'Building', icon: 'spinner', tone: 'accent', pending: true };
+    case 'DELETING':
+      return { action: null, label: 'Deleting', icon: 'spinner', tone: 'accent', pending: true };
+    // A failed project's primary action is still Run — the user's next move is
+    // to try again, having read the console. The warning colour is what marks
+    // it as different from an ordinary stopped project.
+    case 'FAILED':
+    case 'BUILD_FAILED':
+    case 'CRASHED':
+      return { action: 'start', label: 'Run', icon: 'warn', tone: 'danger', pending: false };
+    default:
+      return { action: 'start', label: 'Run', icon: 'play', tone: 'ok', pending: false };
+  }
+}

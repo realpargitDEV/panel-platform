@@ -18,19 +18,82 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
-/// How many of the most recent lines are kept in memory.
+/// How many of the most recent lines are kept in memory, per project.
 ///
-/// Enough to carry a stack trace or a port-in-use message into a failure
-/// report, and few enough that a project logging in a loop cannot grow this
-/// without bound.
-const TAIL_LINES: usize = 50;
+/// Two jobs at two scales. The failure excerpt needs the last few dozen lines;
+/// a console someone is watching needs enough history to scroll back through.
+/// This is sized for the second, and [`Tail::text`] takes the tail of it for
+/// the first.
+///
+/// Two thousand lines is roughly a quarter of a megabyte per project, so ten
+/// projects running at once cost a couple of megabytes — and a project logging
+/// in a loop still cannot grow it, which is the property that matters.
+const BUFFER_LINES: usize = 2_000;
 
-/// The last lines a child produced, for the message shown when it fails.
+/// How many lines a failure report quotes.
+const EXCERPT_LINES: usize = 50;
+
+/// Which of a project's streams a line came from.
 ///
-/// The log file is the record; this is the excerpt. A failure the user has to
-/// go and open a file to understand is a failure reported badly.
+/// Kept rather than merged because the interface colours them differently and
+/// because "did it write this to stderr" is most of what distinguishes a
+/// warning from a crash. `System` is this application's own voice — a start, a
+/// stop, a restart — which is neither of the child's streams and must not be
+/// mistaken for the project's own output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stream {
+    Stdout,
+    Stderr,
+    System,
+}
+
+impl Stream {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Stream::Stdout => "stdout",
+            Stream::Stderr => "stderr",
+            Stream::System => "system",
+        }
+    }
+}
+
+/// One line of a project's output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogLine {
+    /// Monotonic within one project, starting at 1 and never reused.
+    ///
+    /// This is what lets a console poll for "everything after what I have"
+    /// without the two sides having to agree on timestamps, and what makes a
+    /// missed poll a gap the next one closes rather than a duplicate.
+    pub seq: u64,
+    /// When this application received the line, in RFC 3339.
+    ///
+    /// Received, not produced: a child that buffers its output stamps its lines
+    /// with when they arrived here. Saying otherwise would be inventing
+    /// precision that does not exist.
+    pub at: String,
+    pub stream: Stream,
+    pub text: String,
+}
+
+/// The mutable half, shared between the writer task and every reader.
+#[derive(Debug, Default)]
+struct Buffer {
+    lines: VecDeque<LogLine>,
+    /// The sequence number the next line will take. Never reset, so a console
+    /// holding an old cursor sees a jump rather than a replay.
+    next_seq: u64,
+}
+
+/// A project's recent output: the failure excerpt and the live console, in one
+/// place.
+///
+/// The log file is the durable record; this is what can be read back without
+/// touching the disk. Both exist because they answer different questions — the
+/// file answers "what happened yesterday", this answers "what is it saying
+/// right now".
 #[derive(Debug, Clone, Default)]
-pub struct Tail(Arc<Mutex<VecDeque<String>>>);
+pub struct Tail(Arc<Mutex<Buffer>>);
 
 impl Tail {
     pub fn new() -> Self {
@@ -40,32 +103,89 @@ impl Tail {
     /// Lock, recovering from poisoning rather than propagating it.
     ///
     /// A panicked writer must not make a project's output permanently
-    /// unreadable — the lines already collected are still true, and the tail
-    /// is only ever used to explain a failure that has already happened.
-    fn lines(&self) -> MutexGuard<'_, VecDeque<String>> {
+    /// unreadable — the lines already collected are still true, and losing the
+    /// console of every project because one write panicked would be a far
+    /// worse outcome than a possibly-truncated buffer.
+    fn buffer(&self) -> MutexGuard<'_, Buffer> {
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn push(&self, line: &str) {
-        let mut lines = self.lines();
-        if lines.len() == TAIL_LINES {
-            lines.pop_front();
+    fn push(&self, stream: Stream, line: &str) {
+        let mut buffer = self.buffer();
+        if buffer.lines.len() == BUFFER_LINES {
+            buffer.lines.pop_front();
         }
-        lines.push_back(line.to_string());
+        buffer.next_seq += 1;
+        let seq = buffer.next_seq;
+        buffer.lines.push_back(LogLine {
+            seq,
+            at: crate::now(),
+            stream,
+            text: line.to_string(),
+        });
     }
 
-    /// The retained lines, oldest first.
+    /// Record something this application did, rather than something the project
+    /// said.
+    ///
+    /// Starts, stops, restarts and crash reports go through here, so a console
+    /// reads as one story instead of output with unexplained gaps in it.
+    pub fn note(&self, line: &str) {
+        self.push(Stream::System, line);
+    }
+
+    /// Every retained line, oldest first.
+    pub fn all(&self) -> Vec<LogLine> {
+        self.buffer().lines.iter().cloned().collect()
+    }
+
+    /// The lines after `seq`, and the cursor to ask with next time.
+    ///
+    /// A caller passing `0` gets everything retained, which is what a console
+    /// opening for the first time wants.
+    pub fn since(&self, seq: u64) -> (Vec<LogLine>, u64) {
+        let buffer = self.buffer();
+        let lines: Vec<LogLine> = buffer
+            .lines
+            .iter()
+            .filter(|line| line.seq > seq)
+            .cloned()
+            .collect();
+        (lines, buffer.next_seq)
+    }
+
+    /// The retained lines as plain text, oldest first.
     pub fn lines_owned(&self) -> Vec<String> {
-        self.lines().iter().cloned().collect()
+        self.buffer()
+            .lines
+            .iter()
+            .map(|line| line.text.clone())
+            .collect()
     }
 
-    /// The retained lines as one block of text, or `None` if the child said
-    /// nothing at all — which is itself worth distinguishing from a failure
-    /// that explained itself.
+    /// The last few lines as one block, or `None` if the child said nothing at
+    /// all — which is itself worth distinguishing from a failure that explained
+    /// itself.
+    ///
+    /// Only the project's own output. A failure report quoting this
+    /// application's own "starting…" note back at the user would be padding a
+    /// message with a line they do not need.
     pub fn text(&self) -> Option<String> {
-        let lines = self.lines_owned();
+        let buffer = self.buffer();
+        // Collected before reversing: `filter` over a `VecDeque`'s iterator is
+        // not `ExactSizeIterator`, so the last-N cannot be taken from the back
+        // directly. The buffer is bounded, so this allocation is bounded too.
+        let mut lines: Vec<String> = buffer
+            .lines
+            .iter()
+            .filter(|line| line.stream != Stream::System)
+            .map(|line| line.text.clone())
+            .collect();
+        if lines.len() > EXCERPT_LINES {
+            lines.drain(..lines.len() - EXCERPT_LINES);
+        }
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 }
@@ -142,13 +262,21 @@ pub fn pump_into(
     // Bounded, so a project logging faster than the disk can take it applies
     // back-pressure to itself rather than growing this queue until the
     // application runs out of memory.
-    let (sender, receiver) = mpsc::channel::<String>(1024);
+    let (sender, receiver) = mpsc::channel::<(Stream, String)>(1024);
 
     if let Some(stream) = stdout {
-        tokio::spawn(read_lines(BufReader::new(stream), sender.clone()));
+        tokio::spawn(read_lines(
+            BufReader::new(stream),
+            Stream::Stdout,
+            sender.clone(),
+        ));
     }
     if let Some(stream) = stderr {
-        tokio::spawn(read_lines(BufReader::new(stream), sender.clone()));
+        tokio::spawn(read_lines(
+            BufReader::new(stream),
+            Stream::Stderr,
+            sender.clone(),
+        ));
     }
     drop(sender);
 
@@ -158,7 +286,7 @@ pub fn pump_into(
 }
 
 /// Read one stream, line by line, into the channel.
-async fn read_lines<R>(reader: BufReader<R>, sender: mpsc::Sender<String>)
+async fn read_lines<R>(reader: BufReader<R>, stream: Stream, sender: mpsc::Sender<(Stream, String)>)
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -166,7 +294,7 @@ where
     // A read error ends this pump and nothing else: the other stream may still
     // have something to say, and the child is still the caller's to wait on.
     while let Ok(Some(line)) = lines.next_line().await {
-        if sender.send(line).await.is_err() {
+        if sender.send((stream, line)).await.is_err() {
             return;
         }
     }
@@ -178,7 +306,7 @@ where
 /// failure message still has something in it, and the project still runs —
 /// refusing to run a project because its log file could not be created would
 /// be the wrong trade in both directions.
-async fn write_lines(mut receiver: mpsc::Receiver<String>, path: PathBuf, tail: Tail) {
+async fn write_lines(mut receiver: mpsc::Receiver<(Stream, String)>, path: PathBuf, tail: Tail) {
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
     }
@@ -190,10 +318,14 @@ async fn write_lines(mut receiver: mpsc::Receiver<String>, path: PathBuf, tail: 
         .await
         .ok();
 
-    while let Some(line) = receiver.recv().await {
-        tail.push(&line);
+    while let Some((stream, line)) = receiver.recv().await {
+        tail.push(stream, &line);
         if let Some(file) = file.as_mut() {
-            if file.write_all(line.as_bytes()).await.is_err()
+            // The file carries the stream and the time as a prefix, because a
+            // log read tomorrow with no metadata cannot answer either question,
+            // and the in-memory copy that could is long gone.
+            let record = format!("{} [{}] {line}", crate::now(), stream.as_str());
+            if file.write_all(record.as_bytes()).await.is_err()
                 || file.write_all(b"\n").await.is_err()
             {
                 // The disk filled, or the file was removed underneath us.
@@ -212,19 +344,39 @@ async fn write_lines(mut receiver: mpsc::Receiver<String>, path: PathBuf, tail: 
 mod tests {
     use super::*;
 
+    /// A project logging in a loop must not be able to grow this without
+    /// bound: ten of those running at once is the case the whole cap exists
+    /// for.
     #[test]
-    fn the_tail_keeps_only_the_most_recent_lines() {
+    fn the_buffer_keeps_only_the_most_recent_lines() {
         let tail = Tail::new();
-        for index in 0..TAIL_LINES + 10 {
-            tail.push(&format!("line {index}"));
+        for index in 0..BUFFER_LINES + 10 {
+            tail.push(Stream::Stdout, &format!("line {index}"));
         }
 
         let lines = tail.lines_owned();
-        assert_eq!(lines.len(), TAIL_LINES);
+        assert_eq!(lines.len(), BUFFER_LINES);
         assert_eq!(lines.first().map(String::as_str), Some("line 10"));
         assert_eq!(
             lines.last().map(String::as_str),
-            Some(format!("line {}", TAIL_LINES + 9).as_str())
+            Some(format!("line {}", BUFFER_LINES + 9).as_str())
+        );
+    }
+
+    /// The failure excerpt is a tail of the buffer, not the whole thing. A
+    /// crash report carrying two thousand lines is a crash report nobody reads.
+    #[test]
+    fn the_failure_excerpt_is_the_last_few_lines_only() {
+        let tail = Tail::new();
+        for index in 0..EXCERPT_LINES + 20 {
+            tail.push(Stream::Stdout, &format!("line {index}"));
+        }
+
+        let excerpt = tail.text().unwrap_or_default();
+        assert_eq!(excerpt.lines().count(), EXCERPT_LINES);
+        assert!(
+            excerpt.ends_with(&format!("line {}", EXCERPT_LINES + 19)),
+            "the excerpt has to end with what was said most recently"
         );
     }
 
@@ -232,8 +384,99 @@ mod tests {
     fn a_child_that_said_nothing_is_distinguishable_from_one_that_explained_itself() {
         let tail = Tail::new();
         assert_eq!(tail.text(), None);
-        tail.push("Error: listen EADDRINUSE");
+        tail.push(Stream::Stderr, "Error: listen EADDRINUSE");
         assert_eq!(tail.text().as_deref(), Some("Error: listen EADDRINUSE"));
+    }
+
+    /// This application's own notes belong in the console, so a restart reads
+    /// as a restart — but not in the failure excerpt, where quoting our own
+    /// "starting…" back at the user is padding.
+    #[test]
+    fn the_applications_own_notes_are_in_the_console_and_not_in_the_excerpt() {
+        let tail = Tail::new();
+        tail.note("started node (pid 42)");
+        tail.push(Stream::Stderr, "TypeError: undefined is not a function");
+
+        assert_eq!(
+            tail.text().as_deref(),
+            Some("TypeError: undefined is not a function")
+        );
+
+        let console = tail.all();
+        assert_eq!(console.len(), 2);
+        assert_eq!(console[0].stream, Stream::System);
+        assert_eq!(console[1].stream, Stream::Stderr);
+    }
+
+    /// A console polls with the cursor it last received. The sequence has to
+    /// be monotonic for that to work at all, and unique so a poll cannot
+    /// deliver a line twice.
+    #[test]
+    fn a_console_can_ask_for_only_what_it_has_not_seen() {
+        let tail = Tail::new();
+        tail.push(Stream::Stdout, "first");
+        tail.push(Stream::Stdout, "second");
+
+        let (lines, cursor) = tail.since(0);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(cursor, 2);
+
+        // Nothing new yet.
+        let (lines, cursor) = tail.since(cursor);
+        assert!(lines.is_empty());
+        assert_eq!(cursor, 2);
+
+        tail.push(Stream::Stderr, "third");
+        let (lines, cursor) = tail.since(cursor);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "third");
+        assert_eq!(lines[0].stream, Stream::Stderr);
+        assert_eq!(cursor, 3);
+    }
+
+    /// The sequence must not restart when the buffer wraps, or a console that
+    /// looked away for a moment would be handed lines it already has.
+    #[test]
+    fn the_sequence_keeps_rising_after_the_buffer_wraps() {
+        let tail = Tail::new();
+        for index in 0..BUFFER_LINES + 5 {
+            tail.push(Stream::Stdout, &format!("line {index}"));
+        }
+
+        let (_, cursor) = tail.since(0);
+        assert_eq!(cursor as usize, BUFFER_LINES + 5);
+
+        // Asking with a cursor older than anything retained yields what is
+        // left rather than nothing, which is the honest answer for a console
+        // that fell behind.
+        let (lines, _) = tail.since(1);
+        assert_eq!(lines.len(), BUFFER_LINES);
+    }
+
+    /// Two projects are two buffers. If this were ever shared, five projects
+    /// running at once would produce one interleaved console and no way back.
+    #[test]
+    fn two_projects_do_not_share_a_buffer() {
+        let first = Tail::new();
+        let second = Tail::new();
+
+        first.push(Stream::Stdout, "from the first project");
+        second.push(Stream::Stdout, "from the second project");
+
+        assert_eq!(first.lines_owned(), vec!["from the first project"]);
+        assert_eq!(second.lines_owned(), vec!["from the second project"]);
+    }
+
+    /// Every line carries when it arrived, or a console cannot show a
+    /// timestamp and a log read tomorrow cannot be ordered against anything.
+    #[test]
+    fn every_line_is_stamped() {
+        let tail = Tail::new();
+        tail.push(Stream::Stdout, "hello");
+
+        let line = tail.all().pop().expect("a line");
+        assert_eq!(line.at.len(), 20, "got {}", line.at);
+        assert!(line.at.ends_with('Z'), "got {}", line.at);
     }
 
     #[test]
@@ -364,7 +607,7 @@ mod tests {
     /// wait has to end on its own rather than hanging the failure report.
     #[tokio::test]
     async fn draining_gives_up_rather_than_waiting_on_a_pipe_that_never_closes() {
-        let (sender, receiver) = mpsc::channel::<String>(1);
+        let (sender, receiver) = mpsc::channel::<(Stream, String)>(1);
         let directory = tempfile::tempdir().expect("temp dir");
         let mut pumps = Pumps {
             writer: Some(tokio::spawn(write_lines(

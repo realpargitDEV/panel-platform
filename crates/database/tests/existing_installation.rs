@@ -86,6 +86,31 @@ async fn installation_at_version_two(directory: &std::path::Path) -> (std::path:
     .await
     .expect("its environment variable");
 
+    // A configured Discord bot, and a server linked to it, in the only shape
+    // migration 0002 allowed: one row, pinned by `CHECK (id = 1)`.
+    sqlx::query(
+        "INSERT INTO discord_bot (id, application_id, token_cipher, token_nonce, updated_at)
+         VALUES (1, '999999999999999999', ?, ?, ?)",
+    )
+    .bind(vec![7u8; 64])
+    .bind(vec![3u8; 24])
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .expect("a bot from the old build");
+
+    sqlx::query(
+        "INSERT INTO discord_guilds (id, guild_id, guild_name, linked_by_user_id,
+                                     allow_guild_owner, created_at, updated_at)
+         VALUES ('gld_from_the_old_build', '222222222222222222', 'My Server',
+                 '111111111111111111', 1, ?, ?)",
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .expect("its linked server");
+
     pool.close().await;
     (path, id)
 }
@@ -121,6 +146,50 @@ async fn an_older_installation_upgrades_without_losing_anything() {
         .expect("query");
     assert_eq!(variables.len(), 1, "the environment variable was lost");
     assert_eq!(variables[0].key, "KEEP_ME");
+
+    assert!(
+        database.integrity_check().await.expect("integrity check"),
+        "the upgraded file should not be corrupt"
+    );
+}
+
+/// 0006 replaces the one-row `discord_bot` with many-row `discord_bots`. A user
+/// who configured a bot before that migration keeps it — they may no longer
+/// have a copy of the token, so losing the row means losing the integration.
+#[tokio::test]
+async fn a_bot_configured_before_the_widening_is_carried_forward() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let (path, _project) = installation_at_version_two(directory.path()).await;
+
+    let database = Database::open(&path).await.expect("open and migrate");
+
+    let bots = project_host_database::discord::list_bots(&database)
+        .await
+        .expect("query");
+    assert_eq!(bots.len(), 1, "the configured bot did not survive 0006");
+    assert_eq!(bots[0].application_id, "999999999999999999");
+    assert_eq!(
+        bots[0].token_cipher,
+        vec![7u8; 64],
+        "the ciphertext must be carried across byte for byte, or the token is lost"
+    );
+    assert_eq!(bots[0].token_nonce, vec![3u8; 24]);
+    assert!(
+        !bots[0].autostart,
+        "an upgrade must not start connecting on its own"
+    );
+
+    // The server it was linked to must still be reachable, and must now know
+    // which bot reaches it — there was only one, so the answer is unambiguous.
+    let guild = project_host_database::discord::find_guild(&database, "222222222222222222")
+        .await
+        .expect("query")
+        .expect("the linked server did not survive 0006");
+    assert_eq!(
+        guild.bot_row_id.as_deref(),
+        Some(bots[0].id.as_str()),
+        "the carried-forward server should be adopted by the carried-forward bot"
+    );
 
     assert!(
         database.integrity_check().await.expect("integrity check"),
