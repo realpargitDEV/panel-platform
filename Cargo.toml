@@ -27,7 +27,7 @@ version = "0.1.15"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/realpargitDEV/panel-platform"
+repository = "https://github.com/paar-git/panel-platform"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

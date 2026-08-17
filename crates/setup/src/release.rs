@@ -8,7 +8,14 @@ use serde::Deserialize;
 
 use crate::net::{self, AllowedHost};
 
-const LATEST: &str = "https://api.github.com/repos/realpargitDEV/panel-platform/releases/latest";
+/// The repository this build installs from.
+///
+/// GitHub answers a renamed owner with `301 Moved Permanently` rather than the
+/// release, and this agent does not follow redirects — each hop is checked by
+/// hand in `download` — so a stale name here is not a redirect that quietly
+/// works. It is a setup program that cannot find anything to install, which is
+/// what happened when `realpargitDEV` became `paar-git`.
+const LATEST: &str = "https://api.github.com/repos/paar-git/panel-platform/releases/latest";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
@@ -38,6 +45,18 @@ pub enum ReleaseError {
     Http(u16),
     #[error("could not reach GitHub: {0}")]
     Unreachable(String),
+    /// A redirect, which this agent does not follow. It means the address
+    /// compiled into this program is not where the repository lives any more,
+    /// and every copy already handed out has the same stale address. Said
+    /// plainly, because the alternative is what shipped: the redirect's body
+    /// has no `tag_name`, so it surfaced as "could not understand GitHub's
+    /// answer" — which reads like GitHub changed its API rather than like this
+    /// program is looking in the wrong place.
+    #[error(
+        "GitHub redirected the request for the latest release ({0}), which means this \
+         build is looking for a repository that has moved."
+    )]
+    Moved(u16),
     #[error("could not understand GitHub's answer: {0}")]
     Malformed(String),
 }
@@ -69,6 +88,12 @@ pub fn fetch_latest(agent: &ureq::Agent) -> Result<Release, ReleaseError> {
         .call();
 
     let body = match response {
+        // `redirects(0)` hands a 3xx back as a response rather than following
+        // it, so this has to be looked at before the body is parsed — a
+        // redirect body is valid JSON that simply is not a release.
+        Ok(response) if (300..400).contains(&response.status()) => {
+            return Err(ReleaseError::Moved(response.status()));
+        }
         Ok(response) => response
             .into_string()
             .map_err(|error| ReleaseError::Unreachable(error.to_string()))?,
@@ -147,7 +172,7 @@ mod tests {
 
     fn api_asset(name: &str) -> String {
         format!(
-            r#"{{"name":"{name}","size":12,"browser_download_url":"https://github.com/realpargitDEV/panel-platform/releases/download/v0.1.0/{name}"}}"#
+            r#"{{"name":"{name}","size":12,"browser_download_url":"https://github.com/paar-git/panel-platform/releases/download/v0.1.0/{name}"}}"#
         )
     }
 

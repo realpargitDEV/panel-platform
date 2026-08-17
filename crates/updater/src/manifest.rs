@@ -229,11 +229,10 @@ mod tests {
 
     #[test]
     fn a_well_formed_release_validates() {
-        let release = manifest(
-            "https://github.com/realpargitDEV/panel-platform/releases/download/v1.2.0/app.msi",
-        )
-        .validate_for("windows-x86_64")
-        .expect("valid");
+        let release =
+            manifest("https://github.com/paar-git/panel-platform/releases/download/v1.2.0/app.msi")
+                .validate_for("windows-x86_64")
+                .expect("valid");
         assert_eq!(release.version, semver::Version::new(1, 2, 0));
         assert!(!release.signature.is_empty());
     }
@@ -385,7 +384,7 @@ mod tests {
             "pub_date": "2026-08-01T12:00:00Z",
             "platforms": {
                 "windows-x86_64": {
-                    "url": "https://github.com/realpargitDEV/panel-platform/releases/download/v1.3.0/ProjectHost_1.3.0_x64.msi",
+                    "url": "https://github.com/paar-git/panel-platform/releases/download/v1.3.0/ProjectHost_1.3.0_x64.msi",
                     "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ=="
                 }
             }

@@ -130,7 +130,7 @@ impl RestClient {
     pub fn new() -> Result<Self, GatewayError> {
         let http = reqwest::Client::builder()
             .user_agent(concat!(
-                "DiscordBot (https://github.com/realpargitDEV/panel-platform, ",
+                "DiscordBot (https://github.com/paar-git/panel-platform, ",
                 env!("CARGO_PKG_VERSION"),
                 ")"
             ))
